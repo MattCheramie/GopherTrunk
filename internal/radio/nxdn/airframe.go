@@ -148,6 +148,11 @@ type VCHFrame struct {
 	Payload []byte
 	// Errors is the Golay-corrected bit count across C0/C1.
 	Errors int
+	// Slot is the frame's position in the information field, 0..3 (two
+	// per half). A scrambled call's keystream advances one 49-bit block
+	// per slot whether or not the slot decoded, so a descrambler needs
+	// the position, not just the sequence of frames that decoded.
+	Slot int
 }
 
 // DecodeAirVoice decodes the voice frames of one descrambled post-FSW
@@ -180,7 +185,7 @@ func DecodeAirVoice(post []uint8) (AirLICH, []VCHFrame) {
 		if err != nil {
 			continue
 		}
-		out = append(out, VCHFrame{Payload: payload, Errors: errs})
+		out = append(out, VCHFrame{Payload: payload, Errors: errs, Slot: v})
 	}
 	return lich, out
 }

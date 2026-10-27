@@ -89,7 +89,15 @@ func newNXDNVoiceReceiver(sampleHz, symbolRateHz float64, sink nxdn.DibitSink) *
 // (6.25 kHz); the frame is the same. Checked against the issue #1261
 // reporter's captures of both (testdata in internal/radio/nxdn), not yet
 // confirmed on air through the daemon.
-func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string, iqCh <-chan []complex64, iqHz, symbolRateHz float64, groupID uint32, done chan<- struct{}) {
+//
+// The traffic channel's frame callback feeds an nxdn.VoiceCipherTracker
+// (nxdn_cipher.go): it follows the SACCH superframe for the VCALL (source,
+// destination, cipher, key ID) and, when the call is scrambled and an
+// encryption_keys entry with algorithm "scrambler" matches the key ID —
+// on the system, or on the conventional channel at frequencyHz — descrambles
+// the voice frames before they reach the recorder (issue #1261, pinned on
+// the reporter's two known-key captures).
+func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string, frequencyHz uint32, iqCh <-chan []complex64, iqHz, symbolRateHz float64, groupID uint32, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-nxdn:"+serial, nil)
 
@@ -122,12 +130,17 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 	var voiceOffHz float64
 	var iqSamples int
 	// TrafficChannel carves the VCH voice frames out of each RFChTraffic
-	// frame and FEC-decodes their 49-bit AMBE+2 payloads. The sink packs
-	// each payload MSB-first to 7 bytes and writes it to the recorder,
-	// whose "ambe2-dmr" vocoder renders PCM (WriteRawFrameWithErrors when
-	// the sink is error-aware, so the FEC corrected-bit count drives the
-	// vocoder's adaptive smoothing — mirrors dmr_voice.go).
-	tc := nxdn.NewTrafficChannel(func(frames []nxdn.VCHFrame) {
+	// frame and FEC-decodes their 49-bit AMBE+2 payloads; every LICH-valid
+	// frame (voice or not) goes through the cipher tracker, which returns
+	// the voice frames ready for the vocoder — held until the first VCALL
+	// names the cipher when keys are configured, descrambled when one
+	// matches. deliver packs each payload MSB-first to 7 bytes and writes
+	// it to the recorder, whose "ambe2-dmr" vocoder renders PCM
+	// (WriteRawFrameWithErrors when the sink is error-aware, so the FEC
+	// corrected-bit count drives the vocoder's adaptive smoothing — mirrors
+	// dmr_voice.go).
+	cipher := c.newNXDNCipherState(serial, system, frequencyHz, groupID)
+	deliver := func(frames []nxdn.VCHFrame) {
 		for _, vf := range frames {
 			packed := framing.PackBitsMSB(vf.Payload)
 			voiceFrames.Add(1)
@@ -144,7 +157,9 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 				c.log.Warn("composer: nxdn raw-frame write failed", "serial", serial, "err", werr)
 			}
 		}
-	})
+	}
+	tc := nxdn.NewTrafficChannel(nil)
+	tc.OnFrame = func(f nxdn.TrafficFrame) { deliver(cipher.tracker.Frame(f)) }
 
 	rx = newNXDNVoiceReceiver(symbolHz, symbolRateHz, func(dibits []uint8, baseIdx int) { tc.Process(dibits, baseIdx) })
 
@@ -154,9 +169,10 @@ func (c *Composer) runNXDNVoiceChain(ctx context.Context, serial, system string,
 	// ended logs the chain's summary. carrier_offset_hz is the tuner error
 	// the receiver tracked out: across calls it shows the dongle drifting.
 	ended := func(msg string) {
-		c.log.Info(msg, "serial", serial, "voice_frames", voiceFrames.Load(),
+		deliver(cipher.tracker.Flush())
+		c.log.Info(msg, append([]any{"serial", serial, "voice_frames", voiceFrames.Load(),
 			"frames", tc.Frames, "lich_ok", tc.LICHOK, "carrier_offset_hz", int(rx.CarrierOffsetHz()),
-			"carrier_offset_at_voice_hz", int(voiceOffHz), "iq_samples", iqSamples)
+			"carrier_offset_at_voice_hz", int(voiceOffHz), "iq_samples", iqSamples}, cipher.logFields()...)...)
 	}
 
 	for {

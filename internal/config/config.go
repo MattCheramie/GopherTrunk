@@ -668,6 +668,13 @@ type ConvChannelConfig struct {
 	// mid-burst holds the channel so the burst is not cut off. Empty (the
 	// default) runs none. Issue #1220.
 	Decoders []string `yaml:"decoders"`
+	// EncryptionKeys are this channel's decryption keys, the same entries
+	// as trunking.systems[].encryption_keys: today an NXDN channel's
+	// 15-bit scrambler keys (algorithm "scrambler", decimal key 1..32767,
+	// key_id as the radios' SACCH VCALL names it). The NXDN voice chain
+	// descrambles a call in-process when the VCALL's key ID matches an
+	// entry. Digital modes only. Issue #1261.
+	EncryptionKeys []EncryptionKeyConfig `yaml:"encryption_keys"`
 	// NAC is a mode p25 channel's NAC filter, three hex digits ("293",
 	// "0x293"): the scanner opens and holds the channel only while it
 	// decodes a NID carrying this NAC, so another system's P25 traffic on
@@ -1957,11 +1964,14 @@ type NXDNBandPlanTableEntryConfig struct {
 }
 
 // EncryptionKeyConfig is one operator-supplied decryption key for a
-// trunking system. KeyID matches the key identifier the radios carry
-// in the protocol's privacy header, so a system that rotates between
-// several keys still resolves to the right one. Key is the raw key
-// hex-encoded; surrounding whitespace, internal spaces, and an
-// optional "0x" prefix are tolerated.
+// trunking system (or a conventional scan-list channel). KeyID matches
+// the key identifier the radios carry in the protocol's privacy header,
+// so a system that rotates between several keys still resolves to the
+// right one. Key is the raw key hex-encoded; surrounding whitespace,
+// internal spaces, and an optional "0x" prefix are tolerated. For the
+// NXDN scrambler (algorithm "scrambler") Key is the radio's 15-bit key
+// as a decimal number 1..32767, the way the codeplug shows it ("0x" hex
+// is accepted too); KeyBytes returns it as two big-endian bytes.
 type EncryptionKeyConfig struct {
 	KeyID     uint16 `yaml:"key_id"`
 	Algorithm string `yaml:"algorithm"`
@@ -1998,7 +2008,33 @@ func (f EncryptionKeyFileConfig) Validate() error {
 
 // KeyBytes decodes Key: hex, with surrounding whitespace, internal spaces
 // and an optional 0x prefix tolerated (the same rule validation applies).
-func (k EncryptionKeyConfig) KeyBytes() ([]byte, error) { return decodeHexKey(k.Key) }
+func (k EncryptionKeyConfig) KeyBytes() ([]byte, error) {
+	if k.NormalizedAlgorithm() == "scrambler" {
+		v, err := parseScramblerKey(k.Key)
+		if err != nil {
+			return nil, err
+		}
+		return []byte{byte(v >> 8), byte(v)}, nil
+	}
+	return decodeHexKey(k.Key)
+}
+
+// parseScramblerKey reads an NXDN scrambler key: decimal 1..32767 (the
+// codeplug's representation), or hex with a 0x prefix.
+func parseScramblerKey(s string) (uint16, error) {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return 0, fmt.Errorf("key is empty")
+	}
+	v, err := strconv.ParseUint(t, 0, 32)
+	if err != nil {
+		return 0, fmt.Errorf("a scrambler key is a decimal number 1..32767 (the radio's 15-bit key), got %q", s)
+	}
+	if v < 1 || v > 32767 {
+		return 0, fmt.Errorf("scrambler key %d outside 1..32767", v)
+	}
+	return uint16(v), nil
+}
 
 // Validate checks one key on its own: a supported algorithm and a hex key
 // of a length the algorithm's decoder accepts (DES 8 bytes, TDES 16 or 24,
@@ -2011,10 +2047,17 @@ func (k EncryptionKeyConfig) Validate() error {
 	case "rc4", "des", "tdes", "aes":
 		// supported: the RC4 family (DMR Enhanced Privacy / P25 ADP) and
 		// the P25 OFB family (DES-OFB, two-/three-key TDES, AES-128/256)
+	case "scrambler":
+		// the NXDN 15-bit scrambler: a decimal key, not hex
+		if k.KeyID > 63 {
+			return fmt.Errorf("an NXDN scrambler key_id is 0..63 (the VCALL's 6-bit key ID), got %d", k.KeyID)
+		}
+		_, err := parseScramblerKey(k.Key)
+		return err
 	case "":
-		return fmt.Errorf("algorithm is required (use \"rc4\", \"adp\", \"des\", \"tdes\" or \"aes\")")
+		return fmt.Errorf("algorithm is required (use \"rc4\", \"adp\", \"des\", \"tdes\", \"aes\" or \"scrambler\")")
 	default:
-		return fmt.Errorf("unknown algorithm %q (use \"rc4\", \"adp\", \"des\", \"tdes\" or \"aes\")", k.Algorithm)
+		return fmt.Errorf("unknown algorithm %q (use \"rc4\", \"adp\", \"des\", \"tdes\", \"aes\" or \"scrambler\")", k.Algorithm)
 	}
 	b, err := decodeHexKey(k.Key)
 	if err != nil {
@@ -2047,7 +2090,9 @@ func (k EncryptionKeyConfig) Validate() error {
 //     "tdes", "3des", "triple-des" — the key length picks the variant);
 //   - "aes" for P25 AES (ALGID 0x85 AES-128, 0x84 / 0x89 AES-256; "aes",
 //     "aes-128", "aes-256", "aes128", "aes256" — the key length picks the
-//     variant).
+//     variant);
+//   - "scrambler" for the NXDN 15-bit voice scrambler (SACCH VCALL cipher
+//     type 1; "scrambler", "nxdn", "nxdn-scrambler", "type1").
 func (k EncryptionKeyConfig) NormalizedAlgorithm() string {
 	a := strings.ToLower(strings.TrimSpace(k.Algorithm))
 	a = strings.NewReplacer("-", "", "_", "", " ", "").Replace(a)
@@ -2060,6 +2105,8 @@ func (k EncryptionKeyConfig) NormalizedAlgorithm() string {
 		return "tdes"
 	case "aes", "aes128", "aes256", "aesofb", "aes256ofb", "aes128ofb":
 		return "aes"
+	case "scrambler", "nxdn", "nxdnscrambler", "type1", "nxdntype1", "scramble":
+		return "scrambler"
 	default:
 		return a
 	}

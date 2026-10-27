@@ -13,8 +13,29 @@ type TrafficChannel struct {
 	framer airFramer
 	sink   func(frames []VCHFrame)
 
+	// OnFrame, when set, receives every LICH-valid frame — voice or not —
+	// with its LICH, its 60 SACCH channel bits and the voice frames it
+	// carried. The voice chain uses it to follow the SACCH superframe
+	// (VCALL names the cipher and key) and to keep a scrambler's keystream
+	// aligned across frames that carried no voice.
+	OnFrame func(TrafficFrame)
+
 	// Frames counts FSW-framed frames, LICHOK those whose LICH parity held.
 	Frames, LICHOK uint64
+}
+
+// TrafficFrame is one framed, descrambled, LICH-valid traffic-channel
+// frame as TrafficChannel.OnFrame delivers it.
+type TrafficFrame struct {
+	// Index counts LICH-valid frames since the channel was built or Reset.
+	Index uint64
+	LICH  AirLICH
+	// SACCH is the frame's 60 SACCH channel bits (0/1, on-air order),
+	// ready for DecodeSACCH.
+	SACCH []byte
+	// Voice is the frames DecodeAirVoice recovered (Slot set), nil for a
+	// frame with no voice.
+	Voice []VCHFrame
 }
 
 // airFramer finds the real-air FSW in a dibit stream and hands each frame's
@@ -117,10 +138,27 @@ func (t *TrafficChannel) handleFrame(post []uint8) bool {
 		return false
 	}
 	t.LICHOK++
+	if t.OnFrame != nil {
+		t.OnFrame(TrafficFrame{Index: t.LICHOK - 1, LICH: lich, SACCH: AirSACCHBits(post), Voice: frames})
+	}
 	if len(frames) > 0 && t.sink != nil {
 		t.sink(frames)
 	}
 	return true
+}
+
+// AirSACCHBits returns the 60 SACCH channel bits of one descrambled
+// post-FSW frame, two per dibit MSB-first, in on-air order.
+func AirSACCHBits(post []uint8) []byte {
+	if len(post) < AirLICHDibits+AirSACCHDibits {
+		return nil
+	}
+	out := make([]byte, 2*AirSACCHDibits)
+	for k, d := range post[AirLICHDibits : AirLICHDibits+AirSACCHDibits] {
+		out[2*k] = d >> 1 & 1
+		out[2*k+1] = d & 1
+	}
+	return out
 }
 
 // Reset clears the sync and partial-frame state; call on retune.

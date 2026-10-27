@@ -276,6 +276,9 @@ export interface ConvChannelConfig {
   // Data decoders run on the channel's dwell: "mdc1200" | "fleetsync" (#1220),
   // "acars" on an AM channel (#1231).
   Decoders: string[] | null;
+  // Decryption keys for a digital channel's calls: an NXDN channel's
+  // scrambler keys (algorithm "scrambler", decimal key 1..32767) (#1261).
+  EncryptionKeys?: EncryptionKey[] | null;
   // mode p25 only: NAC filter, three hex digits ("293"); "" = none (#1262).
   NAC?: string;
   // mode p25 only: "" | c4fm | cqpsk (#1262).

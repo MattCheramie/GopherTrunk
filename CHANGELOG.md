@@ -38,6 +38,20 @@ for tagged releases.
   daemon restart.
 
 ### Added
+- **NXDN scrambler decryption (#1261).** An NXDN call whose SACCH VCALL
+  names cipher type 1 (the 15-bit "scrambler" privacy of Kenwood / Icom
+  radios) is descrambled in-process when an `encryption_keys` entry with
+  `algorithm: scrambler` and the VCALL's `key_id` holds the radio's decimal
+  key — on the trunking system, or on the scan-list channel itself
+  (`scanner.conventional[].encryption_keys`, new). The register and its
+  reseed schedule were pinned on the reporter's two known-key captures; a
+  brute force over all 32768 keys ranks the programmed key first on both.
+  Every NXDN call now logs its VCALL (source, destination, cipher, key ID)
+  and publishes `call.encryption` for a scrambled one, so the call log and
+  `recordings.mute_encrypted` see it. `TestNXDNScramblerReplay` is the
+  offline harness (`GT_NXDN_SCR_IQ`, `GT_NXDN_SCR_KEY`, `GT_NXDN_SCR_BRUTE`).
+  The SACCH CRC-6 was also wrong (register preset / polynomial) and
+  verified only all-zero blocks; it now matches MMDVMHost and DSD-FME.
 - **A dongle pinned to a single-channel decoder may run its own
   `sample_rate` (#1316)**, e.g. 240 kS/s for an APRS-only stick; validation
   used to allow that only on a scan-list voice SDR.

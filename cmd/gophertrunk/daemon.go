@@ -970,6 +970,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	if err != nil {
 		return nil, fmt.Errorf("daemon: %w", err)
 	}
+	// Conventional scan-list channels' keys ride along as pseudo systems
+	// named by frequency (daemon_conv_keys.go, issue #1261).
+	keySystems = append(keySystems, conventionalKeySystems(cfg)...)
 	d.keySystems = keySystems
 
 	// Talkgroup DB — populated below from per-system CSVs.
@@ -2539,7 +2542,7 @@ func (d *Daemon) buildComposer(cfg config.Config, log *slog.Logger) error {
 		// PI header names a configured key id. Nil when none are configured.
 		keyResolver := buildKeyResolver(d.keySystems, log)
 		if keyResolver != nil {
-			log.Info("daemon: in-process decryption keys configured (DMR enhanced privacy / P25 ADP)")
+			log.Info("daemon: in-process decryption keys configured (DMR enhanced privacy / P25 ADP, DES, AES / NXDN scrambler)")
 		}
 		comp, err := composer.New(composer.Options{
 			Bus:           d.bus,
