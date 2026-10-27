@@ -16,6 +16,7 @@ import type {
   AudioConfig,
   ConvChannelConfig,
   DiagnosticsConfig,
+  EncryptionKey,
   GTConfig,
   LogConfig,
   MetricsConfig,
@@ -585,6 +586,32 @@ export function ScannerSection() {
                   onChange={(x) => setCh({ ...ch, Decoders: parseCommaList(x) })}
                   placeholder="mdc1200, fleetsync (FM) · acars (AM)"
                   help="Data decoders run on this channel while the scanner is on it (comma-separated): mdc1200 / fleetsync on an FM channel, acars on an AM air-band channel. Empty = none."
+                />
+                <ListEditor<EncryptionKey>
+                  label="Decryption keys"
+                  items={ch.EncryptionKeys ?? null}
+                  onChange={(x) => setCh({ ...ch, EncryptionKeys: x })}
+                  makeNew={() => ({ KeyID: 0, Algorithm: "scrambler", Key: "" })}
+                  itemTitle={(e) => `Key ID ${e.KeyID}`}
+                  emptyHint="Digital channels only: an NXDN channel's scrambler keys (algorithm scrambler, the radio's decimal 15-bit key, key_id as the VCALL names it). The voice chain descrambles a call whose key ID matches."
+                  renderItem={(e, setKey) => (
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <NumberField label="Key ID" value={e.KeyID} onChange={(v) => setKey({ ...e, KeyID: v })} />
+                      <SelectField
+                        label="Algorithm"
+                        value={e.Algorithm}
+                        onChange={(v) => setKey({ ...e, Algorithm: v })}
+                        options={[
+                          { value: "scrambler", label: "scrambler (NXDN 15-bit scrambler, decimal key)" },
+                          { value: "rc4", label: "rc4 (DMR Enhanced Privacy / P25 ADP)" },
+                          { value: "des", label: "des (P25 DES-OFB)" },
+                          { value: "tdes", label: "tdes (P25 Triple-DES)" },
+                          { value: "aes", label: "aes (P25 AES-128 / AES-256)" },
+                        ]}
+                      />
+                      <TextField label="Key" type="password" value={e.Key} onChange={(v) => setKey({ ...e, Key: v })} />
+                    </div>
+                  )}
                 />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">

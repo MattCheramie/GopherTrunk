@@ -126,9 +126,13 @@ func TestSACCHPunctureBijection(t *testing.T) {
 }
 
 func TestSACCHCRC6RoundTrip(t *testing.T) {
+	// Register preset 0x3F (MMDVMHost CNXDNCRC::createCRC6, DSD-FME crc6):
+	// an all-zero payload has a NON-zero CRC, 0x2B. The earlier zero-preset
+	// register gave 0 here and so "verified" every all-zero block — the
+	// only blocks it verified on the issue #1261 real-air captures.
 	zero := make([]byte, 26)
-	if got := SACCHCRC6(zero, 26); got != 0 {
-		t.Errorf("CRC of all-zero = %#x, want 0", got)
+	if got := SACCHCRC6(zero, 26); got != 0x2B {
+		t.Errorf("CRC of all-zero = %#x, want 0x2b", got)
 	}
 	for i := 0; i < 26; i++ {
 		bit := make([]byte, 26)

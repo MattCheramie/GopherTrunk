@@ -2,6 +2,7 @@ package main
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/composer"
@@ -52,15 +53,23 @@ func buildKeyResolver(systems []config.SystemConfig, log *slog.Logger) composer.
 // systemHasKeys deferral. The algorithm is not checked here: the voice
 // chain refuses a key whose length disagrees with the ALGID on air, and a
 // mismatched entry is an operator error better seen in the log than
-// silently muted. Returns nil when no system configures a key.
+// silently muted. A call from a system with no keys of its own (the
+// conventional scanner's synthetic grants, system "scanner") is covered by
+// the conventional channels' keys as a whole — the recorder knows the
+// call's system, not its frequency, so a key id configured on any channel
+// counts (issue #1261). Returns nil when nothing configures a key.
 func buildKeyConfigured(systems []config.SystemConfig) func(system string, algID uint8, keyID uint16) bool {
 	keys := map[string]map[uint16]bool{}
+	conv := map[uint16]bool{}
 	for _, s := range systems {
 		for _, k := range s.EncryptionKeys {
 			if keys[s.Name] == nil {
 				keys[s.Name] = map[uint16]bool{}
 			}
 			keys[s.Name][k.KeyID] = true
+			if strings.HasPrefix(s.Name, conventionalKeySystemPrefix) {
+				conv[k.KeyID] = true
+			}
 		}
 	}
 	if len(keys) == 0 {
@@ -68,6 +77,9 @@ func buildKeyConfigured(systems []config.SystemConfig) func(system string, algID
 	}
 	return func(system string, _ uint8, keyID uint16) bool {
 		ids := keys[system]
+		if len(ids) == 0 {
+			ids = conv
+		}
 		if len(ids) == 0 {
 			return false
 		}
@@ -77,3 +89,7 @@ func buildKeyConfigured(systems []config.SystemConfig) func(system string, algID
 		return ids[keyID]
 	}
 }
+
+// conventionalKeySystemPrefix is the prefix of composer.ConventionalKeySystem
+// names.
+var conventionalKeySystemPrefix = composer.ConventionalKeySystem(0)[:len("conventional:")]

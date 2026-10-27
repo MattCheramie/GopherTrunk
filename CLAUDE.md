@@ -1205,6 +1205,30 @@ confirmation before any close-as-completed.
   `EnableCarrierTracking` (0 CAC frames without it at the capture's −650 Hz) but NOT the channel
   filter: on the siglab wideband survey it turned DMR leakage into a false NXDN 0.43 carrier.
   VCALL_ASSGN is reference-pinned only (the capture is idle); a capture with a call on it is the gate.
+- **The NXDN "scrambler" (SACCH VCALL cipher type 1, 15-bit key) IS DECODED and capture-pinned
+  (#1261, 26 Oct): the reporter's two known-key captures (Kenwood, keys 32767 / 12345 on 447.100 MHz
+  NXDN96, `nxdn/testdata/scrambler_key*_frames.json`) descramble to speech (AMBE b0 pitch continuity
+  0.66 / 0.65 vs a 0.16 ciphertext floor), and a brute force over all 32768 keys ranks the programmed
+  key FIRST on both.** Three things the captures settled, each against GT's previous model: (1) the
+  LFSR is DSD-FME's construction — out = state bit 0, feedback bit 0 ⊕ bit 1 shifted in at bit 14 — not
+  the left-shift x^15+x^14+1 register `scramble.go` carried as an admitted working model; (2) the
+  SCHEDULE is reseed-from-key at the SACCH superframe start (structure field 3), then CONTINUOUS 4×49
+  bits per LICH-valid air frame whether or not it carries voice (NXDN96 alternates voice frames with
+  FACCH frames, which consume keystream too), slot v = bits [49v, 49v+49) — DSD's literal per-frame
+  code order ranked the known key ~500th, the superframe-periodic reseed at the right phase ranked it
+  0th; (3) GT's `SACCHCRC6` (poly 0x43, preset 0) was WRONG — it verified only all-zero blocks — the
+  reference (MMDVMHost `createCRC6` == DSD-FME `crc6`) is preset 0x3F / taps 0x27 and verifies 48/65
+  real-air blocks, which is what made the superframe (VCALL: src 8814, cipher 1, key id 3 / 1) and the
+  reseed phase readable at all. Production: `nxdn.VoiceCipherTracker` (`cipher.go`) off
+  `TrafficChannel.OnFrame` in the voice chain, holding voice until the first VCALL names the cipher
+  (only when keys are configured), publishing `call.encryption` (protocol nxdn, alg id = cipher type);
+  keys are `algorithm: scrambler` with a DECIMAL key, on a system or on a scan-list channel
+  (`ConvChannelConfig.EncryptionKeys` → pseudo systems `conventional:<hz>` in the key resolver, since a
+  scanner grant's System is "scanner"). Method lesson: dump the FEC-decoded frames once, then sweep
+  hypotheses (register × schedule × phase) by pitch continuity + brute-force RANK of the known key —
+  a 0.36 continuity "partial decrypt" is a wrong schedule, not a near miss. STILL ON-AIR-GATED
+  (#764/#771): the reporter's live run with the key on the scan-list channel; harness
+  `TestNXDNScramblerReplay` (`GT_NXDN_SCR_IQ/_KEY/_BRUTE`).
 - **Two PCM rates reach the live paths, and nothing used to convert between them (#1242, 21 Oct).**
   Decoded digital voice is ALWAYS 8 kHz (vocoder contract; the recorder already forces digital files to
   8 kHz, #356), analog FM is at `recordings.sample_rate`. The web stream's WAV header reads the player rate

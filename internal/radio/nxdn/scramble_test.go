@@ -1,6 +1,35 @@
 package nxdn
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+// TestScramblerKeystreamLiteral pins the register to the construction the
+// issue #1261 known-key captures decode with (out = bit 0, feedback bit 0
+// XOR bit 1 into bit 14): the first 40 keystream bits of three seeds. The
+// earlier left-shift x^15+x^14+1 model produced "0000000000000001…" for
+// key 1 and decoded neither capture.
+func TestScramblerKeystreamLiteral(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		key  uint16
+		bits string
+	}{
+		{1, "1000000000000001000000000000011000000000"},
+		{0x4000, "0000000000000010000000000000110000000000"},
+		{32767, "1111111111111110000000000000010000000000"},
+		{12345, "1001110000001101010010000010111110110000"},
+	} {
+		var sb strings.Builder
+		for _, b := range NewScrambler(c.key).Generate(len(c.bits)) {
+			sb.WriteByte('0' + b)
+		}
+		if got := sb.String(); got != c.bits {
+			t.Errorf("key %d keystream\n got %s\nwant %s", c.key, got, c.bits)
+		}
+	}
+}
 
 // TestScrambleRoundTrip is the core invariant: descrambling with the same key
 // recovers the original bits for any key, because the keystream XOR is
@@ -52,8 +81,8 @@ func TestScrambleKeyZeroIsClear(t *testing.T) {
 
 // TestKeystreamIsBalancedMSequence checks the LFSR is maximal length: over one
 // full period (2^15-1 = 32767 bits) a maximal m-sequence is balanced, with
-// exactly 2^14 = 16384 ones and 16383 zeros. This pins the tap choice — a
-// non-primitive polynomial would fail balance and/or period.
+// exactly 2^14 = 16384 ones and 16383 zeros, and the state returns to its
+// seed. Skip must agree with Generate.
 func TestKeystreamIsBalancedMSequence(t *testing.T) {
 	t.Parallel()
 	const period = ScramblerKeyMax // 32767
@@ -65,10 +94,15 @@ func TestKeystreamIsBalancedMSequence(t *testing.T) {
 	if ones != 16384 {
 		t.Fatalf("m-sequence not balanced: %d ones over period %d, want 16384", ones, period)
 	}
-	// The state must return to its seed after exactly one period.
 	s := NewScrambler(1)
 	s.Generate(period)
 	if s.state != 1 {
 		t.Fatalf("LFSR period != %d: state after one period is %#x, want seed 0x1", period, s.state)
+	}
+	a, b := NewScrambler(777), NewScrambler(777)
+	a.Skip(ScramblerBitsPerFrame)
+	b.Generate(ScramblerBitsPerFrame)
+	if a.state != b.state {
+		t.Fatalf("Skip and Generate disagree: %#x vs %#x", a.state, b.state)
 	}
 }

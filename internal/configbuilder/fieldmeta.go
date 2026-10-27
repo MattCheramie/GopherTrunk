@@ -198,7 +198,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.P25BandPlan":     {Label: "P25 band plan", Help: "Static IDEN_UP slot seeds for P25 Phase 1 sites that route grants through an unannounced channel ID. P25 Phase 1 only."},
 	"SystemConfig.DMRBandPlan":     {Label: "DMR band plan", Help: "LCN→frequency map REQUIRED for DMR Tier III voice grants. Pick linear (grid) or table (explicit list). DMR only."},
 	"SystemConfig.NXDNBandPlan":    {Label: "NXDN band plan", Help: "Channel→frequency map REQUIRED for NXDN voice grants (VCALL_ASSGN references a channel number). Pick linear (grid) or table (explicit list). NXDN only."},
-	"SystemConfig.EncryptionKeys":  {Help: "Operator-held decryption keys (today DMR RC4 'Enhanced Privacy'). No key recovery is performed."},
+	"SystemConfig.EncryptionKeys":  {Help: "Operator-held decryption keys: DMR RC4 'Enhanced Privacy', P25 ADP / DES / AES, the NXDN 15-bit scrambler. No key recovery is performed."},
 	"SystemConfig.EncryptedCalls":  {Help: "How scarce voice SDRs are allocated to encrypted calls on this system, so encrypted traffic can't starve clear calls (issue #711)."},
 	// SystemConfig advanced protocol knobs (edited under the Advanced group).
 	"SystemConfig.TETRAColourCode":         {Label: "TETRA colour code", Help: "30-bit extended colour code seeding the TETRA descrambler. Set to the cell's colour code. TETRA only."},
@@ -259,8 +259,8 @@ var fieldMetas = map[string]FieldMeta{
 	"NXDNBandPlanTableEntryConfig.FreqHz":  {Label: "Frequency", Hz: true, Help: "Downlink frequency this channel maps to."},
 
 	"EncryptionKeyConfig.KeyID":     {Label: "Key ID", Help: "Key identifier the radios carry in the privacy header, so a system that rotates keys still resolves."},
-	"EncryptionKeyConfig.Algorithm": {Help: "Decryption algorithm: rc4 covers DMR Enhanced Privacy and P25 ADP (40-bit key); des = P25 DES-OFB (64-bit); tdes = P25 Triple-DES (128/192-bit); aes = P25 AES-128/256 (the key length picks the variant).", Options: opts("rc4", "rc4 (DMR Enhanced Privacy / P25 ADP)", "des", "des (P25 DES-OFB)", "tdes", "tdes (P25 Triple-DES)", "aes", "aes (P25 AES-128 / AES-256)")},
-	"EncryptionKeyConfig.Key":       {Help: "Raw key, hex-encoded. Spaces and a 0x prefix are tolerated."},
+	"EncryptionKeyConfig.Algorithm": {Help: "Decryption algorithm: rc4 covers DMR Enhanced Privacy and P25 ADP (40-bit key); des = P25 DES-OFB (64-bit); tdes = P25 Triple-DES (128/192-bit); aes = P25 AES-128/256 (the key length picks the variant); scrambler = the NXDN 15-bit voice scrambler (Kenwood / Icom privacy, decimal key 1..32767, key_id 0..63 as the SACCH VCALL names it).", Options: opts("rc4", "rc4 (DMR Enhanced Privacy / P25 ADP)", "des", "des (P25 DES-OFB)", "tdes", "tdes (P25 Triple-DES)", "aes", "aes (P25 AES-128 / AES-256)", "scrambler", "scrambler (NXDN 15-bit scrambler)")},
+	"EncryptionKeyConfig.Key":       {Help: "Raw key, hex-encoded (spaces and a 0x prefix are tolerated) — except algorithm scrambler, whose key is the radio's decimal 15-bit key, 1..32767."},
 
 	"SystemConfig.EncryptionKeyFiles":     {Help: "KFDtool encrypted key containers (.ekc). The daemon decrypts each at startup and adds its traffic keys (TEKs) to this system's keys, so they stay encrypted at rest; an encryption_keys entry with the same key ID wins. Decrypted keys are held in memory only. Create and edit containers with `gophertrunk ekc` (create, add, remove, passwd, import moves encryption_keys into one)."},
 	"EncryptionKeyFileConfig.Path":        {Help: "Path to the .ekc file exported by KFDtool."},
@@ -451,6 +451,7 @@ var fieldMetas = map[string]FieldMeta{
 	"ConvChannelConfig.Tone":                {Help: "Optional CTCSS/DCS sub-audible squelch gate."},
 	"ConvChannelConfig.NAC":                 {Label: "P25 NAC filter", Help: "mode p25 only: three hex digits (e.g. 293). The channel opens and holds only while P25 frames carrying this NAC are heard, so another system's P25 traffic on the frequency is skipped, like a CTCSS gate. F7E accepts any NAC (but only P25). Empty: any carrier above the squelch."},
 	"ConvChannelConfig.P25Phase1DemodMode":  {Label: "P25 demod", Help: "mode p25 only: c4fm (default) or cqpsk for a transmitter using linear simulcast modulation (LSM). Pick cqpsk only when a strong, clean signal will not decode in c4fm.", Options: opts("", "(c4fm)", "c4fm", "c4fm", "cqpsk", "cqpsk")},
+	"ConvChannelConfig.EncryptionKeys":      {Help: "Decryption keys for this channel's calls (digital modes), the same entries as a trunking system's encryption_keys: an NXDN channel's scrambler keys (algorithm scrambler, decimal key 1..32767, key_id as the radios' VCALL names it). The voice chain descrambles in-process when a call's key ID matches. Issue #1261."},
 	"ConvChannelConfig.Decoders":            {Help: "Data decoders to run on this channel while the scanner is on it: mdc1200 and/or fleetsync on an FM channel; acars (VHF air-band aircraft data link) on an AM channel. Decoded messages land in the MDC1200 / FleetSync / ACARS logs and panels with this channel's frequency — no dedicated SDR needed. Empty = none."},
 	"ConvToneConfig.Mode":                   {Help: "Sub-audible gate: none, ctcss, or dcs.", Options: opts("", "none", "none", "none", "ctcss", "ctcss", "dcs", "dcs")},
 	"ConvToneConfig.CTCSSHz":                {Label: "CTCSS (Hz)", Help: "Target CTCSS frequency (50–300 Hz). Required when mode is ctcss."},

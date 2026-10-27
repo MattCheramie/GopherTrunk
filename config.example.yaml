@@ -1405,8 +1405,10 @@ trunking:
   # carry in the privacy header / Encryption Sync (a system may rotate
   # between several keys). `key` is hex (40-bit = 10 digits); whitespace
   # and an optional "0x" prefix are ignored. `algorithm` accepts "rc4" /
-  # "arc4" / "adp" — all the same cipher family; DES / AES are rejected
-  # at load ("not supported yet").
+  # "arc4" / "adp" — all the same cipher family — "des" / "tdes" / "aes"
+  # (P25 OFB family), and "scrambler" for the NXDN 15-bit scrambler, whose
+  # key is the radio's decimal key 1..32767 (#1261; also accepted per
+  # scan-list channel, see scanner.conventional below).
   #
   #   - name: "Example-DMR-Encrypted"
   #     protocol: dmr
@@ -1594,6 +1596,23 @@ scanner:
   #     frequency_hz: 442387500
   #     mode: dmr                   # dmr | nxdn | nxdn48 | dstar | ysf
   #     squelch_dbfs: -50
+  #   # An NXDN channel whose radios use the built-in 15-bit scrambler
+  #   # (Kenwood / Icom "scrambler" privacy, #1261): list the keys and the
+  #   # voice chain descrambles in-process when a call's SACCH VCALL names a
+  #   # matching key_id (the key slot the radios were programmed with). The
+  #   # key is the radio's DECIMAL 15-bit key, 1..32767. Several groups on
+  #   # one channel with different keys = one entry per key_id. The same
+  #   # entries are accepted on a trunking system's encryption_keys. Calls
+  #   # whose key is not listed record as ciphertext (see recordings.
+  #   # mute_encrypted); NXDN DES / AES are identified, not decrypted.
+  #   - label: "Plant ops"
+  #     frequency_hz: 447100000
+  #     mode: nxdn
+  #     squelch_dbfs: -50
+  #     encryption_keys:
+  #       - key_id: 3
+  #         algorithm: scrambler
+  #         key: "32767"
 
 # audio routes decoded PCM to the host's speakers. Disabled by default;
 # WAV recording is unaffected and continues whether audio is on or off.

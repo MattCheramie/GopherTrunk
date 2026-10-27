@@ -792,3 +792,50 @@ func TestValidateFMChannelBandwidth(t *testing.T) {
 		}
 	}
 }
+
+// TestEncryptionKeyScrambler pins the NXDN scrambler key form (issue
+// #1261): algorithm "scrambler" (and its aliases) takes the radio's decimal
+// 15-bit key, 1..32767, and KeyBytes returns it big-endian; it may sit on
+// a digital conventional channel but not an analog one.
+func TestEncryptionKeyScrambler(t *testing.T) {
+	for _, c := range []struct {
+		k    EncryptionKeyConfig
+		ok   bool
+		want uint16
+	}{
+		{EncryptionKeyConfig{KeyID: 3, Algorithm: "scrambler", Key: "32767"}, true, 32767},
+		{EncryptionKeyConfig{KeyID: 1, Algorithm: "NXDN", Key: " 12345 "}, true, 12345},
+		{EncryptionKeyConfig{KeyID: 1, Algorithm: "nxdn-scrambler", Key: "0x7fff"}, true, 32767},
+		{EncryptionKeyConfig{KeyID: 1, Algorithm: "scrambler", Key: "0"}, false, 0},
+		{EncryptionKeyConfig{KeyID: 1, Algorithm: "scrambler", Key: "32768"}, false, 0},
+		{EncryptionKeyConfig{KeyID: 1, Algorithm: "scrambler", Key: "abcd"}, false, 0},
+		{EncryptionKeyConfig{KeyID: 64, Algorithm: "scrambler", Key: "5"}, false, 0},
+	} {
+		err := c.k.Validate()
+		if (err == nil) != c.ok {
+			t.Errorf("%+v: Validate = %v, want ok=%v", c.k, err, c.ok)
+			continue
+		}
+		if !c.ok {
+			continue
+		}
+		if c.k.NormalizedAlgorithm() != "scrambler" {
+			t.Errorf("%+v: algorithm %q", c.k, c.k.NormalizedAlgorithm())
+		}
+		b, err := c.k.KeyBytes()
+		if err != nil || len(b) != 2 || uint16(b[0])<<8|uint16(b[1]) != c.want {
+			t.Errorf("%+v: KeyBytes = %x %v, want %d", c.k, b, err, c.want)
+		}
+	}
+	keys := []EncryptionKeyConfig{{KeyID: 3, Algorithm: "scrambler", Key: "32767"}}
+	if err := validateConvChannel(0, ConvChannelConfig{FrequencyHz: 447_100_000, Mode: "nxdn", EncryptionKeys: keys}); err != nil {
+		t.Errorf("nxdn channel with scrambler keys: %v", err)
+	}
+	if err := validateConvChannel(0, ConvChannelConfig{FrequencyHz: 447_100_000, Mode: "nfm", EncryptionKeys: keys}); err == nil {
+		t.Error("analog channel must reject encryption_keys")
+	}
+	dup := append(keys, EncryptionKeyConfig{KeyID: 3, Algorithm: "scrambler", Key: "1"})
+	if err := validateConvChannel(0, ConvChannelConfig{FrequencyHz: 447_100_000, Mode: "nxdn48", EncryptionKeys: dup}); err == nil {
+		t.Error("duplicate key_id on one channel must be rejected")
+	}
+}

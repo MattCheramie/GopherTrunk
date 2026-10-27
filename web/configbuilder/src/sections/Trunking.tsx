@@ -391,6 +391,7 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
                   { value: "des", label: "des (P25 DES-OFB)" },
                   { value: "tdes", label: "tdes (P25 Triple-DES)" },
                   { value: "aes", label: "aes (P25 AES-128 / AES-256)" },
+                  { value: "scrambler", label: "scrambler (NXDN 15-bit scrambler, decimal key)" },
                 ]}
               />
               {/* A key loaded from a saved file arrives as "<redacted>" (the

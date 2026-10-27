@@ -199,27 +199,28 @@ func depuncture(in []byte) []byte {
 	return out
 }
 
-// CRC-6 over a bit-stream with NXDN's polynomial g(x) = x^6 + x + 1
-// (= 0x43 with the implicit MSB). Standard sliding-XOR style.
-const crc6Poly = 0x43 // x^6 + x + 1, plus implicit x^6
-
-// SACCHCRC6 computes the 6-bit CRC over the first `nBits` bits of the
-// supplied bit slice (each entry 0/1), MSB-first. The 6-bit result
-// occupies the low bits of the returned byte.
+// SACCHCRC6 computes the NXDN 6-bit CRC over the first nBits bits of the
+// supplied bit slice (each entry 0/1), MSB-first; the result occupies the
+// low 6 bits of the returned byte. Register preset 0x3F, polynomial
+// x^6 + x^2 + x + 1 (taps 0x27 after the shift) — MMDVMHost's
+// CNXDNCRC::createCRC6 and DSD-FME's crc6 agree, and on the issue #1261
+// real-air captures 48 of 65 SACCH blocks verify (the rest are RF
+// errors) where the earlier x^6+x+1 / zero-preset register here verified
+// only the all-zero block.
 func SACCHCRC6(bits []byte, nBits int) byte {
 	if nBits > len(bits) {
 		nBits = len(bits)
 	}
-	var reg uint8
+	crc := byte(0x3F)
 	for i := 0; i < nBits; i++ {
-		bit := bits[i] & 1
-		fb := ((reg >> 5) ^ bit) & 1
-		reg = ((reg << 1) | fb) & 0x3F
-		if fb != 0 {
-			reg ^= crc6Poly & 0x3F
+		b1 := bits[i]&1 != 0
+		b2 := crc&0x20 != 0
+		crc <<= 1
+		if b1 != b2 {
+			crc ^= 0x27
 		}
 	}
-	return reg & 0x3F
+	return crc & 0x3F
 }
 
 // VerifySACCHCRC6 checks that the trailing 6 bits of the supplied 32-

@@ -832,6 +832,23 @@ func validateConvChannelAt(path string, ch ConvChannelConfig) error {
 			return fmt.Errorf("%s.decoders: data decoders run on analog channels, not mode: %s", path, ch.Mode)
 		}
 	}
+	if len(ch.EncryptionKeys) > 0 {
+		switch ch.Mode {
+		case "nxdn", "nxdn48", "dmr", "p25":
+		default:
+			return fmt.Errorf("%s.encryption_keys: decryption keys apply to digital channels (mode nxdn / nxdn48 / dmr / p25), not mode: %s", path, ch.Mode)
+		}
+		ids := make(map[uint16]bool, len(ch.EncryptionKeys))
+		for j, k := range ch.EncryptionKeys {
+			if err := k.Validate(); err != nil {
+				return fmt.Errorf("%s.encryption_keys[%d]: %w", path, j, err)
+			}
+			if ids[k.KeyID] {
+				return fmt.Errorf("%s.encryption_keys: duplicate key_id %d", path, k.KeyID)
+			}
+			ids[k.KeyID] = true
+		}
+	}
 	if ch.Mode == "p25" {
 		if nac := strings.TrimSpace(ch.NAC); nac != "" {
 			t := strings.TrimPrefix(strings.TrimPrefix(nac, "0x"), "0X")
@@ -1436,6 +1453,8 @@ func EncryptionKeyLengths(alg string) []int {
 		return []int{16, 24}
 	case "aes":
 		return []int{16, 32}
+	case "scrambler":
+		return []int{2}
 	}
 	return nil
 }

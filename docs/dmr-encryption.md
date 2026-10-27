@@ -1,17 +1,19 @@
 ---
 layout: page
-title: DMR & P25 encryption
-description: Known-key RC4 decryption — DMR ARC4 "Enhanced Privacy" and P25 ADP — configuration, what the pipeline does, how to contribute a capture that verifies it
+title: DMR, P25 & NXDN encryption
+description: Known-key decryption — DMR ARC4 "Enhanced Privacy", P25 ADP / DES / AES and the NXDN 15-bit scrambler — configuration, what the pipeline does, how to contribute a capture that verifies it
 nav_group: Reference
 ---
 
-# DMR & P25 encryption (RC4: "Enhanced Privacy" and ADP)
+# DMR, P25 & NXDN encryption
 
-This page covers the two RC4-based air-interface encryptions GopherTrunk
-can decrypt in-process with an operator-supplied key: DMR **Enhanced
-Privacy** (below) and P25 **ADP** ([P25 ADP](#p25-adp-rc4-algid-0xaa),
-verified on air). Both are configured with the same `encryption_keys`
-block.
+This page covers the air-interface encryptions GopherTrunk can decrypt
+in-process with an operator-supplied key: DMR **Enhanced Privacy**
+(below), P25 **ADP** ([P25 ADP](#p25-adp-rc4-algid-0xaa), verified on
+air), P25 [DES-OFB / TDES / AES](#p25-des-ofb-tdes-and-aes-algids-0x81--0x83--0x86--0x85--0x84--0x89),
+and the [NXDN 15-bit scrambler](#nxdn-scrambler-cipher-type-1-15-bit-key)
+(verified on two known-key captures). All are configured with the same
+`encryption_keys` block.
 
 # DMR encryption (ARC4 / RC4 "Enhanced Privacy")
 
@@ -61,8 +63,8 @@ Each entry has three fields:
 | Field | Meaning |
 | --- | --- |
 | `key_id` | The key identifier the radios advertise in the Privacy Indicator header. A system that rotates between several keys resolves to the right one by ID. |
-| `algorithm` | The cipher. Only `rc4` (alias `arc4`) is accepted. `aes` / `des` are rejected at config-load with an explicit "not supported yet" error so the schema can grow later without a config break. |
-| `key` | The raw key, hex-encoded (Enhanced Privacy keys are 40 bits = 10 hex digits). Surrounding whitespace, internal spaces and an optional `0x`/`0X` prefix are tolerated. 1–32 bytes. |
+| `algorithm` | The cipher: `rc4` (aliases `arc4`, `adp`) for DMR Enhanced Privacy and P25 ADP, `des` / `tdes` / `aes` for the P25 OFB family, `scrambler` (alias `nxdn`) for the NXDN 15-bit scrambler. Anything else is rejected at config load. |
+| `key` | The raw key, hex-encoded (Enhanced Privacy keys are 40 bits = 10 hex digits). Surrounding whitespace, internal spaces and an optional `0x`/`0X` prefix are tolerated. 1–32 bytes. A `scrambler` key is the radio's decimal 15-bit key, 1..32767, as the codeplug shows it. |
 
 The config is validated when the daemon loads it: an unknown
 algorithm, malformed hex, an over-length key, or a duplicate `key_id`
@@ -347,6 +349,92 @@ the algorithm); pitch continuity off the chance floor is the confirmation.
 Not decrypted on P25: DES-XL (0x9F, a different construction) and Phase 2
 TDMA (the composer's Phase 2 chain only publishes the Encryption Sync).
 
+## NXDN scrambler (cipher type 1, 15-bit key)
+
+NXDN radios (Kenwood NX-series, Icom IDAS) offer a built-in "scrambler"
+privacy mode: a 15-bit key, 1..32767, programmed per channel or per key
+slot in the codeplug. On air the SACCH superframe's VCALL message names
+the call's cipher (`cipher type 1` = scrambler, 2 = DES, 3 = AES) and a
+6-bit **key ID**, and the 49-bit AMBE+2 payload of every voice slot is
+XORed with a keystream from a 15-bit LFSR seeded by the key. With the
+key configured, the NXDN voice chain descrambles in-process; the
+recording is clear speech and the call is logged as encrypted with its
+cipher and key ID. GopherTrunk never brute-forces a key on air (the
+cryptolab `nxdn brute` tool does that offline against a frame dump, by
+design separately — see [cryptolab](cryptolab.md)).
+
+Keys go either on an NXDN **trunking system**, or — the common case, a
+conventional NXDN channel in the scan list — on the **channel** itself
+(`scanner.conventional[].encryption_keys`, also on a wideband dongle's
+`conventional:` list). `key_id` is the key ID the VCALL carries, which is
+the key slot number the radios were programmed with; a channel used by
+several groups with different keys lists one entry per key ID:
+
+```yaml
+scanner:
+  conventional:
+    - label: "Plant ops (NXDN96)"
+      frequency_hz: 447_100_000
+      mode: nxdn                   # nxdn (12.5 kHz NXDN96) or nxdn48
+      squelch_dbfs: -50
+      encryption_keys:
+        - key_id: 3
+          algorithm: scrambler
+          key: "32767"             # the radio's decimal 15-bit key
+        - key_id: 1
+          algorithm: scrambler
+          key: "12345"
+```
+
+What the voice chain does:
+
+1. Every LICH-valid traffic frame's SACCH block is decoded (deinterleave
+   → depuncture → K=5 Viterbi → CRC-6, register preset 0x3F / taps 0x27,
+   the MMDVMHost / DSD-FME CRC). Four blocks (structure field 3, 2, 1, 0)
+   assemble the 72-bit VCALL: source, destination, call type, cipher
+   type, key ID. It is logged (`composer: nxdn VCALL — call is encrypted
+   … cipher=scrambler key_id=3 key_configured=true`) and published as
+   `call.encryption` (`algorithm_id` = cipher type, `key_id`), so the
+   call log, web UI and `recordings.mute_encrypted` treat it like a DMR
+   or P25 encrypted call.
+2. The key for `(algorithm scrambler, key_id)` is looked up on the
+   call's system, then on the channel at the call's frequency.
+3. While keys are configured, voice is held until the first VCALL names
+   the cipher (one superframe, ~320 ms, capped at two); a clear call's
+   frames are released as they are, a scrambled call's are descrambled
+   when the key is known, otherwise released as ciphertext (the vocoder
+   then renders noise — set `mute_encrypted` to silence it). With no
+   keys configured anywhere the voice path is untouched.
+4. The keystream schedule is the one the reporter's two known-key
+   captures pinned (issue #1261): the register — output = state bit 0,
+   feedback = bit 0 ⊕ bit 1 shifted in at bit 14 — is reseeded from the
+   key at the first frame of every SACCH superframe and then runs 4 × 49
+   bits per LICH-valid air frame, voice frame or not; slot *v* takes bits
+   [49v, 49v+49). A brute force over all 32768 keys by AMBE pitch
+   continuity ranks the radios' programmed key first on both captures
+   (0.66 and 0.65 continuity against a 0.16 ciphertext floor). The call
+   ended log line carries `sacch_ok` / `sacch_fail`, `descrambled_frames`,
+   `ciphertext_frames` and `unaligned_frames` (frames released raw before
+   any SACCH block fixed the superframe phase).
+
+Check a capture offline with the harness (`GT_NXDN_SCR_IQ` = a cs16 IQ
+capture of the voice channel, e.g. the composer's `voice_iq_debug` file):
+
+```sh
+GT_NXDN_SCR_IQ=447.100MHz.cs16 GT_NXDN_SCR_RATE=2400000 GT_NXDN_SCR_KEY=32767 \
+  go test ./cmd/gophertrunk -run TestNXDNScramblerReplay -v
+```
+
+It prints the VCALL, the SACCH CRC yield and the pitch continuity of the
+voice as received and descrambled; `GT_NXDN_SCR_BRUTE=1` sweeps every key
+and ranks yours. Not decrypted: NXDN DES and AES (cipher types 2 and 3;
+identified and logged, recorded as ciphertext).
+
+**Status:** verified offline on the reporter's two known-key captures
+(keys 32767 and 12345, key IDs 3 and 1, both 128+ voice frames of
+speech after descrambling); a live daemon run with the key configured on
+the scan-list channel is the on-air confirmation still to come.
+
 ## Keys from a KFDtool key container (`.ekc`)
 
 [KFDtool](https://github.com/omahacommsys/KFDtool) is an open keyloader. Its
@@ -500,6 +588,8 @@ configured key it holds the *encrypted* frames.
   capture to validate the IV expansion against). On P25 they are applied
   (section above).
 - **Motorola Basic Privacy** (a 16-bit scrambler, not a cipher).
+- **NXDN DES / AES** (VCALL cipher types 2 and 3): identified from the
+  SACCH and logged, not decrypted (no capture).
 
 ## References
 
