@@ -226,7 +226,9 @@ recordings:
                     # P25 Phase 1, .amb for DMR/NXDN/P25p2) so recordings can be
                     # decoded offline with `dsd-fme -r <file>`; TETRA/ProVoice/
                     # analog have no dsd-fme playback mode and produce none
-  skip_encrypted: false  # don't write files for calls flagged encrypted.
+  skip_encrypted: false  # don't write files for calls flagged encrypted that
+                         # no encryption_keys entry decrypts (calls a key
+                         # covers are decrypted and recorded as usual).
                          # NOTE: true also suppresses the completed-call
                          # broadcast backends (webhook/rdioscanner) for
                          # encrypted calls — keep false to deliver them.
