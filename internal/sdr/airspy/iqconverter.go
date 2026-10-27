@@ -1,7 +1,5 @@
 package airspy
 
-import "encoding/binary"
-
 // The Airspy R2 / Mini are real-sampling receivers: the firmware streams the
 // bare ADC output — unpacked little-endian uint16 real samples (12-bit, DC at
 // 2048) — at twice the advertised IQ rate. Producing complex baseband is a
@@ -25,6 +23,16 @@ import "encoding/binary"
 // (zero on the odd taps except the unity-ish centre); only the 24 non-trivial
 // taps participate in the in-phase FIR, with the 0.5 centre tap folded into
 // the quadrature branch during the Fs/4 mix.
+//
+// Cost matters here: a Mini streams 6 M real samples/s, and this runs on one
+// goroutine (see Device.StreamIQ). The in-phase FIR evaluates the 24 taps as
+// 12 symmetric pairs over a mirrored (wrap-free) window, the four-sample mix
+// cycle is unrolled so the phase switch is decided once per cycle, and the
+// uint16 decode is inline — about 4× the throughput of the per-sample,
+// ring-buffer form it replaced on x86, which on a Raspberry Pi 4 was a sizeable
+// share of a core at 3 MS/s (#1321). The output is numerically the same
+// filter; only the float32 summation order differs (TestIQConverterMatchesReference
+// bounds it).
 
 const (
 	hbTaps = 24   // non-trivial half-band taps used by the in-phase FIR
@@ -61,10 +69,13 @@ var hbKernel = [hbTaps]float32{
 // 10 MS/s. StreamIQ now moves conversion off the reapers onto this single
 // goroutine, so the lock is gone.)
 type iqConverter struct {
-	avg     float32         // leaky DC-blocker accumulator
-	phase   int             // Fs/4 mix phase, 0..3, persists across packets
-	iwin    [hbTaps]float32 // in-phase FIR window (newest written at iwinPos)
-	iwinPos int             // next write position in iwin
+	avg   float32 // leaky DC-blocker accumulator
+	phase int     // Fs/4 mix phase, 0..3, persists across packets
+	// iwin is the in-phase FIR window stored twice (mirrored ring): the newest
+	// hbTaps samples are always the contiguous run iwin[iwinPos : iwinPos+hbTaps],
+	// oldest first, so the FIR never wraps.
+	iwin    [2 * hbTaps]float32
+	iwinPos int             // ring write position, 0..hbTaps-1
 	lastI   float32         // in-phase output awaiting its paired quadrature
 	qline   [hbHalf]float32 // quadrature delay line
 	qpos    int             // delay-line read/write cursor
@@ -80,65 +91,96 @@ func newIQConverter() *iqConverter { return &iqConverter{} }
 func (c *iqConverter) processRaw(buf []byte) []complex64 {
 	nReal := len(buf) / 2
 	out := make([]complex64, 0, nReal/2+1)
-	for i := 0; i < nReal; i++ {
-		x := (float32(binary.LittleEndian.Uint16(buf[2*i:])) - dcBias) / dcFull
-
-		// Leaky DC blocker: removes the residual ADC bias before the mix.
-		x -= c.avg
-		c.avg += dcLeak * x
-
-		switch c.phase {
-		case 0, 2:
-			// In-phase branch. The Fs/4 mix alternates the sign of the
-			// even samples; push into the FIR and recompute its output.
-			if c.phase == 0 {
-				x = -x
-			}
-			c.pushI(x)
-			c.lastI = c.firI()
-		case 1, 3:
-			// Quadrature branch. The mix alternates sign and folds in the
-			// 0.5 half-band centre tap; the matched delay aligns it with
-			// the in-phase FIR's group delay, then we emit one sample.
-			q := 0.5 * x
-			if c.phase == 1 {
-				q = -q
-			}
-			qOut := c.qline[c.qpos]
-			c.qline[c.qpos] = q
-			if c.qpos++; c.qpos >= hbHalf {
-				c.qpos = 0
-			}
-			out = append(out, complex(c.lastI, qOut))
-		}
-		if c.phase++; c.phase >= 4 {
-			c.phase = 0
-		}
+	i := 0
+	// Bring the phase to 0 one sample at a time (a payload is normally a
+	// multiple of four samples, so this runs only after an odd-sized one).
+	for ; i < nReal && c.phase != 0; i++ {
+		out = c.step(out, c.decode(buf, i))
+	}
+	// Unrolled four-sample mix cycle at phase 0: I(-), Q(-), I(+), Q(+).
+	for ; i+4 <= nReal; i += 4 {
+		c.pushI(-c.decode(buf, i))
+		c.lastI = c.firI()
+		qOut := c.pushQ(-0.5 * c.decode(buf, i+1))
+		out = append(out, complex(c.lastI, qOut))
+		c.pushI(c.decode(buf, i+2))
+		c.lastI = c.firI()
+		qOut = c.pushQ(0.5 * c.decode(buf, i+3))
+		out = append(out, complex(c.lastI, qOut))
+	}
+	for ; i < nReal; i++ {
+		out = c.step(out, c.decode(buf, i))
 	}
 	return out
 }
 
-// pushI stores the newest in-phase sample in the circular FIR window.
+// decode reads real sample i, removes the ADC midpoint, scales to ~[-1, 1)
+// and runs the leaky DC blocker.
+func (c *iqConverter) decode(buf []byte, i int) float32 {
+	x := (float32(uint16(buf[2*i])|uint16(buf[2*i+1])<<8) - dcBias) * (1.0 / dcFull)
+	x -= c.avg
+	c.avg += dcLeak * x
+	return x
+}
+
+// step runs one real sample through the mix / filter at the current phase and
+// advances it: the generic per-sample path the unrolled loop is equivalent to.
+func (c *iqConverter) step(out []complex64, x float32) []complex64 {
+	switch c.phase {
+	case 0, 2:
+		// In-phase branch. The Fs/4 mix alternates the sign of the even
+		// samples; push into the FIR and recompute its output.
+		if c.phase == 0 {
+			x = -x
+		}
+		c.pushI(x)
+		c.lastI = c.firI()
+	case 1, 3:
+		// Quadrature branch. The mix alternates sign and folds in the 0.5
+		// half-band centre tap; the matched delay aligns it with the in-phase
+		// FIR's group delay, then we emit one sample.
+		q := 0.5 * x
+		if c.phase == 1 {
+			q = -q
+		}
+		out = append(out, complex(c.lastI, c.pushQ(q)))
+	}
+	if c.phase++; c.phase >= 4 {
+		c.phase = 0
+	}
+	return out
+}
+
+// pushI stores the newest in-phase sample in the mirrored FIR window.
 func (c *iqConverter) pushI(v float32) {
 	c.iwin[c.iwinPos] = v
+	c.iwin[c.iwinPos+hbTaps] = v
 	if c.iwinPos++; c.iwinPos >= hbTaps {
 		c.iwinPos = 0
 	}
 }
 
-// firI evaluates the symmetric half-band FIR over the current window, with
-// hbKernel[0] weighting the newest sample and hbKernel[hbTaps-1] the oldest.
-func (c *iqConverter) firI() float32 {
-	var acc float32
-	idx := c.iwinPos - 1
-	if idx < 0 {
-		idx += hbTaps
+// pushQ writes q into the quadrature delay line and returns the sample that
+// falls out of it (hbHalf samples old).
+func (c *iqConverter) pushQ(q float32) float32 {
+	qOut := c.qline[c.qpos]
+	c.qline[c.qpos] = q
+	if c.qpos++; c.qpos >= hbHalf {
+		c.qpos = 0
 	}
-	for j := 0; j < hbTaps; j++ {
-		acc += hbKernel[j] * c.iwin[idx]
-		if idx--; idx < 0 {
-			idx += hbTaps
-		}
+	return qOut
+}
+
+// firI evaluates the symmetric half-band FIR over the current window:
+// hbKernel[0] weights the newest sample and hbKernel[hbTaps-1] the oldest, and
+// since hbKernel[j] == hbKernel[hbTaps-1-j] each coefficient multiplies the sum
+// of its two samples — 12 multiplies for 24 taps.
+func (c *iqConverter) firI() float32 {
+	w := c.iwin[c.iwinPos : c.iwinPos+hbTaps] // oldest … newest
+	var acc float32
+	for j := 0; j < hbHalf; j++ {
+		// newest-side sample for tap j is w[hbTaps-1-j]; oldest-side is w[j].
+		acc += hbKernel[j] * (w[hbTaps-1-j] + w[j])
 	}
 	return acc
 }

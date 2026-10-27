@@ -73,7 +73,10 @@ type DDCBank struct {
 	// per-tap resamplers it offloads. Nil when inRateHz is at/below the floor.
 	predec *dsp.Resampler
 	decBuf []complex64 // reduced-rate scratch reused across Process calls
-	mixBuf []complex64
+
+	// pool, when non-nil, runs the per-tap mix + resample + sink across worker
+	// goroutines (EnableWorkers); nil keeps the serial loop.
+	pool *tapPool
 }
 
 type ddcTap struct {
@@ -81,6 +84,7 @@ type ddcTap struct {
 	actualOut float64 // this tap's emitted rate (may differ per tap; see AddTapAtRate)
 	nco       *nco
 	resampler *dsp.Resampler
+	mixBuf    []complex64 // this tap's own mix scratch, so taps may run concurrently
 	outBuf    []complex64
 	sink      SinkFunc
 }
@@ -103,11 +107,37 @@ func NewDDCBank(inRateHz, outRateHz, guardFrac float64) *DDCBank {
 // e.g. a 70-channel DMR plan spread across ±1.9 MHz of a 10 MS/s capture,
 // which the default floor would reject with ErrOffsetOutOfBand.
 func NewDDCBankForSpan(inRateHz, outRateHz, guardFrac, requiredHalfHz float64) *DDCBank {
+	return NewDDCBankForPlan(inRateHz, outRateHz, guardFrac, requiredHalfHz, 0)
+}
+
+// NewDDCBankForPlan is NewDDCBankForSpan for a caller that also knows the
+// widest per-tap output rate its plan will register (maxTapRateHz, e.g. 144 kHz
+// for a TETRA tap, 48 kHz for DMR / P25). With that known, the shared
+// decimator may halve BELOW the 2.5 MS/s floor as long as every tap — out to
+// ±requiredHalfHz, plus half its own output rate — stays inside the shared
+// stage's flat passband (sharedDecimPassFrac of the reduced rate), so the
+// per-tap resamplers run at the lowest rate the plan allows. That is the
+// difference between keeping up and not on a small board (#1321): an Airspy
+// Mini cannot stream below 3 MS/s, and two TETRA cells within ±200 kHz of its
+// centre used to cost two full-rate 3 MS/s → 144 kHz resamplers (~250 taps per
+// output each) on the single pump goroutine; decimating the shared stream to
+// 375 kHz first makes each tap ~8× cheaper for one cheap shared stage. A
+// plan wider than the floor allows keeps the floor: behaviour above it is
+// unchanged. maxTapRateHz 0 is NewDDCBankForSpan.
+func NewDDCBankForPlan(inRateHz, outRateHz, guardFrac, requiredHalfHz, maxTapRateHz float64) *DDCBank {
 	minRedRateHz := 0.0
 	if requiredHalfHz > 0 && guardFrac < 0.5 {
 		minRedRateHz = requiredHalfHz / (0.5 - guardFrac)
 	}
-	redRateHz, decim := buildSharedDecimator(inRateHz, minRedRateHz)
+	floorHz := ddcDecimateFloorHz
+	if maxTapRateHz > 0 {
+		// The widest tap's channel must sit in the shared stage's passband:
+		// |offset| + tapRate/2 ≤ sharedDecimPassFrac · redRate.
+		if need := (requiredHalfHz + maxTapRateHz/2) / sharedDecimPassFrac; need < floorHz {
+			floorHz = need
+		}
+	}
+	redRateHz, decim := buildSharedDecimator(inRateHz, minRedRateHz, floorHz)
 	l, m := rationalRatio(outRateHz, redRateHz)
 	return &DDCBank{
 		inRateHz:    inRateHz,
@@ -126,6 +156,14 @@ func NewDDCBankForSpan(inRateHz, outRateHz, guardFrac, requiredHalfHz float64) *
 // ratio in the same regime the single-stage path was tuned for.
 const ddcDecimateFloorHz = 2_500_000.0
 
+// sharedDecimPassFrac is the fraction of the reduced rate the shared
+// decimator's passband is flat to. Its prototype is a Kaiser (β 7, ~72 dB)
+// lowpass of ddcStopbandTaps·D taps at cutoff redRate/2, whose transition
+// band is ≈0.37·redRate wide and centred on the cutoff — so content is
+// passed cleanly (and its alias rejected) only out to ≈0.31·redRate.
+// NewDDCBankForPlan lowers the floor only while every tap fits inside this.
+const sharedDecimPassFrac = 0.30
+
 // buildSharedDecimator picks the power-of-two decimation D that brings inRateHz
 // down to the [floor, 2·floor) window and returns the reduced rate plus a
 // shared decimate-by-D resampler (nil when inRateHz is already below 2·floor,
@@ -138,11 +176,13 @@ const ddcDecimateFloorHz = 2_500_000.0
 // the next halving would leave the rate at/above BOTH ddcDecimateFloorHz and
 // minRedRateHz. A caller hosting taps spread wider than the default ±1.1 MHz
 // passes the reduced rate its span demands so those taps stay in band; 0
-// selects the legacy floor-only behaviour.
-func buildSharedDecimator(inRateHz, minRedRateHz float64) (redRateHz float64, predec *dsp.Resampler) {
+// selects the legacy floor-only behaviour. floorHz is the lowest reduced rate
+// to target (ddcDecimateFloorHz, or lower when the caller has proved its
+// plan fits — NewDDCBankForPlan).
+func buildSharedDecimator(inRateHz, minRedRateHz, floorHz float64) (redRateHz float64, predec *dsp.Resampler) {
 	red := inRateHz
 	d := 1
-	for red/2 >= ddcDecimateFloorHz && red/2 >= minRedRateHz {
+	for red/2 >= floorHz && red/2 >= minRedRateHz {
 		red /= 2
 		d *= 2
 	}
@@ -206,6 +246,42 @@ func (b *DDCBank) offsetInBand(offsetHz float64) bool {
 	return offsetHz >= -half && offsetHz <= half
 }
 
+// EnableWorkers runs the per-tap chains (NCO mix, resample, sink) across up to
+// workers goroutines once there are at least two taps; a no-op otherwise (the
+// serial loop). Unlike the channelizer, whose per-tap work is a cheap
+// fine-tune off a shared FFT, a DDC tap resamples the whole reduced-rate
+// stream, so even two taps are worth splitting: on a four-core board the
+// two-TETRA-cell pump (#1321) was one saturated thread beside idle cores. Each
+// tap owns its mix / resampler / output buffers and reads the reduced stream
+// read-only, so taps are independent; sinks run concurrently with each other,
+// never with themselves, and Process barriers before returning. Call after
+// the last AddTap and before the first Process; Close stops the workers.
+func (b *DDCBank) EnableWorkers(workers int) {
+	if workers <= 1 || len(b.taps) < 2 {
+		return
+	}
+	b.pool = newTapPool(len(b.taps), workers)
+}
+
+// Close stops the worker pool, if any. Idempotent.
+func (b *DDCBank) Close() {
+	if b.pool != nil {
+		b.pool.close()
+	}
+}
+
+// processTap runs one tap's chain over the reduced-rate stream.
+func (b *DDCBank) processTap(t *ddcTap, wide []complex64) {
+	if cap(t.mixBuf) < len(wide) {
+		t.mixBuf = make([]complex64, len(wide))
+	} else {
+		t.mixBuf = t.mixBuf[:len(wide)]
+	}
+	mixInto(t.mixBuf, wide, t.nco)
+	t.outBuf = t.resampler.Process(t.outBuf, t.mixBuf)
+	t.sink(t.outBuf)
+}
+
 // Process mixes each tap down to baseband and decimates to OutputRateHz,
 // invoking each tap's sink with the resulting chunk.
 func (b *DDCBank) Process(src []complex64) {
@@ -223,30 +299,42 @@ func (b *DDCBank) Process(src []complex64) {
 		b.decBuf = b.predec.Process(b.decBuf, src)
 		wide = b.decBuf
 	}
-	if cap(b.mixBuf) < len(wide) {
-		b.mixBuf = make([]complex64, len(wide))
-	} else {
-		b.mixBuf = b.mixBuf[:len(wide)]
+	if b.pool != nil {
+		b.pool.run(func(i int) { b.processTap(b.taps[i], wide) })
+		return
 	}
 	for _, t := range b.taps {
-		mixInto(b.mixBuf, wide, t.nco)
-		t.outBuf = t.resampler.Process(t.outBuf, b.mixBuf)
-		t.sink(t.outBuf)
+		b.processTap(t, wide)
 	}
 }
 
 // mixInto multiplies src by the NCO phasor and writes to dst (len(dst) ==
 // len(src) is the caller's contract). The phasor is advanced and
 // periodically renormalised to stay on the unit circle.
+//
+// The products are spelled out in float32: Go evaluates a complex64 multiply
+// through float64 (widen, multiply, narrow), which on 32-bit and small ARM
+// cores is the slow part of this loop (the fft.Radix2 lesson). The float32
+// phasor recursion rounds differently from the complex64 one, so the mixed
+// stream is not bit-identical to the pre-#1321 one; the NCO's periodic
+// renormalisation bounds the drift exactly as before.
 func mixInto(dst, src []complex64, n *nco) {
+	pr, pi := real(n.phasor), imag(n.phasor)
+	sr, si := real(n.step), imag(n.step)
+	left := n.renormEveryN - n.sinceRenorm
 	for i, x := range src {
-		dst[i] = x * n.phasor
-		n.phasor *= n.step
-		n.sinceRenorm++
-		if n.sinceRenorm >= n.renormEveryN {
+		xr, xi := real(x), imag(x)
+		dst[i] = complex(xr*pr-xi*pi, xr*pi+xi*pr)
+		pr, pi = pr*sr-pi*si, pr*si+pi*sr
+		if left--; left <= 0 {
+			n.phasor = complex(pr, pi)
 			n.renorm()
+			pr, pi = real(n.phasor), imag(n.phasor)
+			left = n.renormEveryN
 		}
 	}
+	n.phasor = complex(pr, pi)
+	n.sinceRenorm = n.renormEveryN - left
 }
 
 // InputRateHz returns the wide-band sample rate.

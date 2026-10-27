@@ -373,7 +373,7 @@ func TestDDCBankDecimationFactorSelection(t *testing.T) {
 		{20_000_000, 2_500_000, true},
 	}
 	for _, c := range cases {
-		red, predec := buildSharedDecimator(c.inRate, 0)
+		red, predec := buildSharedDecimator(c.inRate, 0, ddcDecimateFloorHz)
 		if red != c.wantRed || (predec != nil) != c.wantDecim {
 			t.Errorf("buildSharedDecimator(%.0f) = red %.0f / predec!=nil %v, want red %.0f / %v",
 				c.inRate, red, predec != nil, c.wantRed, c.wantDecim)
@@ -511,5 +511,125 @@ func TestDDCBankPerTapRates(t *testing.T) {
 	}
 	if ratio := float64(got144) / float64(got48); math.Abs(ratio-3) > 0.15 {
 		t.Errorf("144k/48k sample ratio = %.2f, want ~3", ratio)
+	}
+}
+
+// TestDDCBankForPlanDecimatesNarrowPlanBelowFloor is the #1321 pin: an Airspy
+// Mini's 3 MS/s minimum carrying two TETRA cells within ±37.5 kHz of centre
+// used to run each 144 kHz tap off the full 3 MS/s (the shared decimator's
+// 2.5 MS/s floor never engaged below 5 MS/s). With the plan's widest tap rate
+// known, the shared stage takes the stream to 375 kHz — the lowest halving
+// that keeps |offset| + 72 kHz inside its flat passband — and the taps still
+// land their carriers at DC. The default constructor keeps the old behaviour.
+func TestDDCBankForPlanDecimatesNarrowPlanBelowFloor(t *testing.T) {
+	const (
+		inRate  = 3_000_000.0
+		tetraHz = 144_000.0
+		far     = 37_500.0
+	)
+	if b := NewDDCBankForSpan(inRate, 48_000, 0.05, far); b.predec != nil || b.redRateHz != inRate {
+		t.Fatalf("span-only bank must keep the legacy no-decimation path at 3 MS/s: red %.0f", b.redRateHz)
+	}
+	b := NewDDCBankForPlan(inRate, 48_000, 0.05, far, tetraHz)
+	if b.predec == nil || b.redRateHz != 375_000 {
+		t.Fatalf("plan-aware bank: reduced rate %.0f (predec %v), want 375000 with a shared decimator", b.redRateHz, b.predec != nil)
+	}
+	// (37.5k + 72k) / 0.30 = 365 kHz: 375 kHz fits, 187.5 kHz would not.
+	// One tone per run: both carriers sit inside each 144 kHz tap's ±72 kHz
+	// passband, so a two-tone stream would (correctly) split a tap's power.
+	for _, off := range []float64{0, -far} {
+		b := NewDDCBankForPlan(inRate, 48_000, 0.05, far, tetraHz)
+		var got []complex64
+		for _, o := range []float64{0, -far} {
+			o := o
+			sink := func([]complex64) {}
+			if o == off {
+				sink = func(out []complex64) { got = append(got, out...) }
+			}
+			if _, err := b.AddTapAtRate(o, tetraHz, sink); err != nil {
+				t.Fatal(err)
+			}
+		}
+		gen := newToneGen(inRate, 0.3, off)
+		for i := 0; i < 200 && len(got) < 6000; i++ {
+			b.Process(gen.Next(8192))
+		}
+		if len(got) < 2048 {
+			t.Fatalf("tap at %.0f Hz: too few output samples: %d", off, len(got))
+		}
+		settled := got[len(got)/2:]
+		if frac := powerNearDC(settled, tetraHz, 500); frac < 0.90 {
+			t.Errorf("tap at %.0f Hz: only %.1f%% of power within ±500 Hz of DC through the 375 kHz shared stage", off, frac*100)
+		}
+	}
+}
+
+// TestDDCBankForPlanKeepsFloorForWidePlans: the lower floor is taken only
+// when the plan fits the shared stage's passband. A plan spread to ±1.0 MHz
+// at 3 MS/s cannot decimate at all, and the 70-DMR 10 MS/s stress plan
+// (±1.9 MHz, 48 kHz taps) keeps its 5 MS/s reduced rate exactly as
+// NewDDCBankForSpan picks it — behaviour above the floor is unchanged.
+func TestDDCBankForPlanKeepsFloorForWidePlans(t *testing.T) {
+	if b := NewDDCBankForPlan(3_000_000, 48_000, 0.05, 1_000_000, 144_000); b.predec != nil || b.redRateHz != 3_000_000 {
+		t.Errorf("±1 MHz plan at 3 MS/s: reduced rate %.0f, want 3000000 (no decimation)", b.redRateHz)
+	}
+	span := NewDDCBankForSpan(10_000_000, 48_000, 0.05, 1_900_000)
+	plan := NewDDCBankForPlan(10_000_000, 48_000, 0.05, 1_900_000, 48_000)
+	if plan.redRateHz != span.redRateHz || plan.redRateHz != 5_000_000 {
+		t.Errorf("70-DMR plan: plan-aware reduced rate %.0f, span-only %.0f, want both 5000000", plan.redRateHz, span.redRateHz)
+	}
+	// A single centred 48 kHz tap at 2.4 MS/s may go all the way down to
+	// 150 kHz (24 kHz / 0.30 = 80 kHz floor): the per-tap resampler then
+	// runs 16× slower than off the raw stream.
+	if b := NewDDCBankForPlan(2_400_000, 48_000, 0.05, 0, 48_000); b.redRateHz != 150_000 {
+		t.Errorf("centred 48 kHz tap at 2.4 MS/s: reduced rate %.0f, want 150000", b.redRateHz)
+	}
+}
+
+// TestDDCWorkersDeterministic: the DDC bank's per-tap worker path (two taps
+// are enough to enable it) is bit-identical to the serial loop — each tap owns
+// its mix / resampler / output buffers and reads the shared reduced-rate
+// stream read-only.
+func TestDDCWorkersDeterministic(t *testing.T) {
+	build := func() (*DDCBank, [][]complex64) {
+		offs := []float64{0, -37_500, 212_500}
+		b := NewDDCBankForPlan(3_000_000, 48_000, 0.05, 212_500, 144_000)
+		caps := make([][]complex64, len(offs))
+		for i, o := range offs {
+			i := i
+			if _, err := b.AddTapAtRate(o, 144_000, func(out []complex64) { caps[i] = append(caps[i], out...) }); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return b, caps
+	}
+	serial, serialOut := build()
+	parallel, parallelOut := build()
+	parallel.EnableWorkers(3)
+	defer parallel.Close()
+	if parallel.pool == nil {
+		t.Fatal("EnableWorkers(3) left a 3-tap DDC bank serial")
+	}
+	single, _ := build()
+	single.taps = single.taps[:1]
+	single.EnableWorkers(3)
+	if single.pool != nil {
+		t.Fatal("a single tap must stay serial")
+	}
+	gen1 := newToneGen(3_000_000, 0.2, 0, -37_500, 212_500)
+	gen2 := newToneGen(3_000_000, 0.2, 0, -37_500, 212_500)
+	for c := 0; c < 20; c++ {
+		serial.Process(gen1.Next(8192))
+		parallel.Process(gen2.Next(8192))
+	}
+	for i := range serialOut {
+		if len(serialOut[i]) != len(parallelOut[i]) || len(serialOut[i]) == 0 {
+			t.Fatalf("tap %d output length: serial %d, parallel %d", i, len(serialOut[i]), len(parallelOut[i]))
+		}
+		for j := range serialOut[i] {
+			if serialOut[i][j] != parallelOut[i][j] {
+				t.Fatalf("tap %d sample %d differs: serial %v, parallel %v", i, j, serialOut[i][j], parallelOut[i][j])
+			}
+		}
 	}
 }

@@ -8,6 +8,20 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Airspy Mini on a Raspberry Pi 4 saturated one core at 3 MS/s with two TETRA
+  cells ("dropping live IQ chunks", #1321).** Three things on the wideband
+  pump, each a measured win on the dual-TETRA 3 MS/s benchmark
+  (`TestEngineDualTETRA200kThroughput`, `GT_WB_BENCH_RATE=3000000`): the DDC
+  bank's shared decimator now engages below its old 2.5 MS/s floor whenever the
+  channel plan fits — two TETRA taps within ±200 kHz of a 3 MS/s centre run off
+  375 kHz instead of the raw stream, each ~8× cheaper; the per-tap chains run on
+  worker goroutines (two taps, two cores) instead of one pump thread; and the
+  polyphase resampler no longer walks every commutator phase per input sample
+  (bit-identical output). Wall-clock per 10 s of IQ fell 0.39× → 0.18× real
+  time on a 2.8 GHz x86 core, CPU time by ~40 %. The Airspy real→IQ converter
+  (one goroutine per stream, 6 M real samples/s on a Mini) is ~2× faster:
+  symmetric-pair FIR over a wrap-free window, unrolled mix cycle. Not yet
+  measured on a Pi 4; the reporter's run is the gate.
 - **APRS, AIS, DSC, POCSAG, FLEX, M17, MDC1200 and FleetSync now channel-filter
   before demodulating (#1316).** Every single-channel decoder ran its FM
   discriminator on the SDR's full-rate IQ — 2.4 MHz of noise around a 12.5 kHz
