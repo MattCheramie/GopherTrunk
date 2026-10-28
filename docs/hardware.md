@@ -19,6 +19,7 @@ transport (USBDEVFS on Linux, IOKit on macOS, WinUSB on Windows).
 | **RTL-SDR** (RTL2832U / RTL2838U + R820T / R820T2 / R828D / E4000 / FC0012 / FC0013 / FC2580) | `rtlsdr` | `0x0bda:0x2832` · `0x0bda:0x2838` | Production — on-air-validated across Linux / macOS / Windows. |
 | **HackRF One / Jawbreaker / Rad1o / Pro** | `hackrf` | `0x1d50:0x6089` · `0x1d50:0x604b` · `0x1d50:0xcc15` | Wire-protocol-complete; exercised and fixed against attached hardware in the field (Pro board-ID, `fpga_dc_block`, `dc_avoid`, `rf_amp`), with a hardware-gated harness (`internal/sdr/hackrf/hackrf_real_test.go`, `GOPHERTRUNK_HACKRF_REAL`). |
 | **Airspy R2 / Airspy Mini** | `airspy` | `0x1d50:0x60a1` | Wire-protocol-complete; exercised against attached hardware in the field (macOS async bulk-IN, native-rate behaviour), with a hardware-gated harness (`internal/sdr/airspy/airspy_real_test.go`, `GOPHERTRUNK_AIRSPY_REAL`). |
+| **HydraSDR RFOne** | `hydrasdr` | `0x38af:0x0001` · `0x1d50:0x60a1` (older units, told apart from an Airspy by the USB Product string) | Wire-protocol-complete against the vendor's `hydrasdr-host` library (#1325); shares the Airspy driver's stream path and real-to-IQ converter. Not yet run against attached hardware. |
 | **Airspy HF+ Discovery / HF+ Dual Port / legacy HF+** | `airspyhf` | `0x03eb:0x800c` | Wire-protocol-complete; HF (9 kHz – 31 MHz) + VHF (60 – 260 MHz). A hardware-gated harness now exists (`internal/sdr/airspyhf/airspyhf_real_test.go`, `GOPHERTRUNK_AIRSPYHF_REAL`); on-air validation against attached hardware is still pending. |
 | **rtl_tcp remote** (any librtlsdr-shipped server) | `rtltcp` | TCP | Remote RTL-SDR mounted over the network. See [Remote rtl_tcp SDRs](#remote-rtl_tcp-sdrs). |
 | **SoapySDRServer remote** (USRP / LimeSDR / bladeRF / HackRF / Airspy / RTL-SDR / SDRplay …) | `soapyremote` | TCP | Any SoapySDR-supported radio mounted over the network with 16/32-bit IQ + control. Field-tested on air against USRP X310 and B210 rigs (single-branch; MRC diversity combining is still experimental). See [Remote SoapySDRServer SDRs](#remote-soapysdrserver-sdrs). |
@@ -140,6 +141,7 @@ sdr:
 | --- | --- | --- | --- | --- | --- | --- |
 | **Airspy R2** | `0x60a1` (`airspy`) | 24 – 1700 MHz | 10 MSPS | R820T LNA + Mixer + VGA (each 0–15) with per-stage AGC | +4.5 V on SMA | Most common variant. Identified by the USB Product string `Airspy R2`. |
 | **Airspy Mini** | `0x60a1` (`airspy`) | 24 – 1700 MHz | 6 MSPS | Same as R2 | +4.5 V on SMA | Identified by the `MINI` substring in the USB Product string. Same R820T tuner; smaller form factor and lower max rate. |
+| **HydraSDR RFOne** | `0x38af:0x0001` or `0x1d50:0x60a1` (`hydrasdr`) | 24 – 1800 MHz | 10 MSPS | R828D LNA (0–14) + Mixer + VGA (each 0–15) with LNA / mixer AGC | +4.5 V on the ANT port | Airspy R2 successor with the same 12-bit real-sampling design. A `0x1d50:0x60a1` unit is listed under `hydrasdr` when its USB Product string names HydraSDR, under `airspy` otherwise. Frequency is sent as a 64-bit value and the bias tee uses the RFOne's own command, so it is not driven as an Airspy. Firmware that reports per-rate ADC widths (8–16 bit) is honoured; older firmware is 12-bit at every rate. The ANT port is used (CABLE1/CABLE2 selection is not exposed). |
 | **Airspy HF+ Discovery** | `0x800c` (`airspyhf`) | 9 kHz – 31 MHz HF + 60 – 260 MHz VHF | 768 kSPS | HF AGC (firmware-managed) + HF attenuator 0–48 dB (6 dB steps) + +6 dB LNA preamp | +4.5 V on HF SMA | Most popular HF receiver. `gain: "auto"` enables firmware HF AGC; numeric values map to attenuator step + LNA preamp. |
 | Airspy HF+ Dual Port | `0x800c` (`airspyhf`) | Same as Discovery | 768 kSPS | Same as Discovery | +4.5 V on the HF SMA only | Identified by the `DUAL` substring. The VHF SMA does not carry bias voltage. |
 | Legacy Airspy HF+ | `0x800c` (`airspyhf`) | Same as Discovery | 768 kSPS | Same as Discovery | Hardware-revision dependent | Pre-Discovery hardware; uncommon. |
@@ -292,6 +294,9 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="cc15", MODE="0666"
 # /etc/udev/rules.d/22-airspy.rules
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="60a1", MODE="0666"
 
+# /etc/udev/rules.d/22-hydrasdr.rules (older RFOne units use the Airspy rule above)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="38af", ATTRS{idProduct}=="0001", MODE="0666"
+
 # /etc/udev/rules.d/23-airspyhf.rules
 SUBSYSTEM=="usb", ATTRS{idVendor}=="03eb", ATTRS{idProduct}=="800c", MODE="0666"
 ```
@@ -356,13 +361,14 @@ tuner type, and the supported gain values:
 - **Airspy R2 / Mini** report `R820T (Airspy R2)` or
   `R820T (Airspy Mini)`; the variant is inferred from the USB
   descriptor's Product string.
+- **HydraSDR RFOne** reports `R828D (HydraSDR RFOne)`.
 - **Airspy HF+** reports `Airspy HF+ Discovery` /
   `Airspy HF+ Dual Port` / `Airspy HF+` (with a firmware suffix when
   available) for both `Product` and `TunerName` — there's no
   conventional tuner chip to name.
 
-The `Driver` column reads `rtlsdr`, `hackrf`, `airspy`, or
-`airspyhf` for each row.
+The `Driver` column reads `rtlsdr`, `hackrf`, `airspy`, `hydrasdr`,
+or `airspyhf` for each row.
 
 ## Sharing one dongle across multiple repeaters
 
