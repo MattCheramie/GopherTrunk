@@ -8,6 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`wmbus -log` now records why a live run stopped (#1256).** The reason
+  (`wmbus: IQ stream ended: …` with the SDR's or rtl_tcp server's own cause),
+  SDR / USB driver warnings, the stop hints and any fatal error went to the
+  screen only, so a run that stopped by itself in the field left a log that
+  just ended. Everything `wmbus` prints now also goes to the `-log` file, as
+  `{"status": …}` lines with `-json`.
 - **`recordings.skip_encrypted` no longer discards calls a configured key
   decrypts (#1261).** With it on, an encrypted call was dropped (at the grant,
   or aborted the moment a mid-call VCALL / Encryption Sync / PI header named

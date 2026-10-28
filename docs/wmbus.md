@@ -89,8 +89,15 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 - `-save-frames DIR` keeps the radio signal (IQ) around each telegram; see
   [Saving telegrams to share](#saving-telegrams-to-share).
 - `-log FILE` appends every telegram line and progress line to FILE as it
-  happens. It survives Ctrl-C and a closed terminal; prefer it to `| tee`,
-  which Ctrl-C kills along with GopherTrunk (or use `| tee -i`).
+  happens, and everything else GopherTrunk prints too: SDR / USB warnings,
+  the stop hints, and the reason a live run ended (for example `wmbus: IQ
+  stream ended: …` when the SDR or rtl_tcp server goes away). It survives
+  Ctrl-C and a closed terminal; prefer it to `| tee`, which Ctrl-C kills
+  along with GopherTrunk (or use `| tee -i`). If a run stops on its own,
+  `tail -n 20 FILE` shows why. Only a process the system kills outright
+  (Android freeing memory, `kill -9`) gets no chance to write anything;
+  Termux then shows `[Process completed (signal 9)]`, and
+  `termux-wake-lock` before starting usually prevents it.
 - Ctrl-C, `kill` / `pkill gophertrunk` (SIGTERM) and a closed terminal all
   stop a live run the same way, with its summary. If the SDR does not close
   within 5 s (a USB transfer stuck on a phone) it says so and exits anyway.
@@ -205,8 +212,9 @@ while (my $line = <STDIN>) {
 
 To keep a file and read it as well, use `-json -log meters.json`. With
 `-json`, the progress lines in the log are JSON too
-(`{"time": …, "status": "wmbus: listening …"}`), so every line of the file
-parses; skip the ones with a `status` key, as the example does. A script
+(`{"time": …, "status": "wmbus: listening …"}`), and so are the warnings
+and the stop reason, so every line of the file parses; skip the ones with a
+`status` key, as the example does. A script
 can follow the file with `tail -F meters.json | perl meters.pl` while
 GopherTrunk runs, or read it afterwards.
 
