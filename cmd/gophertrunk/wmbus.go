@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/radio/wmbus"
@@ -41,7 +43,7 @@ func runWMBus(args []string) {
 	all := fs.Bool("all", false, "also print frames whose CRC failed")
 	saveFrames := fs.String("save-frames", "", "write the IQ around each telegram to this directory (an IQ .wav plus a .metadata.json per telegram; a few hundred KB each, small enough to share), live or from -in; CRC-valid telegrams only unless -all is set")
 	status := fs.Duration("status", 30*time.Second, "live: print a progress line (frames, CRC-valid / CRC-failed, access codes, dropped chunks) this often; 0 = only at the end")
-	logPath := fs.String("log", "", "also append every telegram and progress line to this file, written as it happens (survives Ctrl-C, a closed terminal or a killed `| tee`)")
+	logPath := fs.String("log", "", "also append every telegram, progress line, warning and the reason a live run stopped to this file, written as it happens (survives Ctrl-C, a closed terminal or a killed `| tee`)")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk wmbus — Wireless M-Bus (EN 13757-4) meter telegram decoder, modes T1 and C1 at 868.95 MHz.
@@ -117,15 +119,21 @@ FLAGS:`)
 		}
 		defer logFile.Close()
 	}
+	// stderr is the screen, plus the -log file once one is open: every
+	// diagnostic wmbus prints (the reason a live run stopped, SDR / USB
+	// warnings, the stop hints, a fatal error) reaches the log too. They
+	// used to go to the screen only, so a run that stopped on its own in
+	// the field left a log that ended mid-stream with no reason (#1256).
+	var stderr io.Writer = os.Stderr
+	if logFile != nil {
+		echo := newWMBusLogEcho(logFile, *asJSON)
+		stderr = io.MultiWriter(os.Stderr, echo)
+		rep.Out = stderr
+	}
 	// statusf prints a progress / summary line to stderr and the -log file.
 	// With -json the log gets it as a {"status": …} object, so every line
 	// of the log parses as JSON for a script reading it.
-	statusf := func(line string) {
-		fmt.Fprintln(os.Stderr, line)
-		if logFile != nil {
-			fmt.Fprintln(logFile, wmbusLogStatusLine(line, *asJSON))
-		}
-	}
+	statusf := func(line string) { fmt.Fprintln(stderr, line) }
 	var stdout io.Writer = os.Stdout
 	if logFile != nil {
 		// The log first: io.MultiWriter stops at the first failed write,
@@ -153,7 +161,7 @@ FLAGS:`)
 			return
 		}
 		if err := saver.flush(true); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(stderr, err)
 		}
 		statusf(fmt.Sprintf("wmbus: saved %d telegram snippet(s) to %s", saver.saved, *saveFrames))
 	}
@@ -186,7 +194,7 @@ FLAGS:`)
 			rep.Fatal(1, err)
 		}
 		for _, n := range notes {
-			fmt.Fprintln(os.Stderr, n)
+			fmt.Fprintln(stderr, n)
 		}
 		rateHz := float64(*rate)
 		stamp = func(s int64) string { return fmt.Sprintf("t=%8.3fs", float64(s)/rateHz) }
@@ -208,17 +216,20 @@ FLAGS:`)
 	if !ok {
 		rep.Fatalf(2, `-gain: want "auto" or tenths of a dB, got %q`, *gain)
 	}
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	// The SDR drivers report USB recovery and stream trouble through the
+	// default logger; route it through the same writer so it reaches -log.
+	slog.SetDefault(log)
 	dev, name, err := openPowerDevice(*rtlTCP, *serial, log)
 	if err != nil {
 		rep.Fatal(1, err)
 	}
-	defer closeSDRBounded(dev, sdrCloseTimeout, os.Stderr, "wmbus")
+	defer closeSDRBounded(dev, sdrCloseTimeout, stderr, "wmbus")
 	if err := dev.SetSampleRate(uint32(*rate)); err != nil {
 		rep.Fatal(1, fmt.Errorf("set sample rate: %w", err))
 	}
 	if hw, note := captureEffectiveRate(dev, uint32(*rate)); note != "" {
-		fmt.Fprintln(os.Stderr, strings.Replace(note, "capture:", "wmbus:", 1))
+		fmt.Fprintln(stderr, strings.Replace(note, "capture:", "wmbus:", 1))
 		*rate = uint(hw)
 	}
 	if *ppm != 0 {
@@ -232,7 +243,7 @@ FLAGS:`)
 	if err := dev.SetCenterFreq(uint32(*freq)); err != nil {
 		rep.Fatal(1, fmt.Errorf("tune %d Hz: %w", *freq, err))
 	}
-	ctx, stop := sdrStopContext("wmbus", os.Stderr)
+	ctx, stop := sdrStopContext("wmbus", stderr)
 	defer stop()
 	if *seconds > 0 {
 		var cancel context.CancelFunc
@@ -249,9 +260,9 @@ FLAGS:`)
 	drops := &captureDropCounter{serial: dev.Info().Serial}
 	sdr.SetIQDropObserver(drops.observe)
 	defer sdr.SetIQDropObserver(nil)
-	fmt.Fprintf(os.Stderr, "wmbus: listening on %s at %.3f MHz, %d S/s (Ctrl-C to stop)\n", name, float64(*freq)/1e6, *rate)
+	fmt.Fprintf(stderr, "wmbus: listening on %s at %.3f MHz, %d S/s (Ctrl-C to stop)\n", name, float64(*freq)/1e6, *rate)
 	if saver != nil && !*all {
-		fmt.Fprintln(os.Stderr, "wmbus: -save-frames keeps CRC-valid telegrams only; add -all to keep the CRC-failed ones too")
+		fmt.Fprintln(stderr, "wmbus: -save-frames keeps CRC-valid telegrams only; add -all to keep the CRC-failed ones too")
 	}
 	ended := listenWMBus(ctx, stream, rx, saver, wmbusListenOptions{
 		RateHz: float64(*rate), Status: *status, Drops: drops.count,
@@ -371,6 +382,45 @@ func wmbusCarrierNote(st wmbus.ReceiverStats) string {
 // is, or with -json as a {"status": …} object, so a script reading the log
 // can parse every line and tell telegrams (which have "frame") from
 // progress.
+// wmbusLogEcho copies what wmbus prints to the screen into the -log file,
+// one log line per printed line, wrapped by wmbusLogStatusLine so a -json
+// log still parses line by line. It buffers a partial line until its
+// newline (slog and fmt.Fprintf may write a line in pieces) and is safe for
+// the driver goroutines that log through slog while the main loop prints.
+type wmbusLogEcho struct {
+	mu      sync.Mutex
+	w       io.Writer
+	asJSON  bool
+	pending []byte
+}
+
+func newWMBusLogEcho(w io.Writer, asJSON bool) *wmbusLogEcho {
+	return &wmbusLogEcho{w: w, asJSON: asJSON}
+}
+
+// Write implements io.Writer. It always reports len(p): a log write that
+// fails must not stop io.MultiWriter from reaching the screen after it.
+func (e *wmbusLogEcho) Write(p []byte) (int, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.pending = append(e.pending, p...)
+	for {
+		i := bytes.IndexByte(e.pending, '\n')
+		if i < 0 {
+			break
+		}
+		line := strings.TrimRight(string(e.pending[:i]), "\r")
+		e.pending = e.pending[i+1:]
+		if line == "" {
+			continue
+		}
+		// One Write per line, so a line never interleaves with the
+		// telegram lines the main loop writes to the same file.
+		_, _ = io.WriteString(e.w, wmbusLogStatusLine(line, e.asJSON)+"\n")
+	}
+	return len(p), nil
+}
+
 func wmbusLogStatusLine(line string, asJSON bool) string {
 	if !asJSON {
 		return line
