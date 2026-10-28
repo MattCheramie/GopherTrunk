@@ -171,6 +171,28 @@ lower the voice SDR gain and re-check. Note some SDRs (e.g. UHD/SoapyRemote
 front-ends) reject `set_rx_agc` — the daemon logs `disable agc not
 applied` and the gain must then be set manually rather than relying on AGC.
 
+**The counters are cumulative over the voice chain**, and with
+`trunking.voice_call_grouping: conversation` one chain carries every over
+on the talkgroup, from every radio. So read the per-transmission line
+beside it, logged when each over ends (at its terminator, when the next
+over's link control names a different radio, or at the end of the call):
+
+```
+composer: p25p1 transmission quality serial=… tx=3 src=1234567 ldus=26
+  corrected_bit_errs=2545 errs_per_ldu=97.9 uncorrectable_ldus=4
+  lc_rs_uncorrectable=10 ess_rs_uncorrectable=8 short_ldus=0 carrier_offset_hz=-212
+```
+
+- `src` is the radio that keyed the over (0 if no link control decoded).
+- `errs_per_ldu` is the error rate to compare. A clean over is a few
+  bits per LDU; tens to a hundred is a weak or distant signal.
+- High `errs_per_ldu` on **one** `src`, with clean overs from other radios
+  on the same call, is that radio's signal into the site (a handheld far
+  away, or inside a building). Nothing on your receiver will fix it.
+- High `errs_per_ldu` on **every** radio that keys after some point is
+  your side: gain, antenna, interference, or IQ holes (`short_ldus`, and
+  the `voice IQ has holes` WARN).
+
 ## Knox / call-alert tones
 
 If your captured call contains AMBE+2 knox tones (b1 ∈ [144, 163]),
