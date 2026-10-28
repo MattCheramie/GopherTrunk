@@ -567,7 +567,8 @@ entry is decrypted in-process and never muted; encryption discovered
 mid-call (a P25 LDU2 Encryption Sync) mutes from that frame on. The
 call-ended log line carries `muted_frames` so a silent recording of an
 encrypted call reads as intended. `skip_encrypted` remains the stronger
-option (no file at all).
+option (no file at all); like the mute, it spares a call a configured key
+decrypts.
 
 ## Decoding the `.raw` sidecar out-of-band
 

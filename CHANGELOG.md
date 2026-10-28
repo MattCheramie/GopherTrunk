@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`recordings.skip_encrypted` no longer discards calls a configured key
+  decrypts (#1261).** With it on, an encrypted call was dropped (at the grant,
+  or aborted the moment a mid-call VCALL / Encryption Sync / PI header named
+  the cipher) even when an `encryption_keys` entry covered it and the voice
+  chain was producing clear audio, so no decrypted NXDN scrambler call ever
+  recorded (`recorder: aborted mid-call encrypted recording` right after
+  `call is encrypted … key_configured=true`). It now skips only calls no key
+  decrypts, the same test `mute_encrypted` already used.
 - **APRS, AIS, DSC, POCSAG, FLEX, M17, MDC1200 and FleetSync now channel-filter
   before demodulating (#1316).** Every single-channel decoder ran its FM
   discriminator on the SDR's full-rate IQ — 2.4 MHz of noise around a 12.5 kHz
