@@ -78,6 +78,11 @@ var gainPresetsTenthDB = []int{0, 100, 200, 300, 400, 500}
 // Driver implements sdr.Driver for Airspy.
 type Driver struct {
 	enum usb.Enumerator
+	// hydra selects the HydraSDR RFOne variant of the protocol (see
+	// hydrasdr.go). The Airspy and HydraSDR drivers are the same code with
+	// this one switch: the RFOne firmware descends from the Airspy's and
+	// keeps its vendor-request numbering.
+	hydra bool
 
 	mu     sync.Mutex
 	cached []usb.Descriptor
@@ -92,14 +97,14 @@ func New(enum usb.Enumerator) *Driver {
 }
 
 // Name implements sdr.Driver.
-func (d *Driver) Name() string { return driverName }
+func (d *Driver) Name() string { return d.driverName() }
 
 // Enumerate finds every Airspy on the bus and caches the descriptor
 // list so a subsequent Open reuses the same ordering.
 func (d *Driver) Enumerate() ([]sdr.Info, error) {
-	descs, err := d.enum.List(vidAirspy, pidAirspy)
+	descs, err := d.listDescriptors()
 	if err != nil {
-		return nil, fmt.Errorf("airspy: enumerate: %w", err)
+		return nil, fmt.Errorf("%s: enumerate: %w", d.driverName(), err)
 	}
 	d.mu.Lock()
 	d.cached = descs
@@ -107,17 +112,13 @@ func (d *Driver) Enumerate() ([]sdr.Info, error) {
 
 	out := make([]sdr.Info, len(descs))
 	for i, desc := range descs {
-		serial := desc.Serial
-		if serial == "" {
-			serial = fmt.Sprintf("airspy-%02d", i)
-		}
 		out[i] = sdr.Info{
-			Driver:       driverName,
+			Driver:       d.driverName(),
 			Index:        i,
-			Serial:       serial,
+			Serial:       d.fallbackSerial(desc.Serial, i),
 			Manufacturer: desc.Manufacturer,
 			Product:      desc.Product,
-			TunerName:    tunerNameFor(desc.Product),
+			TunerName:    d.tunerName(desc.Product),
 			Gains:        gainPresetsTenthDB,
 		}
 	}
@@ -153,10 +154,10 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		d.mu.Unlock()
 	}
 	if idx < 0 || idx >= len(cached) {
-		return nil, fmt.Errorf("airspy: index %d out of range", idx)
+		return nil, fmt.Errorf("%s: index %d out of range", d.driverName(), idx)
 	}
 	desc := cached[idx]
-	serial := fallbackSerial(desc.Serial, idx)
+	serial := d.fallbackSerial(desc.Serial, idx)
 
 	// Windows hosts occasionally surface a transient ErrDeviceGone on early
 	// post-open control transfers even though enumeration + WinUsb_Initialize
@@ -186,7 +187,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 func (d *Driver) openDevice(desc usb.Descriptor, idx int, serial string) (*Device, error) {
 	t, err := d.enum.Open(desc)
 	if err != nil {
-		return nil, fmt.Errorf("airspy: open %s: %w", desc.Path, err)
+		return nil, fmt.Errorf("%s: open %s: %w", d.driverName(), desc.Path, err)
 	}
 	// When RTLSDR_DEBUG_USB is set, trace every vendor control transfer
 	// (SET_SAMPLERATE / SET_FREQ / RECEIVER_MODE / gain). The RTL-SDR driver
@@ -197,17 +198,18 @@ func (d *Driver) openDevice(desc usb.Descriptor, idx int, serial string) (*Devic
 	t = usb.MaybeWrapDebug(t, desc)
 	if err := t.ClaimInterface(0); err != nil {
 		_ = t.Close()
-		return nil, fmt.Errorf("airspy: claim interface 0: %w", err)
+		return nil, fmt.Errorf("%s: claim interface 0: %w", d.driverName(), err)
 	}
 	dev := &Device{
-		t: t,
+		t:     t,
+		hydra: d.hydra,
 		info: sdr.Info{
-			Driver:       driverName,
+			Driver:       d.driverName(),
 			Index:        idx,
 			Serial:       serial,
 			Manufacturer: desc.Manufacturer,
 			Product:      desc.Product,
-			TunerName:    tunerNameFor(desc.Product),
+			TunerName:    d.tunerName(desc.Product),
 			// Carry the gain ladder onto the opened device so
 			// dev.Info() (used by `sdr list --probe`) reports it
 			// instead of an empty list.
@@ -225,11 +227,17 @@ func (d *Driver) openDevice(desc usb.Descriptor, idx int, serial string) (*Devic
 	} else {
 		dev.rates = rates
 	}
+	if dev.hydra {
+		// Per-rate ADC width, on firmware that reports it (best effort:
+		// without it every rate is the 12-bit raw ADC, as libhydrasdr
+		// assumes for old firmware).
+		dev.fetchHydraRateInfo()
+	}
 	return dev, nil
 }
 
 func (d *Driver) refreshDescriptor(current usb.Descriptor) (usb.Descriptor, bool) {
-	list, err := d.enum.List(vidAirspy, pidAirspy)
+	list, err := d.listDescriptors()
 	if err != nil || len(list) == 0 {
 		return current, false
 	}
@@ -250,17 +258,25 @@ func (d *Driver) refreshDescriptor(current usb.Descriptor) (usb.Descriptor, bool
 	return list[0], true
 }
 
-func fallbackSerial(s string, idx int) string {
+func (d *Driver) fallbackSerial(s string, idx int) string {
 	if s != "" {
 		return s
 	}
-	return fmt.Sprintf("airspy-%02d", idx)
+	return fmt.Sprintf("%s-%02d", d.driverName(), idx)
 }
 
 // Device is one opened Airspy.
 type Device struct {
 	t    usb.Transport
 	info sdr.Info
+	// hydra marks a HydraSDR RFOne (see hydrasdr.go for what differs).
+	hydra bool
+	// rateADCBits holds the ADC width the firmware reports per entry of
+	// rates (HydraSDR extended sample-rate info; nil = 12-bit for every
+	// rate). adcBits is the width for the rate last programmed, which
+	// sizes the next stream's real-to-IQ converter. Both guarded by mu.
+	rateADCBits []uint8
+	adcBits     uint8
 
 	mu        sync.Mutex
 	closed    bool
@@ -317,6 +333,9 @@ func (d *Device) SetCenterFreq(hz uint32) error {
 	if d.isClosed() {
 		return usb.ErrClosed
 	}
+	if d.hydra {
+		return d.t.ControlOut(reqSetFreq, 0, 0, hydraFreqPayload(hz), controlTimeoutMs)
+	}
 	payload := make([]byte, 4)
 	binary.LittleEndian.PutUint32(payload, hz)
 	return d.t.ControlOut(reqSetFreq, 0, 0, payload, controlTimeoutMs)
@@ -344,10 +363,11 @@ func (d *Device) SetSampleRate(hz uint32) error {
 		return usb.ErrClosed
 	}
 	param := d.sampleRateCommandParam(hz)
-	_, err := d.t.ControlIn(reqSetSamplerate, 0, param, 1, controlTimeoutMs)
+	_, err := d.t.ControlIn(reqSetSamplerate, 0, param, d.setSamplerateReplyLen(), controlTimeoutMs)
 	if err == nil {
 		d.mu.Lock()
 		d.lastReqRate = hz
+		d.adcBits = d.adcBitsForRateLocked(hz)
 		d.mu.Unlock()
 	}
 	return err
@@ -414,6 +434,11 @@ func (d *Device) sampleRateCommandParam(iqHz uint32) uint16 {
 			// by-value encoding the firmware may reject.
 			return uint16(d.closestRateIndex(iqHz))
 		}
+		if d.hydra {
+			// libhydrasdr's by-value encoding is the REAL ADC rate in kHz
+			// (twice the IQ rate) for its IQ sample types.
+			return uint16(iqHz * 2 / 1000)
+		}
 		return uint16(iqHz / 1000)
 	}
 	return uint16(iqHz)
@@ -469,6 +494,9 @@ func (d *Device) SetGain(tenthDB int) error {
 		return err
 	}
 	lna, mixer, vga := splitAirspyGain(tenthDB)
+	if d.hydra && lna > hydraLNAMaxGain {
+		lna = hydraLNAMaxGain
+	}
 	if err := d.setLNAGain(lna); err != nil {
 		return err
 	}
@@ -541,6 +569,9 @@ func (d *Device) SetBiasTee(enable bool) error {
 	if enable {
 		v = 1
 	}
+	if d.hydra {
+		return d.t.ControlOut(reqSetRFBias, 0, v, nil, controlTimeoutMs)
+	}
 	portPin := (biasTeeGPIOPort << 5) | biasTeeGPIOPin
 	return d.t.ControlOut(reqGPIOWrite, v, portPin, nil, controlTimeoutMs)
 }
@@ -583,14 +614,17 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	// Fresh real-to-IQ converter per stream so filter memory never carries
 	// over from a previous session. The device streams bare real samples;
 	// the converter turns them into complex baseband (see iqconverter.go).
-	d.cnv = newIQConverter()
+	d.mu.Lock()
+	adcBits := d.adcBits
+	d.mu.Unlock()
+	d.cnv = newIQConverterADC(adcBits)
 
 	if err := d.setReceiver(receiverModeOn); err != nil {
 		d.mu.Lock()
 		d.streaming = false
 		d.mu.Unlock()
 		close(done)
-		return nil, fmt.Errorf("airspy: receiver on: %w", err)
+		return nil, fmt.Errorf("%s: receiver on: %w", d.info.Driver, err)
 	}
 
 	// Decouple USB reaping from the (heavy, sequential) real→IQ conversion. On
@@ -693,7 +727,7 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		d.streaming = false
 		d.mu.Unlock()
 		close(done)
-		return nil, fmt.Errorf("airspy: start bulk-in: %w", err)
+		return nil, fmt.Errorf("%s: start bulk-in: %w", d.info.Driver, err)
 	}
 
 	go func() {

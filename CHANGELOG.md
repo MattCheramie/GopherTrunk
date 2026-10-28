@@ -46,6 +46,15 @@ for tagged releases.
   daemon restart.
 
 ### Added
+- **HydraSDR RFOne support (#1325).** A new `hydrasdr` driver opens the
+  RFOne on its official USB IDs (`0x38af:0x0001`) and on the historic Airspy
+  IDs (`0x1d50:0x60a1`) when the USB Product string names HydraSDR; any other
+  `0x1d50:0x60a1` device stays an Airspy. It reuses the Airspy driver's
+  stream path and real-to-IQ converter and applies the RFOne's protocol
+  differences from the vendor's `hydrasdr-host` library: a 64-bit SET_FREQ,
+  the RF bias command for the bias tee, an LNA capped at 14, and the per-rate
+  ADC width (8–16 bit) that newer firmware reports. Pinned against the
+  library's wire constants; not yet run against attached hardware.
 - **NXDN scrambler decryption (#1261).** An NXDN call whose SACCH VCALL
   names cipher type 1 (the 15-bit "scrambler" privacy of Kenwood / Icom
   radios) is descrambled in-process when an `encryption_keys` entry with

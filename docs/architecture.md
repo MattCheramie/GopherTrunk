@@ -204,7 +204,10 @@ chooses what hardware it can talk to:
   detection) come from the device itself.
 - `internal/sdr/airspy` (`airspy`) — pure-Go libairspy protocol
   port covering Airspy R2 and Airspy Mini, with the R2-vs-Mini
-  split surfaced through the `TunerName` field.
+  split surfaced through the `TunerName` field. The same package
+  registers `hydrasdr` for the HydraSDR RFOne (Airspy R2 successor,
+  same libairspy-derived vendor protocol; 64-bit SET_FREQ, its own
+  bias-tee command, per-rate ADC width on newer firmware).
 - `internal/sdr/airspyhf` (`airspyhf`) — pure-Go libairspyhf
   protocol port covering the Airspy HF+ family (Discovery, Dual
   Port, legacy HF+). HF (9 kHz – 31 MHz) + VHF (60 – 260 MHz);
