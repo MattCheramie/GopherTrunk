@@ -4,12 +4,12 @@ title: HydraSDR RFOne
 entry_type: hardware
 category: sdr-devices
 description: "The HydraSDR RFOne is a high-performance VHF/UHF software-defined radio receiver — a successor to the Airspy R2 with a 12-bit ADC, up to 10 MS/s, and a clean front end, designed in France and made in the USA."
-keywords: HydraSDR, HydraSDR RFOne, RFOne, Airspy R2 successor, high performance SDR, VHF UHF receiver, 12-bit ADC, R820T2, 10 MSPS, wideband capture, best SDR USA
+keywords: HydraSDR, HydraSDR RFOne, RFOne, Airspy R2 successor, high performance SDR, VHF UHF receiver, 12-bit ADC, R828D, 10 MSPS, wideband capture, best SDR USA
 aka: [HydraSDR, RFOne]
 autolink: true
 infobox:
   - { label: Type, value: VHF/UHF SDR receiver }
-  - { label: Vendor/Chip, value: "HydraSDR (Benjamin Vernoux); R820T2 tuner + LPC4370" }
+  - { label: Vendor/Chip, value: "HydraSDR (Benjamin Vernoux); R828D tuner + LPC4370" }
   - { label: Models, value: HydraSDR RFOne }
   - { label: ADC, value: 12-bit }
   - { label: Range, value: ~24 MHz – 1.8 GHz }
@@ -28,8 +28,8 @@ cite_urls:
 
 **HydraSDR RFOne** is a high-performance VHF/UHF
 [software-defined radio](/reference/software-defined-radio/) receiver in the lineage of
-the [Airspy R2](/reference/airspy/) — same 12-bit oversampling architecture and
-[R820T2](/reference/r820t-tuner/) front end, carried forward as an independent open
+the [Airspy R2](/reference/airspy/) — same 12-bit oversampling architecture and an
+[R82x-family](/reference/r820t-tuner/) (R828D) front end, carried forward as an independent open
 project. It samples up to ~10 MHz of spectrum anywhere from ~24 MHz to 1.8 GHz.[^hydra]
 
 <figure class="figure" markdown="0">
@@ -54,8 +54,8 @@ market.[^hydra]
 
 ## How it works
 
-Like the Airspy R2, the RFOne pairs a Rafael Micro [R820T2](/reference/r820t-tuner/)
-tuner with a **12-bit** [ADC](/reference/analog-to-digital-converter/) driven by an NXP
+Like the Airspy R2, the RFOne pairs a Rafael Micro R828D (an [R820T](/reference/r820t-tuner/)-family
+tuner with three RF inputs, here the ANT, CABLE1 and CABLE2 ports) with a **12-bit** [ADC](/reference/analog-to-digital-converter/) driven by an NXP
 LPC4370, replacing the [RTL2832U](/reference/rtl2832u/)'s 8-bit ADC and USB bridge. Two
 design choices give it its edge over a dongle:
 
@@ -79,14 +79,15 @@ It delivers up to about **10 MS/s** of complex [bandwidth](/reference/bandwidth/
 
 Compared with the [Airspy R2](/reference/airspy/) it is architecturally very close — a
 practical alternative in the same slot. Against an [SDRplay RSPdx](/reference/sdrplay-rspdx/)
-it trades the RSPdx's 14-bit ADC and HF coverage for the R820T2 path's simplicity and a
+it trades the RSPdx's 14-bit ADC and HF coverage for the R82x path's simplicity and a
 pure-USB streaming model. As with any 12-bit direct-sampling receiver, put a
 [broadcast-FM notch filter](/reference/fm-broadcast-filter/) in front of it in a strong
 signal environment to keep the front end out of overload.
 
 ## Relevance to SDR
 
-GopherTrunk drives the HydraSDR over USB for demanding reception where an RTL-SDR's
+GopherTrunk drives the HydraSDR over USB (the `hydrasdr` driver, a pure-Go port of the
+vendor protocol that shares the Airspy driver's real-to-IQ path) for demanding reception where an RTL-SDR's
 bandwidth or sensitivity falls short — a congested band, a distant control channel, or a
 multi-site system whose control channels are spread too far apart to fit one RTL-SDR
 capture. The extra ADC bits and wider capture are exactly what a wideband, multi-tap
@@ -102,4 +103,4 @@ The RFOne is sold through **[DigiKey](https://www.digikey.com/en/products/detail
 
 ## Sources
 
-[^hydra]: [HydraSDR](https://hydrasdr.com/) — manufacturer site, on the RFOne's R820T2 + 12-bit oversampling architecture, ~24 MHz–1.8 GHz range, up-to-10 MS/s capture, and France-designed / USA-made origin.
+[^hydra]: [HydraSDR](https://hydrasdr.com/) — manufacturer site, on the RFOne's R82x + 12-bit oversampling architecture, ~24 MHz–1.8 GHz range, up-to-10 MS/s capture, and France-designed / USA-made origin.

@@ -22,6 +22,20 @@ for tagged releases.
   (one goroutine per stream, 6 M real samples/s on a Mini) is ~2× faster:
   symmetric-pair FIR over a wrap-free window, unrolled mix cycle. Not yet
   measured on a Pi 4; the reporter's run is the gate.
+- **`wmbus -log` now records why a live run stopped (#1256).** The reason
+  (`wmbus: IQ stream ended: …` with the SDR's or rtl_tcp server's own cause),
+  SDR / USB driver warnings, the stop hints and any fatal error went to the
+  screen only, so a run that stopped by itself in the field left a log that
+  just ended. Everything `wmbus` prints now also goes to the `-log` file, as
+  `{"status": …}` lines with `-json`.
+- **`recordings.skip_encrypted` no longer discards calls a configured key
+  decrypts (#1261).** With it on, an encrypted call was dropped (at the grant,
+  or aborted the moment a mid-call VCALL / Encryption Sync / PI header named
+  the cipher) even when an `encryption_keys` entry covered it and the voice
+  chain was producing clear audio, so no decrypted NXDN scrambler call ever
+  recorded (`recorder: aborted mid-call encrypted recording` right after
+  `call is encrypted … key_configured=true`). It now skips only calls no key
+  decrypts, the same test `mute_encrypted` already used.
 - **APRS, AIS, DSC, POCSAG, FLEX, M17, MDC1200 and FleetSync now channel-filter
   before demodulating (#1316).** Every single-channel decoder ran its FM
   discriminator on the SDR's full-rate IQ — 2.4 MHz of noise around a 12.5 kHz
@@ -52,6 +66,26 @@ for tagged releases.
   daemon restart.
 
 ### Added
+- **Per-transmission P25 Phase 1 decode quality (#1242).** Each over now
+  logs `composer: p25p1 transmission quality` with the radio that keyed it
+  (`src`), its LDUs, corrected bit errors and `errs_per_ldu`, uncorrectable
+  counts, `short_ldus` and the carrier offset. The existing `decode quality`
+  line is cumulative over the voice chain, and with
+  `voice_call_grouping: conversation` one chain spans every over on the
+  talkgroup, so errors climbing during a long call could not be pinned on
+  one distant radio or on the receiver. An over ends at its terminator,
+  when the next LDU1 names a different radio (the terminator between two
+  overs can be lost), or at the end of the call. See
+  `docs/voice-calibration.md`.
+- **HydraSDR RFOne support (#1325).** A new `hydrasdr` driver opens the
+  RFOne on its official USB IDs (`0x38af:0x0001`) and on the historic Airspy
+  IDs (`0x1d50:0x60a1`) when the USB Product string names HydraSDR; any other
+  `0x1d50:0x60a1` device stays an Airspy. It reuses the Airspy driver's
+  stream path and real-to-IQ converter and applies the RFOne's protocol
+  differences from the vendor's `hydrasdr-host` library: a 64-bit SET_FREQ,
+  the RF bias command for the bias tee, an LNA capped at 14, and the per-rate
+  ADC width (8–16 bit) that newer firmware reports. Pinned against the
+  library's wire constants; not yet run against attached hardware.
 - **NXDN scrambler decryption (#1261).** An NXDN call whose SACCH VCALL
   names cipher type 1 (the 15-bit "scrambler" privacy of Kenwood / Icom
   radios) is descrambled in-process when an `encryption_keys` entry with

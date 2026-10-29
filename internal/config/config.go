@@ -2235,7 +2235,9 @@ type RecordingsConfig struct {
 	// produce no MBE file (dsd-fme has no playback mode for them).
 	MBEFiles bool `yaml:"mbe_files"`
 	// SkipEncrypted, when true, suppresses recording of calls flagged
-	// encrypted. A call whose grant already signals encryption is never
+	// encrypted that no encryption_keys entry decrypts (a call a configured
+	// key covers is decrypted in-process and records as usual, #1261).
+	// A call whose grant already signals encryption is never
 	// opened; a call whose encryption is only discovered mid-stream has
 	// its in-progress WAV/raw files closed and deleted. Live follow /
 	// playback is unaffected. Default false (record everything).

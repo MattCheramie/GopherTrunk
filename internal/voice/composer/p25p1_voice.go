@@ -253,6 +253,19 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 		lcRSUncorrectable  atomic.Uint64
 		essRSUncorrectable atomic.Uint64
 	)
+	// txq splits these counters per transmission and names the radio
+	// (#1242). rx is assigned below; the receiver only calls Sink from
+	// Process, after that.
+	var rx *p25p1rx.Receiver
+	txq := &p25p1TxQuality{log: c.log, serial: serial}
+	counters := func() p25p1TxCounters {
+		short, missing := rx.FrameSlips()
+		return p25p1TxCounters{
+			ldus: frames.Load(), uncorrectable: uncorrectableLDUs.Load(),
+			corrErrBits: corrErrBits.Load(), lcRS: lcRSUncorrectable.Load(),
+			essRS: essRSUncorrectable.Load(), shortLDUs: short, missingSymbols: missing,
+		}
+	}
 	// writeFrame hands one FEC-decoded 11-byte IMBE frame and its
 	// corrected-bit count to the recorder. The per-frame count feeds the
 	// IMBE decoder's adaptive smoothing (via the recorder) so it can track
@@ -285,7 +298,7 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 		adp = newP25ADPState(c, serial, system)
 		defer adp.finish(writeFrame)
 	}
-	rx := p25p1rx.New(p25p1rx.Options{
+	rx = p25p1rx.New(p25p1rx.Options{
 		SampleRateHz: symbolHz,
 		DeviationHz:  p25p1DeviationHz,
 		DemodMode:    mode,
@@ -329,6 +342,7 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 							if src != 0 {
 								lastSourceID = src
 								publishSource(src)
+								txq.sourceSeen(src, counters(), rx.AFCOffsetHz())
 							}
 						}
 					}
@@ -337,8 +351,12 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 					adp.flushHeld(writeFrame)
 				}
 				bt.onTransmissionEnd()
+				txq.end(counters(), rx.AFCOffsetHz())
 				return
 			}
+			// The counters before this LDU: if its link control names a
+			// new radio, the LDU belongs to that radio's transmission.
+			preLDU := counters()
 			// Count LDU delivery for the decode-quality telemetry.
 			frames.Add(1)
 
@@ -451,6 +469,7 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 						if lc.LCFormat == phase1.LCOGroupVoiceChannelUser && lc.SourceID != 0 {
 							lastSourceID = lc.SourceID
 							publishSource(lc.SourceID)
+							txq.sourceSeen(lc.SourceID, preLDU, rx.AFCOffsetHz())
 						}
 					}
 				}
@@ -554,6 +573,10 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 			return
 		}
 		lastQualityLogLDUs = n
+		if final {
+			// The chain's last transmission had no terminator yet.
+			txq.end(counters(), rx.AFCOffsetHz())
+		}
 		shortLDUs, missing := rx.FrameSlips()
 		c.log.Info("composer: p25p1 decode quality",
 			"serial", serial, "demod_mode", mode,

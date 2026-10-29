@@ -342,7 +342,9 @@ type RecorderOptions struct {
 	WriteCallJSON bool
 
 	// SkipEncrypted, when true, makes the recorder refuse to write files
-	// for calls flagged encrypted. A grant that already signals encryption
+	// for calls flagged encrypted that no configured key decrypts
+	// (KeyConfigured; a decryptable call records its clear audio as usual,
+	// #1261). A grant that already signals such encryption
 	// never opens a session; a call whose encryption is only discovered
 	// mid-stream (P25 Phase 1 LDU2 Encryption Sync, or a Phase 2 compressed
 	// grant resolved in-call) has its in-progress WAV/raw files closed and
@@ -361,8 +363,9 @@ type RecorderOptions struct {
 	// on. KeyConfigured decides "decrypts": nil means no keys anywhere.
 	MuteEncrypted bool
 	// KeyConfigured reports whether the operator holds a key for (system,
-	// algorithm, key id) — the daemon builds it from encryption_keys. Only
-	// consulted when MuteEncrypted is set.
+	// algorithm, key id) — the daemon builds it from encryption_keys.
+	// Consulted by MuteEncrypted and SkipEncrypted: a call a configured key
+	// decrypts is neither muted nor skipped.
 	KeyConfigured func(system string, algID uint8, keyID uint16) bool
 
 	// Normalize configures optional per-call EBU R128 / BS.1770 loudness
@@ -987,11 +990,12 @@ func (r *Recorder) handleStart(cs trunking.CallStart) {
 		// call here or the talkgroup would be silent live too.
 		return
 	}
-	if r.skipEncrypted && cs.Grant.Encrypted {
+	if r.skipEncrypted && cs.Grant.Encrypted && !r.decryptable(cs.Grant) {
 		// Operator opted out of recording encrypted calls and the grant
-		// already signals encryption — never open a file. Calls whose
-		// encryption only surfaces mid-stream are handled by
-		// handleEncryptionUpdate.
+		// already signals encryption no configured key covers — never
+		// open a file. A call a key decrypts is clear audio and records
+		// (#1261). Calls whose encryption only surfaces mid-stream are
+		// handled by handleEncryptionUpdate.
 		r.log.Debug("recorder: skipping encrypted call",
 			"device", cs.DeviceSerial, "tg", cs.Grant.GroupID,
 			"alg", cs.Grant.AlgorithmID, "key", cs.Grant.KeyID)
@@ -1139,7 +1143,11 @@ func (r *Recorder) backfillSessionGrant(deviceSerial string, encrypted bool, alg
 // encryption flag only resolves on the traffic channel. The open WAV/raw
 // files are closed and removed and the session dropped without publishing
 // a CallComplete, so the partial never reaches the upload feeds. No-op
-// when SkipEncrypted is off, the call is clear, or no session is open.
+// when SkipEncrypted is off, the call is clear, no session is open, or a
+// configured key decrypts the call: the composer then records clear audio,
+// and aborting threw away every decrypted call (#1261). Runs after
+// backfillSessionGrant, so the session grant carries the alg/key id the
+// update just named.
 func (r *Recorder) handleEncryptionUpdate(deviceSerial string, encrypted bool) {
 	if !r.skipEncrypted || !encrypted {
 		return
@@ -1148,6 +1156,9 @@ func (r *Recorder) handleEncryptionUpdate(deviceSerial string, encrypted bool) {
 	defer r.mu.Unlock()
 	s, ok := r.sessions[deviceSerial]
 	if !ok {
+		return
+	}
+	if r.decryptable(s.cs.Grant) {
 		return
 	}
 	delete(r.sessions, deviceSerial)

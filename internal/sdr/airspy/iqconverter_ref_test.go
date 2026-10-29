@@ -24,7 +24,7 @@ func (c *refIQConverter) processRaw(buf []byte) []complex64 {
 	nReal := len(buf) / 2
 	out := make([]complex64, 0, nReal/2+1)
 	for i := 0; i < nReal; i++ {
-		x := (float32(binary.LittleEndian.Uint16(buf[2*i:])) - dcBias) / dcFull
+		x := (float32(binary.LittleEndian.Uint16(buf[2*i:])) - 2048) / 2048 // 12-bit midpoint, as the old converter had it
 		x -= c.avg
 		c.avg += dcLeak * x
 		switch c.phase {

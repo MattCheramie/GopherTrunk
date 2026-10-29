@@ -38,8 +38,10 @@ const (
 	hbTaps = 24   // non-trivial half-band taps used by the in-phase FIR
 	hbHalf = 12   // quadrature delay length (hbTaps / 2)
 	dcLeak = 0.01 // leaky DC-blocker coefficient
-	dcBias = 2048 // 12-bit unsigned ADC midpoint
-	dcFull = 2048 // normalisation to roughly [-1, 1)
+
+	// defaultADCBits is the Airspy's (and old HydraSDR firmware's) ADC
+	// width: 12-bit unsigned, DC at 2048, carried in a little-endian uint16.
+	defaultADCBits = 12
 )
 
 // hbKernel is the symmetric half-band low-pass applied to the in-phase branch
@@ -69,6 +71,15 @@ var hbKernel = [hbTaps]float32{
 // 10 MS/s. StreamIQ now moves conversion off the reapers onto this single
 // goroutine, so the lock is gone.)
 type iqConverter struct {
+	// mid is the unsigned ADC midpoint, 2^(bits-1): it is both the DC bias
+	// removed from each sample and the scale that normalises to roughly
+	// [-1, 1). byteSamples marks an 8-bit ADC, which the HydraSDR firmware
+	// streams one byte per sample instead of one uint16 (libhydrasdr's
+	// iqconverter_process_u8 path).
+	mid         float32
+	invMid      float32 // 1/mid; exact, mid is a power of two
+	byteSamples bool
+
 	avg   float32 // leaky DC-blocker accumulator
 	phase int     // Fs/4 mix phase, 0..3, persists across packets
 	// iwin is the in-phase FIR window stored twice (mirrored ring): the newest
@@ -81,15 +92,33 @@ type iqConverter struct {
 	qpos    int             // delay-line read/write cursor
 }
 
-// newIQConverter returns a converter in its reset state. The zero value is a
-// valid starting point (silent filter memory, phase 0).
-func newIQConverter() *iqConverter { return &iqConverter{} }
+// newIQConverter returns a converter for the 12-bit Airspy ADC in its reset
+// state (silent filter memory, phase 0).
+func newIQConverter() *iqConverter { return newIQConverterADC(defaultADCBits) }
 
-// processRaw decodes one bulk-IN payload of little-endian uint16 real samples
-// into complex64 baseband. It returns len(buf)/4 complex samples (two real
-// samples collapse to one complex sample).
+// newIQConverterADC returns a converter for an unsigned ADC of the given
+// width. The HydraSDR firmware reports 8, 10, 12, 14 or 16 bits per sample
+// rate; anything outside that set (including 0, "not reported") means the
+// 12-bit default.
+func newIQConverterADC(bits uint8) *iqConverter {
+	switch bits {
+	case 8, 10, 12, 14, 16:
+	default:
+		bits = defaultADCBits
+	}
+	mid := float32(int(1) << (bits - 1))
+	return &iqConverter{mid: mid, invMid: 1 / mid, byteSamples: bits == 8}
+}
+
+// processRaw decodes one bulk-IN payload of real ADC samples (little-endian
+// uint16, or one byte each for an 8-bit ADC) into complex64 baseband. Two
+// real samples collapse to one complex sample, so a uint16 payload yields
+// len(buf)/4 complex samples.
 func (c *iqConverter) processRaw(buf []byte) []complex64 {
 	nReal := len(buf) / 2
+	if c.byteSamples {
+		nReal = len(buf)
+	}
 	out := make([]complex64, 0, nReal/2+1)
 	i := 0
 	// Bring the phase to 0 one sample at a time (a payload is normally a
@@ -114,10 +143,18 @@ func (c *iqConverter) processRaw(buf []byte) []complex64 {
 	return out
 }
 
-// decode reads real sample i, removes the ADC midpoint, scales to ~[-1, 1)
-// and runs the leaky DC blocker.
+// decode reads real sample i (a little-endian uint16, or one byte for an
+// 8-bit ADC), removes the ADC midpoint, scales to ~[-1, 1) and runs the leaky
+// DC blocker. For the 12-bit default this is (raw - 2048) * (1/2048), exactly
+// the constant form it replaced.
 func (c *iqConverter) decode(buf []byte, i int) float32 {
-	x := (float32(uint16(buf[2*i])|uint16(buf[2*i+1])<<8) - dcBias) * (1.0 / dcFull)
+	var raw float32
+	if c.byteSamples {
+		raw = float32(buf[i])
+	} else {
+		raw = float32(uint16(buf[2*i]) | uint16(buf[2*i+1])<<8)
+	}
+	x := (raw - c.mid) * c.invMid
 	x -= c.avg
 	c.avg += dcLeak * x
 	return x
