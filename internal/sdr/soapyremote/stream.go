@@ -79,17 +79,23 @@ func decodeStreamHeader(b []byte) streamHeader {
 	}
 }
 
-// sampleFormat identifies the wire sample encoding the server was asked to send.
-type sampleFormat int
+// sampleFormat identifies the wire sample encoding the server was asked to
+// send, and for CS16 the integer value that represents full scale.
+type sampleFormat struct {
+	cf32 bool // interleaved little-endian float32 I,Q; else int16 I,Q
+	// cs16FullScale is what a CS16 sample is divided by. Zero means 32768,
+	// the conventional int16 full scale; see withNativeFormat.
+	cs16FullScale float64
+}
 
-const (
-	formatCS16 sampleFormat = iota // interleaved little-endian int16 I,Q
-	formatCF32                     // interleaved little-endian float32 I,Q
+var (
+	formatCS16 = sampleFormat{}           // interleaved little-endian int16 I,Q
+	formatCF32 = sampleFormat{cf32: true} // interleaved little-endian float32 I,Q
 )
 
 // soapyName returns the SoapySDR format string for the SETUP_STREAM call.
 func (f sampleFormat) soapyName() string {
-	if f == formatCF32 {
+	if f.cf32 {
 		return "CF32"
 	}
 	return "CS16"
@@ -97,10 +103,38 @@ func (f sampleFormat) soapyName() string {
 
 // bytesPerSample is the size of one complex sample on the wire.
 func (f sampleFormat) bytesPerSample() int {
-	if f == formatCF32 {
+	if f.cf32 {
 		return 8
 	}
 	return 4
+}
+
+// fullScale is the CS16 divisor in effect.
+func (f sampleFormat) fullScale() float64 {
+	if f.cs16FullScale > 0 {
+		return f.cs16FullScale
+	}
+	return 32768
+}
+
+// withNativeFormat applies the device's native RX format and full scale, as
+// reported by GET_NATIVE_STREAM_FORMAT, the way SoapyRemote's reference client
+// does (client/Streaming.cpp setupStream): when the wire format IS the native
+// format, samples are scaled by the native full scale; otherwise the server-side
+// driver converts to the requested format at that format's conventional scale.
+//
+// This matters for 12-bit radios that stream CS16 natively, LSB-aligned: a
+// PlutoSDR / AD936x board reports fullScale 2048 (SoapyPlutoSDR; issue #1329).
+// Dividing those samples by 32768 read every signal 24 dB low. A UHD radio
+// reports 32768, and a device whose native format is not CS16 (HackRF's CS8,
+// say) is converted to full-range CS16 by its own driver, so both are unchanged.
+// A full scale outside (1, 32768] is not a plausible int16 scale and is ignored.
+func (f sampleFormat) withNativeFormat(native string, fullScale float64) sampleFormat {
+	if f.cf32 || native != "CS16" || !(fullScale > 1 && fullScale <= 32768) {
+		return f
+	}
+	f.cs16FullScale = fullScale
+	return f
 }
 
 func parseFormat(s string) (sampleFormat, error) {
@@ -110,17 +144,17 @@ func parseFormat(s string) (sampleFormat, error) {
 	case "CF32", "cf32":
 		return formatCF32, nil
 	default:
-		return 0, fmt.Errorf("soapyremote: unsupported format %q (want CS16 or CF32)", s)
+		return sampleFormat{}, fmt.Errorf("soapyremote: unsupported format %q (want CS16 or CF32)", s)
 	}
 }
 
 // convert turns one raw sample-payload buffer into complex64 normalized to
 // roughly [-1, 1), matching every other GopherTrunk SDR backend.
 func (f sampleFormat) convert(buf []byte) []complex64 {
-	if f == formatCF32 {
+	if f.cf32 {
 		return convertCF32(buf)
 	}
-	return convertCS16(buf)
+	return convertCS16Scaled(buf, f.fullScale())
 }
 
 // deinterleave splits one multi-channel stream payload into one []complex64 per
@@ -197,12 +231,20 @@ func (f sampleFormat) deinterleave(buf []byte, channels, elems int) [][]complex6
 // convertCS16 maps interleaved little-endian int16 I,Q to complex64.
 // Mirrors baseband.decodeIQ16 / rtltcp.convertU8 normalization.
 func convertCS16(buf []byte) []complex64 {
+	return convertCS16Scaled(buf, 32768)
+}
+
+// convertCS16Scaled maps interleaved little-endian int16 I,Q to complex64,
+// dividing by fullScale (the device's native CS16 full scale; see
+// sampleFormat.withNativeFormat).
+func convertCS16Scaled(buf []byte, fullScale float64) []complex64 {
 	n := len(buf) / 4
 	out := make([]complex64, n)
+	inv := float32(1 / fullScale)
 	for i := 0; i < n; i++ {
 		iv := int16(binary.LittleEndian.Uint16(buf[4*i:]))
 		qv := int16(binary.LittleEndian.Uint16(buf[4*i+2:]))
-		out[i] = complex(float32(iv)/32768, float32(qv)/32768)
+		out[i] = complex(float32(iv)*inv, float32(qv)*inv)
 	}
 	return out
 }

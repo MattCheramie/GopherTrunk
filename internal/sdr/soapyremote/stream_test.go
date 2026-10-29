@@ -77,7 +77,7 @@ func TestParseFormat(t *testing.T) {
 		{"CS16", formatCS16, true},
 		{"CF32", formatCF32, true},
 		{"cf32", formatCF32, true},
-		{"CU8", 0, false},
+		{"CU8", sampleFormat{}, false},
 	} {
 		got, err := parseFormat(c.in)
 		if c.ok != (err == nil) {
@@ -86,6 +86,38 @@ func TestParseFormat(t *testing.T) {
 		}
 		if c.ok && got != c.want {
 			t.Errorf("parseFormat(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// TestWithNativeFormat pins the SoapyRemote reference client's scale rule
+// (client/Streaming.cpp setupStream) as GopherTrunk applies it (issue #1329):
+// the native full scale is used only when the CS16 wire format is the
+// device's native format.
+func TestWithNativeFormat(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		f      sampleFormat
+		native string
+		scale  float64
+		want   float64 // effective CS16 divisor
+		cf32   bool
+	}{
+		{"pluto-12bit-cs16", formatCS16, "CS16", 2048, 2048, false},
+		{"uhd-16bit-cs16", formatCS16, "CS16", 32768, 32768, false},
+		// HackRF's native CS8: its driver converts to full-range CS16.
+		{"native-cs8", formatCS16, "CS8", 128, 32768, false},
+		// CF32 on the wire: the device driver scales to [-1, 1] itself.
+		{"cf32-wire", formatCF32, "CS16", 2048, 32768, true},
+		// Implausible int16 scales are ignored, never used as a divisor.
+		{"zero-scale", formatCS16, "CS16", 0, 32768, false},
+		{"unit-scale", formatCS16, "CS16", 1, 32768, false},
+		{"oversize-scale", formatCS16, "CS16", 65536, 32768, false},
+	} {
+		got := c.f.withNativeFormat(c.native, c.scale)
+		if got.fullScale() != c.want || got.cf32 != c.cf32 {
+			t.Errorf("%s: withNativeFormat(%q, %g) = {cf32:%v fullScale:%g}, want {cf32:%v fullScale:%g}",
+				c.name, c.native, c.scale, got.cf32, got.fullScale(), c.cf32, c.want)
 		}
 	}
 }

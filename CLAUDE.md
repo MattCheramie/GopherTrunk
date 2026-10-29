@@ -1337,6 +1337,14 @@ confirmation before any close-as-completed.
   drift. `applyAntennas` now validates against `LIST_ANTENNAS` (500) and reads back with
   `GET_ANTENNA` (502) — port names are device-specific (B210: `TX/RX`, `RX2`; TwinRX: `RX1`,
   `RX2`) so a config moved between rigs must fail loudly.
+- **SoapyRemote CS16 is NOT always 16-bit full scale (#1329).** `GET_NATIVE_STREAM_FORMAT`
+  replies with the format AND a double full scale, and the reference client divides by it whenever
+  the wire format is the native one (`client/Streaming.cpp` setupStream, `ClientStreamData.cpp`). A
+  PlutoSDR / AD936x board (SoapyPlutoSDR) streams 12-bit LSB-aligned CS16, full scale 2048; GT
+  divided by 32768 and read every Pluto signal 24 dB low (dBFS, `squelch_dbfs`, overload checks).
+  `sampleFormat.withNativeFormat` now ports the rule; UHD (32768) and non-CS16-native devices are
+  unchanged. The fake server used to reply `fullScale 1.0`, which nothing real sends; it now
+  reports and streams at a configurable `nativeFullScale`. On-air-gated: no Pluto run yet.
 - **Never gate a DSP decision on absolute dBFS — gate on coherence.** MRC calibration was
   gated on the reference branch clearing −40 dBFS, so an operator raised front-end gain from
   65.0 → 82.0 dB purely to push a number past a software constant (they landed at −39.8 dBFS,
