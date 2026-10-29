@@ -1205,6 +1205,30 @@ confirmation before any close-as-completed.
   `EnableCarrierTracking` (0 CAC frames without it at the capture's −650 Hz) but NOT the channel
   filter: on the siglab wideband survey it turned DMR leakage into a false NXDN 0.43 carrier.
   VCALL_ASSGN is reference-pinned only (the capture is idle); a capture with a call on it is the gate.
+- **Airspy Mini + Pi 4 "one thread at 90 %, dropping live IQ chunks" with 2 TETRA cells at 3 MS/s
+  (#1321) was the DDC bank, not the real→IQ converter — and the pump benchmark is the instrument.**
+  `TestEngineDualTETRA200kThroughput` now takes `GT_WB_BENCH_RATE`; at 3 MS/s it measured 0.39× real
+  time on a 2.8 GHz Xeon with 96 % in `DDCBank.Process`: the shared decimator's floor was 2.5 MS/s
+  (`ddcDecimateFloorHz`, #764), so below 5 MS/s NOTHING was pre-decimated and each 144 kHz TETRA tap
+  resampled the full 3 MS/s with a 250-tap-per-output polyphase (12·M/L taps), plus `Resampler.Process`
+  walked all L commutator phases per input sample (as costly as the filter). Fixes: (1)
+  `NewDDCBankForPlan(…, maxAbsOffset, maxTapRateHz)` lowers the floor to
+  `(maxAbsOffset + maxTapRate/2)/sharedDecimPassFrac` (0.30 — the shared stage's Kaiser β7, 12·D-tap
+  prototype has a ≈0.37·red transition band centred on red/2, so it is flat only to ≈0.31·red; the
+  existing 0.45 `guardFrac` rule is NOT a passband guarantee for the shared stage, which is why the
+  span rule above the floor was left untouched rather than "fixed") → 3 MS/s + 2 TETRA cells → red
+  375 kHz, D=8, per-tap 32 taps/output; the shared stage costs a flat 12 MACs per input sample
+  whatever D is, so it now dominates the DDC and more taps are nearly free. (2) `DDCBank.EnableWorkers`
+  (threshold 2 taps — a DDC tap resamples the whole reduced stream, unlike the channelizer's cheap
+  fine-tune, so even two are worth splitting; per-tap `mixBuf`). (3) Resampler fast path: only the
+  phases that emit are visited, mirrored 2N history (bit-identical, `TestResamplerFastPathMatchesReference`
+  keeps the old walk as the reference). (4) `mixInto` in explicit float32 (NOT bit-identical — Go
+  evaluates complex64 products in float64). (5) Airspy `iqConverter`: 12 symmetric-pair FIR over a
+  mirrored window + unrolled 4-sample mix cycle, 110 → 213 MB/s (reference kept in
+  `iqconverter_ref_test.go`, agreement 2e-6). Net: 0.39× → 0.18× wall, CPU 3.8 → 2.4 s per 10 s;
+  remaining pump cost is the TETRA receiver's channel-filter FIR (~25 %) and the shared decimator.
+  `sdr.input_sample_rate` (the systemwide pre-decimator) was missing from config.example.yaml (the 4 Sep
+  rule) — added. STILL ON-AIR-GATED: the reporter's Pi 4 run; nothing here was measured on ARM.
 - **The NXDN "scrambler" (SACCH VCALL cipher type 1, 15-bit key) IS DECODED and capture-pinned
   (#1261, 26 Oct): the reporter's two known-key captures (Kenwood, keys 32767 / 12345 on 447.100 MHz
   NXDN96, `nxdn/testdata/scrambler_key*_frames.json`) descramble to speech (AMBE b0 pitch continuity

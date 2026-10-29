@@ -295,6 +295,15 @@ sdr:
   # that window (e.g. a narrow 200_000 capture, or 10_000_000 wideband)
   # are only usable with a source like soapy_remote (USRP, LimeSDR, …).
   sample_rate: 2_400_000
+  # input_sample_rate: the NATIVE rate the tuners run at when it must be
+  # higher than you want to decode at — an Airspy Mini cannot stream below
+  # 3 MS/s, an R2 below 2.5 MS/s. The daemon integer-decimates that stream
+  # to sample_rate (an exact divisor) before any decoder, recording tap or
+  # spectrum view sees it, so the decode rate — and the IQ files — stay
+  # small. 0 (default) = the hardware runs at sample_rate. Note the wideband
+  # DDC strategy already decimates its shared stream to what the channel
+  # plan needs (#1321), so this is mainly for recordings and the other roles.
+  # input_sample_rate: 3_000_000   # with sample_rate: 1_000_000 → decimate by 3
   # watchdog_interval_ms: periodic USB-disconnect watchdog cadence
   # (default 30000 = 30 s). Catches dongles that vanish from the bus
   # while idle and re-acquires them by serial on reappear so the next

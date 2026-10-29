@@ -9,7 +9,7 @@ import (
 type Resampler struct {
 	L, M     int
 	branches [][]float32 // length L; each branch is a phase of the prototype
-	hist     []complex64
+	hist     []complex64 // 2·branchN: each sample stored twice (mirrored window)
 	histPos  int
 	branchN  int // taps per branch
 	idx      int // commutator state (0..L-1)
@@ -49,40 +49,54 @@ func NewResampler(L, M, tapsPerBranch int, beta float64) *Resampler {
 		L: L, M: M,
 		branches: branches,
 		branchN:  taps,
-		hist:     make([]complex64, taps),
+		hist:     make([]complex64, 2*taps),
 	}
 }
 
 // Process consumes len(src) input samples and returns approximately
 // len(src)*L/M output samples. dst is reused if it has capacity.
+//
+// Each input sample advances the commutator by L phases; an output is due at
+// every phase whose running decimation count is a multiple of M. The loop
+// visits only those phases — for a decimating ratio (M ≫ L, the wideband DDC
+// case: 6/125 for a 144 kHz tap off 3 MS/s) that is usually none — instead of
+// stepping through all L phases per input sample, which used to cost as much
+// as the filter itself. The outputs, their order and the branch each one is
+// computed from are identical to the phase-by-phase walk (pinned by
+// TestResamplerFastPathMatchesReference).
 func (r *Resampler) Process(dst, src []complex64) []complex64 {
 	if cap(dst) < len(src)*r.L/r.M+8 {
 		dst = make([]complex64, 0, len(src)*r.L/r.M+8)
 	} else {
 		dst = dst[:0]
 	}
+	L, M, N := r.L, r.M, r.branchN
 	for _, x := range src {
-		// Push into history.
+		// Push into the mirrored history: the sample lives at histPos and
+		// histPos+N so the newest N samples are always one contiguous
+		// descending run ending at histPos-1+N (no wrap in computeBranch).
 		r.hist[r.histPos] = x
+		r.hist[r.histPos+N] = x
 		r.histPos++
-		if r.histPos == r.branchN {
+		if r.histPos == N {
 			r.histPos = 0
 		}
-		// Walk the L commutator phases for this single input sample.
-		for p := 0; p < r.L; p++ {
-			if r.mCount == 0 {
-				out := r.computeBranch(r.idx)
-				dst = append(dst, out)
-			}
-			r.idx++
-			if r.idx == r.L {
-				r.idx = 0
-			}
-			r.mCount++
-			if r.mCount == r.M {
-				r.mCount = 0
-			}
+		// Phases s = 0..L-1 of this input sample; an output falls on every s
+		// with (mCount + s) % M == 0, computed from branch (idx + s) % L.
+		s := 0
+		if r.mCount != 0 {
+			s = M - r.mCount
 		}
+		for ; s < L; s += M {
+			b := r.idx + s
+			if b >= L {
+				b -= L
+			}
+			dst = append(dst, r.computeBranch(b))
+		}
+		// Advance the commutator by the L phases just consumed. idx moves by
+		// L ≡ 0 (mod L), so only the decimation count changes.
+		r.mCount = (r.mCount + L) % M
 	}
 	return dst
 }
@@ -90,19 +104,13 @@ func (r *Resampler) Process(dst, src []complex64) []complex64 {
 func (r *Resampler) computeBranch(b int) complex64 {
 	row := r.branches[b]
 	var accI, accQ float32
-	idx := r.histPos - 1
-	if idx < 0 {
-		idx = r.branchN - 1
-	}
-	for k := 0; k < r.branchN; k++ {
-		s := r.hist[idx]
-		h := row[k]
+	// Newest sample first (mirrored history: see Process), oldest last — the
+	// same products in the same order as the ring-buffer walk.
+	win := r.hist[r.histPos : r.histPos+r.branchN]
+	for k, h := range row {
+		s := win[r.branchN-1-k]
 		accI += h * real(s)
 		accQ += h * imag(s)
-		idx--
-		if idx < 0 {
-			idx = r.branchN - 1
-		}
 	}
 	return complex(accI, accQ)
 }

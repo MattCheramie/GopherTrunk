@@ -580,7 +580,7 @@ func New(opts Options) (*Engine, error) {
 	if maxAbsOffset > 0 {
 		minRateHz := maxAbsOffset / (0.5 - guardFrac)
 		if float64(opts.SampleRateHz) >= minRateHz*sampleRateAdvisoryFactor {
-			log.Warn("widebandt2: capture is oversampled for the channel plan — the carriers span less than half the captured band, so a lower sdr.sample_rate would cut DSP + network load (and overrun pressure) for no loss of coverage",
+			log.Warn("widebandt2: capture is oversampled for the channel plan — the carriers span less than half the captured band, so a lower sdr.sample_rate (or sdr.input_sample_rate, for a front end that cannot stream slower) would cut USB / network load and overrun pressure for no loss of coverage; the DDC strategy already decimates the shared stream to what the plan needs before its per-tap work",
 				"serial", opts.Serial,
 				"sample_rate_hz", opts.SampleRateHz,
 				"channel_span_hz", uint64(2*maxAbsOffset),
@@ -624,7 +624,21 @@ func New(opts Options) (*Engine, error) {
 		// 10 MS/s capture exceeds the default ±1.1 MHz reduced-band floor,
 		// which would reject the outer taps. Sizing the shared decimator to
 		// maxAbsOffset keeps every tap in band (issue: 70-DMR stress test).
-		bank = tuner.NewDDCBankForSpan(float64(opts.SampleRateHz), narrowbandRateHz, guardFrac, maxAbsOffset)
+		// Plan-aware: with the widest tap rate known up front the shared
+		// decimator may take the stream well below the 2.5 MS/s floor when the
+		// plan is narrow — an Airspy Mini's 3 MS/s minimum carrying two TETRA
+		// cells runs its taps off 375 kHz instead of 3 MS/s (#1321).
+		var maxTapRateHz float64
+		for _, ch := range opts.Channels {
+			r := narrowbandRateHz
+			if sys, ok := systemsByName[ch.SystemName]; ok && !ch.Conventional {
+				r = channelOutRateHz(sys.Protocol)
+			}
+			if r > maxTapRateHz {
+				maxTapRateHz = r
+			}
+		}
+		bank = tuner.NewDDCBankForPlan(float64(opts.SampleRateHz), narrowbandRateHz, guardFrac, maxAbsOffset, maxTapRateHz)
 	case "polyphase":
 		bank = tuner.NewChannelizerBank(float64(opts.SampleRateHz), narrowbandRateHz, guardFrac,
 			channelizerBinsFor(opts.SampleRateHz), channelizerTapsPerBranch, channelizerKaiserBeta)
@@ -729,6 +743,12 @@ func New(opts Options) (*Engine, error) {
 		// into overruns. No-op below parallelTapThreshold taps. Run's defer
 		// closes the pool on teardown.
 		cb.EnableWorkers(tuner.DefaultTapWorkers())
+	}
+	if ddc, ok := bank.(*tuner.DDCBank); ok {
+		// A DDC tap resamples the whole reduced-rate stream, so two taps are
+		// already worth two cores: the reporter's Pi 4 ran one thread at 90 %
+		// beside idle cores (#1321). Run's defer closes the pool.
+		ddc.EnableWorkers(tuner.DefaultTapWorkers())
 	}
 	return engine, nil
 }
