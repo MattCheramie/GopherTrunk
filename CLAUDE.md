@@ -2182,6 +2182,15 @@ confirmation before any close-as-completed.
   4·(fs/4) ≡ 0 mod fs, the 3rd-order product aliases onto the channel (simulated SINAD 0.5 dB,
   same as on-channel; searched 518 kHz → 56 dB) — and fs/4 is the `dc_avoid` default for control
   and voice SDRs, which has the same exposure (not changed here). Still on-air-gated.
+- **macOS USB errors come in two IOKit families, and only the common one was mapped (#1135, 29 Oct).**
+  `kIOReturn*` codes are `0xE00002xx`; the USB family's are `0xE0004000 | x` (IOKit/usb/USB.h):
+  `kIOUSBPipeStalled` 0x4f, `kIOUSBTransactionTimeout` 0x51. A raw `IOKit kern_return 0xe00040xx`
+  in a log is an UNMAPPED code, so every retry keyed on a sentinel (`isBringupResetable`, the
+  in-place control retry) silently skips it. The mapping (`usb/iokit_status.go`) has no build tag on
+  purpose so Linux CI tests it. Control requests now go through `DeviceRequestTO` (v182 device
+  interface, vtable 30) with the caller's 300 ms timeout. The base `DeviceRequest` has none and hung
+  for the kernel's ~5 s default, exactly `sdr list --probe`'s deadline. On-air-gated: the
+  reporter's Mac.
 - **The #1135 "probe never resets" rule is a macOS/usbdevfs rule, not a universal one (#1200).**
   It exists because an IOKit/usbdevfs reset re-enumerates the device and perturbs siblings on
   the same controller. A WinUSB `Reset` only re-opens this process's handle, so on Windows a

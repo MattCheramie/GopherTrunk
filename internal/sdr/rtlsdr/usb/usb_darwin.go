@@ -360,7 +360,7 @@ func (e *darwinEnumerator) Open(d Descriptor) (Transport, error) {
 	}
 	defer ioObjectRelease(svc)
 
-	devIface, err := openDeviceInterface(svc)
+	devIface, requestTO, err := openDeviceInterface(svc)
 	if err != nil {
 		return nil, err
 	}
@@ -372,8 +372,14 @@ func (e *darwinEnumerator) Open(d Descriptor) (Transport, error) {
 	}
 
 	t := &darwinTransport{
-		devIface: devIface,
-		desc:     d,
+		devIface:  devIface,
+		desc:      d,
+		requestTO: requestTO,
+	}
+	if requestTO {
+		debugLogf("ctrl", "%s control requests via DeviceRequestTO (per-call timeout)", t.bulkLabel())
+	} else {
+		debugLogf("ctrl", "%s control requests via DeviceRequest (kernel default timeout)", t.bulkLabel())
 	}
 	return t, nil
 }
@@ -415,32 +421,49 @@ func findServiceByLocation(wantLoc uint32) (ioService, bool) {
 // QueryInterface for the IOUSBDeviceInterface, release the plug-in.
 // Returns a usable IOUSBDeviceInterface pointer (a **interface in C
 // terms; the caller dereferences via vtableCall).
-func openDeviceInterface(svc ioService) (uintptr, error) {
+//
+// It asks for the v182 interface first, because only v182 has
+// DeviceRequestTO, and reports whether it got it. The base interface's
+// DeviceRequest has no timeout parameter: a control request the device
+// never answers blocks for the kernel's default (seconds), then returns
+// kIOUSBTransactionTimeout. With two dongles on one Mac that is what made
+// `sdr list --probe` hit its 5 s deadline and the daemon open fail
+// (issue #1135). libusb, which drives the same dongles fine on the
+// reporter's Mac (rtl_test), sends every control transfer with the
+// caller's timeout. GT_USB_DEVICE_REQUEST_TO=0 forces the base interface.
+func openDeviceInterface(svc ioService) (uintptr, bool, error) {
 	var plugin *uintptr
 	var score int32
 	pluginUUID := makeCFUUID(uuidIOUSBDeviceUserClientType)
 	if pluginUUID == 0 {
-		return 0, errors.New("usb: CFUUIDCreateFromUUIDBytes(IOUSBDeviceUserClientType) returned NULL")
+		return 0, false, errors.New("usb: CFUUIDCreateFromUUIDBytes(IOUSBDeviceUserClientType) returned NULL")
 	}
 	defer cfRelease(pluginUUID)
 	ifaceUUID := makeCFUUID(uuidIOCFPlugInInterface)
 	if ifaceUUID == 0 {
-		return 0, errors.New("usb: CFUUIDCreateFromUUIDBytes(IOCFPlugInInterface) returned NULL")
+		return 0, false, errors.New("usb: CFUUIDCreateFromUUIDBytes(IOCFPlugInInterface) returned NULL")
 	}
 	defer cfRelease(ifaceUUID)
 	if rc := ioCreatePlugInInterfaceForService(svc, pluginUUID, ifaceUUID, &plugin, &score); rc != kIOReturnSuccess {
-		return 0, fmt.Errorf("usb: IOCreatePlugInInterfaceForService: 0x%08x", uint32(rc))
+		return 0, false, fmt.Errorf("usb: IOCreatePlugInInterfaceForService: 0x%08x", uint32(rc))
 	}
 	if plugin == nil {
-		return 0, errors.New("usb: IOCreatePlugInInterfaceForService returned NULL plugin")
+		return 0, false, errors.New("usb: IOCreatePlugInInterfaceForService returned NULL plugin")
 	}
 	defer release(uintptr(unsafe.Pointer(plugin)))
 
+	if deviceRequestTOEnabled() {
+		devIface, err := queryInterface(uintptr(unsafe.Pointer(plugin)), uuidIOUSBDeviceInterface182)
+		if err == nil {
+			return devIface, true, nil
+		}
+		debugLogf("ctrl", "IOUSBDeviceInterface182 unavailable (%v); control requests fall back to DeviceRequest", err)
+	}
 	devIface, err := queryInterface(uintptr(unsafe.Pointer(plugin)), uuidIOUSBDeviceInterface)
 	if err != nil {
-		return 0, fmt.Errorf("usb: QueryInterface(IOUSBDeviceInterface): %w", err)
+		return 0, false, fmt.Errorf("usb: QueryInterface(IOUSBDeviceInterface): %w", err)
 	}
-	return devIface, nil
+	return devIface, false, nil
 }
 
 // darwinTransport is the IOKit-backed [Transport] for one open
@@ -452,6 +475,11 @@ type darwinTransport struct {
 	ifaceIface uintptr // IOUSBInterfaceInterface**, populated by ClaimInterface
 	desc       Descriptor
 	closed     atomic.Bool
+
+	// requestTO is set when Open obtained the v182 device interface, so
+	// control requests go through DeviceRequestTO with the caller's
+	// timeout instead of DeviceRequest's kernel default (issue #1135).
+	requestTO bool
 
 	// readPipeTimeoutMs, when non-zero, makes bulkLoop use ReadPipeTO
 	// (the v182 timeout variant) with this no-data timeout instead of the
@@ -548,12 +576,11 @@ func (t *darwinTransport) ControlIn(bRequest uint8, wValue, wIndex uint16, n int
 	if n > 0 {
 		req.PData = unsafe.Pointer(&buf[0])
 	}
-	rc := vtableCall(t.devIface, deviceDeviceRequest, uintptr(unsafe.Pointer(&req)))
-	if err := translateIOReturn(rc); err != nil {
+	done, err := t.deviceRequest(&req, timeoutMs)
+	if err != nil {
 		return nil, fmt.Errorf("usb: DeviceRequest IN: %w", err)
 	}
-	_ = timeoutMs // IOUSBDeviceInterface v1.0's DeviceRequest has no timeout; v1.8.2's DeviceRequestTO does. Future enhancement.
-	return buf[:req.WLenDone], nil
+	return buf[:done], nil
 }
 
 func (t *darwinTransport) ControlOut(bRequest uint8, wValue, wIndex uint16, data []byte, timeoutMs int) error {
@@ -573,12 +600,34 @@ func (t *darwinTransport) ControlOut(bRequest uint8, wValue, wIndex uint16, data
 	if len(data) > 0 {
 		req.PData = unsafe.Pointer(&data[0])
 	}
-	rc := vtableCall(t.devIface, deviceDeviceRequest, uintptr(unsafe.Pointer(&req)))
-	if err := translateIOReturn(rc); err != nil {
+	if _, err := t.deviceRequest(&req, timeoutMs); err != nil {
 		return fmt.Errorf("usb: DeviceRequest OUT: %w", err)
 	}
-	_ = timeoutMs
 	return nil
+}
+
+// deviceRequest issues req, through DeviceRequestTO with timeoutMs as both
+// the no-data and completion timeout when the v182 interface is available
+// and the caller gave a timeout, otherwise through plain DeviceRequest.
+// Returns the number of bytes transferred.
+func (t *darwinTransport) deviceRequest(req *iousbDevRequest, timeoutMs int) (uint32, error) {
+	if ms, ok := controlTimeoutMs(timeoutMs); ok && t.requestTO {
+		reqTO := iousbDevRequestTO{
+			BmRequestType:     req.BmRequestType,
+			BRequest:          req.BRequest,
+			WValue:            req.WValue,
+			WIndex:            req.WIndex,
+			WLength:           req.WLength,
+			PData:             req.PData,
+			NoDataTimeout:     ms,
+			CompletionTimeout: ms,
+		}
+		rc := vtableCall(t.devIface, deviceDeviceRequestTO, uintptr(unsafe.Pointer(&reqTO)))
+		runtime.KeepAlive(req)
+		return reqTO.WLenDone, translateIOReturn(rc)
+	}
+	rc := vtableCall(t.devIface, deviceDeviceRequest, uintptr(unsafe.Pointer(req)))
+	return req.WLenDone, translateIOReturn(rc)
 }
 
 // ClaimInterface walks CreateInterfaceIterator and claims the first

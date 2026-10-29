@@ -55,6 +55,12 @@ func TestSetI2CRepeater_RecoversFromControlPipeStall(t *testing.T) {
 	}{
 		{"linux-EPIPE", syscall.EPIPE},
 		{"pipe-stalled", usb.ErrPipeStalled},
+		// macOS kIOReturnAborted on a control request after bring-up: the
+		// #1135 29 Oct log lost the second dongle to one aborted
+		// SetSampleRate write ("rtl2832u: write demod page=1 addr=0x9f ...
+		// usb: transfer aborted"), which the open-time envelope already
+		// treats as transient.
+		{"macos-transfer-aborted", usb.ErrTransferAborted},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tr := &stallTransport{stallOuts: 1, stallErr: tc.err}

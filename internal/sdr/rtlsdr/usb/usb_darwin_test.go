@@ -3,69 +3,9 @@
 package usb
 
 import (
-	"errors"
 	"testing"
 	"unsafe"
 )
-
-// TestTranslateIOReturn_PipeStalledMapsToErrPipeStalled pins the fix for
-// issue #1038: on macOS a NESDR/R820T tuner init failed with
-//
-//	tuner init: r82xx init: burst write: rtl2832u: I2CWrite addr=0x34:
-//	usb: DeviceRequest OUT: usb: IOKit kern_return 0xe000404f
-//
-// 0xe000404f is kIOUSBPipeStalled — the recoverable I²C-bridge STALL
-// that surfaces as syscall.EPIPE on Linux and ERROR_GEN_FAILURE on
-// Windows. The R820T cold-boot burst-write recovery (issue #248) keys
-// off usb.ErrPipeStalled via isI2CBurstStall, so translateIOReturn must
-// map the IOKit stall to that shared sentinel or the retry never fires
-// and tuner detection reports "no supported tuner detected". This is the
-// macOS analog of TestWinErr_GenFailureMapsToPipeStalled.
-func TestTranslateIOReturn_PipeStalledMapsToErrPipeStalled(t *testing.T) {
-	got := translateIOReturn(kIOUSBPipeStalled)
-	if !errors.Is(got, ErrPipeStalled) {
-		t.Fatalf("translateIOReturn(0x%08x) = %v, want errors.Is(err, ErrPipeStalled) so the R820T burst-write stall recovery fires on macOS", uint32(kIOUSBPipeStalled), got)
-	}
-}
-
-// TestKIOUSBPipeStalledValue guards the constant against a typo: the
-// value is Apple's iokit_usb_err(0x4f) and the whole fix hinges on it
-// exactly matching the kern_return the host controller returns.
-func TestKIOUSBPipeStalledValue(t *testing.T) {
-	const want = 0xE000404F // sys_iokit | sub_iokit_usb | 0x4f
-	if kIOUSBPipeStalled != want {
-		t.Fatalf("kIOUSBPipeStalled = 0x%08x, want 0x%08x", uint32(kIOUSBPipeStalled), uint32(want))
-	}
-}
-
-// TestTranslateIOReturn_AbortedMapsToErrTransferAborted pins the fix for
-// issue #1135: on macOS with two RTL-SDR dongles on one bus, a control
-// DeviceRequest during bring-up intermittently returns kIOReturnAborted
-// (0xe00002eb). It used to map to ErrBulkInactive, so the failure surfaced
-// as the misleading "usb: DeviceRequest OUT: usb: bulk-IN not active" AND
-// was not recognised as reset-recoverable by the bring-up envelope
-// (isBringupResetable), so the open aborted instead of retrying the
-// transient. It must now map to the dedicated ErrTransferAborted and must
-// NOT be ErrBulkInactive, whose meaning is "StopBulkIn called with no
-// active stream". This is the macOS analog of the #1038 stall-mapping fix.
-func TestTranslateIOReturn_AbortedMapsToErrTransferAborted(t *testing.T) {
-	got := translateIOReturn(kIOReturnAborted)
-	if !errors.Is(got, ErrTransferAborted) {
-		t.Fatalf("translateIOReturn(0x%08x) = %v, want errors.Is(err, ErrTransferAborted) so the bring-up envelope resets and retries the transient", uint32(kIOReturnAborted), got)
-	}
-	if errors.Is(got, ErrBulkInactive) {
-		t.Fatalf("translateIOReturn(0x%08x) = %v, must not be ErrBulkInactive — a control-transfer abort is not a bulk-IN-inactive condition (issue #1135)", uint32(kIOReturnAborted), got)
-	}
-}
-
-// TestKIOReturnAbortedValue guards the constant against a typo: the whole
-// #1135 fix hinges on it matching the kern_return IOKit actually returns.
-func TestKIOReturnAbortedValue(t *testing.T) {
-	const want = 0xE00002EB // sys_iokit | sub_iokit_common | 0x2eb
-	if kIOReturnAborted != want {
-		t.Fatalf("kIOReturnAborted = 0x%08x, want 0x%08x", uint32(kIOReturnAborted), uint32(want))
-	}
-}
 
 // These tests pin compile-time invariants (UUIDs, struct sizes,
 // vtable indices) that don't depend on IOKit actually loading at
@@ -137,6 +77,11 @@ func TestUUIDsMatchAppleConstants(t *testing.T) {
 			want: cfUUIDBytes{0x5C, 0x81, 0x87, 0xD0, 0x9E, 0xF3, 0x11, 0xD4, 0x8B, 0x45, 0x00, 0x0A, 0x27, 0x05, 0x28, 0x61},
 		},
 		{
+			name: "IOUSBDeviceInterface182",
+			got:  uuidIOUSBDeviceInterface182,
+			want: cfUUIDBytes{0x15, 0x2F, 0xC4, 0x96, 0x48, 0x91, 0x11, 0xD5, 0x9D, 0x52, 0x00, 0x0A, 0x27, 0x80, 0x1E, 0x86},
+		},
+		{
 			name: "IOUSBInterfaceInterface",
 			got:  uuidIOUSBInterfaceInterface,
 			want: cfUUIDBytes{0x73, 0xC9, 0x7A, 0xE8, 0x9E, 0xF3, 0x11, 0xD4, 0xB1, 0xD0, 0x00, 0x0A, 0x27, 0x05, 0x28, 0x61},
@@ -175,6 +120,38 @@ func TestIOUSBDevRequestSize(t *testing.T) {
 	// future field reordering surfaces immediately.
 	if got, want := unsafe.Sizeof(iousbDevRequest{}), uintptr(24); got != want {
 		t.Errorf("sizeof(iousbDevRequest) = %d, want %d", got, want)
+	}
+}
+
+// TestIOUSBDevRequestTOLayout pins IOUSBDevRequestTO (issue #1135): the
+// kernel reads the two timeouts at fixed offsets, so a field slip would
+// hand it a pointer half or zero as a timeout.
+func TestIOUSBDevRequestTOLayout(t *testing.T) {
+	var r iousbDevRequestTO
+	if got, want := unsafe.Sizeof(r), uintptr(32); got != want {
+		t.Errorf("sizeof(iousbDevRequestTO) = %d, want %d", got, want)
+	}
+	for _, c := range []struct {
+		name      string
+		got, want uintptr
+	}{
+		{"PData", unsafe.Offsetof(r.PData), 8},
+		{"WLenDone", unsafe.Offsetof(r.WLenDone), 16},
+		{"NoDataTimeout", unsafe.Offsetof(r.NoDataTimeout), 20},
+		{"CompletionTimeout", unsafe.Offsetof(r.CompletionTimeout), 24},
+	} {
+		if c.got != c.want {
+			t.Errorf("offsetof(iousbDevRequestTO.%s) = %d, want %d", c.name, c.got, c.want)
+		}
+	}
+}
+
+// TestDeviceRequestTOFollowsBaseVtable pins DeviceRequestTO's slot in the
+// v182 device vtable: the 100-level functions end at CreateInterfaceIterator
+// (28), then USBDeviceOpenSeize (29) and DeviceRequestTO (30).
+func TestDeviceRequestTOFollowsBaseVtable(t *testing.T) {
+	if deviceCreateInterfaceIterator != 28 || deviceDeviceRequestTO != 30 {
+		t.Fatalf("CreateInterfaceIterator=%d DeviceRequestTO=%d, want 28 and 30", deviceCreateInterfaceIterator, deviceDeviceRequestTO)
 	}
 }
 

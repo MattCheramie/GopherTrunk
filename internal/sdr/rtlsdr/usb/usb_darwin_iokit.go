@@ -42,31 +42,6 @@ type (
 	ioRegEntry = machPort
 )
 
-// kIOReturn (kern_return_t) status codes. We only check for
-// kIOReturnSuccess on the hot path; specific errors get translated
-// in translateIOReturn below.
-const (
-	kIOReturnSuccess       = 0
-	kIOReturnNoDevice      = 0xE00002C0
-	kIOReturnAborted       = 0xE00002EB
-	kIOReturnTimeout       = 0xE00002D6
-	kIOReturnExclusive     = 0xE00002C5 // already opened by another process
-	kIOReturnNotResponding = 0xE00002ED
-
-	// kIOUSBPipeStalled is the USB-family IOReturn the host controller
-	// raises when the device STALLs a pipe — "pipe has stalled, error
-	// needs to be cleared". Value from IOKit/usb/IOUSBLib.h:
-	// iokit_usb_err(0x4f) = sys_iokit(0xE0000000) | sub_iokit_usb(0x4000)
-	// | 0x4f = 0xE000404F. This is the macOS analog of the recoverable
-	// I²C-bridge stall that surfaces as syscall.EPIPE on Linux and
-	// ERROR_GEN_FAILURE on Windows/WinUSB; translateIOReturn maps all
-	// three to usb.ErrPipeStalled so the R820T cold-boot burst-write
-	// recovery (issue #248) fires identically across the OS matrix
-	// (issue #1038: NESDR/R820T tuner-init failed on macOS because this
-	// stall fell through as a raw kern_return the retry couldn't match).
-	kIOUSBPipeStalled = 0xE000404F
-)
-
 // CFNumberType for CFNumberGetValue. Only kCFNumberSInt32Type is
 // used — VID/PID/serial/etc. live in the IORegistry as 32-bit ints.
 const kCFNumberSInt32Type = 3
@@ -94,6 +69,16 @@ var (
 	uuidIOUSBDeviceInterface = cfUUIDBytes{
 		0x5C, 0x81, 0x87, 0xD0, 0x9E, 0xF3, 0x11, 0xD4,
 		0x8B, 0x45, 0x00, 0x0A, 0x27, 0x05, 0x28, 0x61,
+	}
+	// kIOUSBDeviceInterfaceID182 (152FC496-4891-11D5-9D52-000A27801E86)
+	// from IOKit/usb/IOUSBLib.h. A superset of the base
+	// IOUSBDeviceInterface vtable (every base index unchanged) that adds
+	// DeviceRequestTO (index 30), the control request with a timeout. Open
+	// queries it first and falls back to the base interface if the query
+	// fails, so a wrong or missing ID only costs the timeout, never the open.
+	uuidIOUSBDeviceInterface182 = cfUUIDBytes{
+		0x15, 0x2F, 0xC4, 0x96, 0x48, 0x91, 0x11, 0xD5,
+		0x9D, 0x52, 0x00, 0x0A, 0x27, 0x80, 0x1E, 0x86,
 	}
 	uuidIOUSBInterfaceInterface = cfUUIDBytes{
 		0x73, 0xC9, 0x7A, 0xE8, 0x9E, 0xF3, 0x11, 0xD4,
@@ -135,6 +120,14 @@ const (
 	deviceResetDevice             = 25
 	deviceDeviceRequest           = 26
 	deviceCreateInterfaceIterator = 28
+	// deviceDeviceRequestTO is DeviceRequestTO, present only in the v182+
+	// interface (kIOUSBDeviceInterfaceID182): the 182 functions follow
+	// CreateInterfaceIterator as USBDeviceOpenSeize (29), DeviceRequestTO
+	// (30), DeviceRequestAsyncTO (31), ...
+	//   IOReturn DeviceRequestTO(self, IOUSBDevRequestTO *req)
+	// Only invoked when Open obtained the v182 interface
+	// (darwinTransport.requestTO).
+	deviceDeviceRequestTO = 30
 )
 
 // IOUSBInterfaceInterface vtable indices (post-IUnknown).
@@ -181,6 +174,23 @@ type iousbDevRequest struct {
 	PData         unsafe.Pointer
 	WLenDone      uint32
 	_pad          uint32
+}
+
+// iousbDevRequestTO mirrors IOUSBDevRequestTO from IOUSBLib.h: the
+// IOUSBDevRequest fields followed by noDataTimeout and completionTimeout
+// (ms). Layout on 64-bit: 8-byte setup packet, pData at 8, wLenDone at 16,
+// the two timeouts at 20 and 24, padded to 32.
+type iousbDevRequestTO struct {
+	BmRequestType     uint8
+	BRequest          uint8
+	WValue            uint16
+	WIndex            uint16
+	WLength           uint16
+	PData             unsafe.Pointer
+	WLenDone          uint32
+	NoDataTimeout     uint32
+	CompletionTimeout uint32
+	_pad              uint32
 }
 
 // iousbFindInterfaceRequest is what CreateInterfaceIterator takes —
@@ -326,41 +336,6 @@ func vtableCall(iface uintptr, index int, args ...uintptr) uintptr {
 	all := append([]uintptr{iface}, args...)
 	r1, _, _ := purego.SyscallN(fn, all...)
 	return r1
-}
-
-// translateIOReturn maps the most common IOKit error codes to the
-// package's sentinel errors. Anything else flows through as a raw
-// numeric error so callers can still see the kIOReturn code.
-func translateIOReturn(rc uintptr) error {
-	switch uint32(rc) {
-	case kIOReturnSuccess:
-		return nil
-	case kIOReturnNoDevice, kIOReturnNotResponding:
-		return ErrDeviceGone
-	case kIOReturnTimeout:
-		return ErrTimeout
-	case kIOUSBPipeStalled:
-		// Recoverable pipe STALL — same class as Linux EPIPE / Windows
-		// ERROR_GEN_FAILURE. Surfacing the shared sentinel lets the
-		// tuner burst-write retry (isI2CBurstStall) recover on macOS.
-		return ErrPipeStalled
-	case kIOReturnAborted:
-		// A request the host stack aborted mid-flight. On the bulk-IN
-		// path this is the normal StopBulkIn/AbortPipe cancellation, but
-		// bulkLoop reads the raw rc there and never routes through here —
-		// so every translateIOReturn caller is a control / interface /
-		// reset op. For those an abort is a transient the bring-up
-		// envelope can reset-and-retry, so surface the dedicated
-		// ErrTransferAborted rather than ErrBulkInactive, whose meaning is
-		// "StopBulkIn called with no active stream" (issue #1135 — the
-		// abort used to be mislabelled "usb: bulk-IN not active" on a
-		// control DeviceRequest, and was not treated as resetable).
-		return ErrTransferAborted
-	case kIOReturnExclusive:
-		return fmt.Errorf("usb: device already opened by another process (kIOReturnExclusive)")
-	default:
-		return fmt.Errorf("usb: IOKit kern_return 0x%08x", uint32(rc))
-	}
 }
 
 // makeCFUUID builds a CFUUIDRef from raw UUID bytes. CFUUIDBytes is a
