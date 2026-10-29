@@ -35,11 +35,18 @@ func (d *Demod) EnableControlStallRetry() {
 	d.mu.Unlock()
 }
 
-// isControlPipeStall reports whether err is a recoverable control-pipe STALL:
-// raw syscall.EPIPE on Linux/usbdevfs, usb.ErrPipeStalled on Windows/WinUSB
-// and macOS/IOKit.
+// isControlPipeStall reports whether err is a control-transfer failure worth
+// one settle-and-retry: a STALL (raw syscall.EPIPE on Linux/usbdevfs,
+// usb.ErrPipeStalled on Windows/WinUSB and macOS/IOKit) or a macOS
+// kIOReturnAborted (usb.ErrTransferAborted), the host stack abandoning the
+// request mid-flight. The abort is the transient the open-time envelope
+// already retries; after bring-up it used to fail the call outright, which
+// lost the second of two dongles on one Mac to a single aborted
+// SetSampleRate write (issue #1135).
 func isControlPipeStall(err error) bool {
-	return errors.Is(err, syscall.EPIPE) || errors.Is(err, usb.ErrPipeStalled)
+	return errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, usb.ErrPipeStalled) ||
+		errors.Is(err, usb.ErrTransferAborted)
 }
 
 // ctrlOut issues a vendor-OUT control transfer, settling and retrying ONCE on
