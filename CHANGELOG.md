@@ -52,6 +52,17 @@ for tagged releases.
   daemon restart.
 
 ### Added
+- **Per-transmission P25 Phase 1 decode quality (#1242).** Each over now
+  logs `composer: p25p1 transmission quality` with the radio that keyed it
+  (`src`), its LDUs, corrected bit errors and `errs_per_ldu`, uncorrectable
+  counts, `short_ldus` and the carrier offset. The existing `decode quality`
+  line is cumulative over the voice chain, and with
+  `voice_call_grouping: conversation` one chain spans every over on the
+  talkgroup, so errors climbing during a long call could not be pinned on
+  one distant radio or on the receiver. An over ends at its terminator,
+  when the next LDU1 names a different radio (the terminator between two
+  overs can be lost), or at the end of the call. See
+  `docs/voice-calibration.md`.
 - **HydraSDR RFOne support (#1325).** A new `hydrasdr` driver opens the
   RFOne on its official USB IDs (`0x38af:0x0001`) and on the historic Airspy
   IDs (`0x1d50:0x60a1`) when the USB Product string names HydraSDR; any other
