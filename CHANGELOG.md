@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.3.6] — 2026-10-30
+
 ### Fixed
 - **Airspy Mini on a Raspberry Pi 4 saturated one core at 3 MS/s with two TETRA
   cells ("dropping live IQ chunks", #1321).** Three things on the wideband
