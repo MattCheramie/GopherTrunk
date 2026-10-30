@@ -217,7 +217,7 @@ func runEPChain(t *testing.T, dibits []uint8, resolver KeyResolver) (raw [][]byt
 func TestComposerDMREnhancedPrivacyDecryptsWithConfiguredKey(t *testing.T) {
 	key := []byte{0x0F, 0x1E, 0x2D, 0x3C, 0x4B}
 	dibits, clear := buildEnhancedPrivacyStream(t, key, 7, 0xDEADBEEF, 12)
-	resolver := func(system, algorithm string, keyID uint16) ([]byte, bool) {
+	resolver := func(system, algorithm string, keyID uint16, _ uint32) ([]byte, bool) {
 		if system == "DMRSite" && algorithm == "rc4" && keyID == 7 {
 			return key, true
 		}
@@ -278,7 +278,7 @@ func TestComposerDMREnhancedPrivacyRecordsCiphertextWithoutKey(t *testing.T) {
 func TestComposerDMREnhancedPrivacyIgnoresWrongKeyID(t *testing.T) {
 	key := []byte{0x0F, 0x1E, 0x2D, 0x3C, 0x4B}
 	dibits, clear := buildEnhancedPrivacyStream(t, key, 7, 0x12345678, 12)
-	resolver := func(system, algorithm string, keyID uint16) ([]byte, bool) {
+	resolver := func(system, algorithm string, keyID uint16, _ uint32) ([]byte, bool) {
 		if keyID == 8 {
 			return key, true
 		}

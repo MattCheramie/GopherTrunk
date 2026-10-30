@@ -295,7 +295,7 @@ func (c *Composer) runP25Phase1VoiceChain(ctx context.Context, serial, system st
 	// to before: ciphertext is recorded as ciphertext.
 	var adp *p25ADPState
 	if c.keyResolver != nil {
-		adp = newP25ADPState(c, serial, system)
+		adp = newP25ADPState(c, serial, system, grantTG)
 		defer adp.finish(writeFrame)
 	}
 	rx = p25p1rx.New(p25p1rx.Options{

@@ -19,16 +19,29 @@ func ConventionalKeySystem(frequencyHz uint32) string {
 }
 
 // resolveKey looks a (algorithm, key ID) up for a call: the grant's system
-// first, then the conventional channel the call is on.
-func (c *Composer) resolveKey(system string, frequencyHz uint32, algorithm string, keyID uint16) ([]byte, bool) {
+// first, then the conventional channel the call is on. groups are the call's
+// talkgroup candidates in preference order (the grant's group, then the one
+// the call's own signalling names); each is tried before the unscoped entry
+// for the key ID, so a talkgroup-scoped key wins (issue #1261). A zero group
+// is skipped.
+func (c *Composer) resolveKey(system string, frequencyHz uint32, algorithm string, keyID uint16, groups ...uint32) ([]byte, bool) {
 	if c.keyResolver == nil {
 		return nil, false
 	}
-	if k, ok := c.keyResolver(system, algorithm, keyID); ok && len(k) > 0 {
-		return k, true
-	}
+	systems := []string{system}
 	if frequencyHz != 0 {
-		if k, ok := c.keyResolver(ConventionalKeySystem(frequencyHz), algorithm, keyID); ok && len(k) > 0 {
+		systems = append(systems, ConventionalKeySystem(frequencyHz))
+	}
+	for _, sys := range systems {
+		for _, g := range groups {
+			if g == 0 {
+				continue
+			}
+			if k, ok := c.keyResolver(sys, algorithm, keyID, g); ok && len(k) > 0 {
+				return k, true
+			}
+		}
+		if k, ok := c.keyResolver(sys, algorithm, keyID, 0); ok && len(k) > 0 {
 			return k, true
 		}
 	}
@@ -69,7 +82,10 @@ func (s *nxdnCipherState) onVCALL(v nxdn.VCALLMessage) {
 	s.tracker.ClearKey()
 	s.keyConfigured = false
 	if v.Cipher == nxdn.CipherScrambler {
-		if k, ok := s.c.resolveKey(s.system, s.frequencyHz, "scrambler", uint16(v.KeyID)); ok && len(k) == 2 {
+		// The grant's group first (a trunked call's talkgroup), then the
+		// VCALL's destination — on a conventional channel the grant's group
+		// is synthetic and the VCALL names the real talkgroup.
+		if k, ok := s.c.resolveKey(s.system, s.frequencyHz, "scrambler", uint16(v.KeyID), s.groupID, uint32(v.Destination)); ok && len(k) == 2 {
 			s.tracker.SetKey(uint16(k[0])<<8 | uint16(k[1]))
 			s.keyConfigured = true
 		}

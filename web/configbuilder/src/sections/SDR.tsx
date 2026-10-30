@@ -445,12 +445,13 @@ function DeviceEditor(props: {
                   label="Decryption keys"
                   items={c.EncryptionKeys ?? null}
                   onChange={(x) => set({ ...c, EncryptionKeys: x })}
-                  makeNew={() => ({ KeyID: 0, Algorithm: "scrambler", Key: "" })}
-                  itemTitle={(e) => `Key ID ${e.KeyID}`}
+                  makeNew={() => ({ KeyID: 0, Talkgroup: 0, Algorithm: "scrambler", Key: "" })}
+                  itemTitle={(e) => (e.Talkgroup ? `Key ID ${e.KeyID} · TG ${e.Talkgroup}` : `Key ID ${e.KeyID}`)}
                   emptyHint="Digital channels only: an NXDN channel's scrambler keys (algorithm scrambler, the radio's decimal 15-bit key, key_id as the VCALL names it). The voice chain descrambles a call whose key ID matches."
                   renderItem={(e, setKey) => (
                     <div className="grid gap-3 sm:grid-cols-3">
                       <NumberField label="Key ID" value={e.KeyID} onChange={(v) => setKey({ ...e, KeyID: v })} />
+                      <NumberField label="Talkgroup (0 = all)" value={e.Talkgroup ?? 0} onChange={(v) => setKey({ ...e, Talkgroup: v })} />
                       <SelectField
                         label="Algorithm"
                         value={e.Algorithm}

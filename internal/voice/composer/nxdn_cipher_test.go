@@ -60,7 +60,7 @@ func TestNXDNCipherStateResolvesConventionalChannelKey(t *testing.T) {
 	bus := events.NewBus(16)
 	defer bus.Close()
 	sub := bus.Subscribe()
-	resolver := func(system, algorithm string, keyID uint16) ([]byte, bool) {
+	resolver := func(system, algorithm string, keyID uint16, _ uint32) ([]byte, bool) {
 		if system == ConventionalKeySystem(447_100_000) && algorithm == "scrambler" && keyID == 3 {
 			return []byte{0x7F, 0xFF}, true // 32767
 		}
@@ -181,5 +181,50 @@ func TestNXDNCipherStateWithoutKeysPassesThrough(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("no call.encryption event")
+	}
+}
+
+// TestNXDNCipherStateResolvesTalkgroupScopedKey (issue #1261): a trunked
+// NXDN site programs every talkgroup with key id 0 but a different key, so
+// the chain must hand the resolver the call's talkgroup. On the real-air
+// fixture (key id 3, key 32767), the call on the talkgroup the key is
+// scoped to descrambles, and the same call on another talkgroup does not.
+func TestNXDNCipherStateResolvesTalkgroupScopedKey(t *testing.T) {
+	resolver := func(system, algorithm string, keyID uint16, group uint32) ([]byte, bool) {
+		if system == "SJPR NXDN" && algorithm == "scrambler" && keyID == 3 && group == 21 {
+			return []byte{0x7F, 0xFF}, true // 32767, configured for TG 21 only
+		}
+		return nil, false
+	}
+	bus := events.NewBus(16)
+	defer bus.Close()
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{}},
+		Sink:          &recordingSink{},
+		Engine:        &fakeEngine{},
+		IQSampleRate:  2_400_000,
+		PCMSampleRate: 8000,
+		KeyResolver:   resolver,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	frames := loadNXDNScramblerFrames(t)
+	run := func(group uint32) *nxdnCipherState {
+		st := c.newNXDNCipherState("VOICE-1", "SJPR NXDN", 453_775_000, group)
+		for _, f := range frames {
+			st.tracker.Frame(f)
+		}
+		st.tracker.Flush()
+		return st
+	}
+	if st := run(21); !st.keyConfigured || st.tracker.Descrambled == 0 {
+		t.Fatalf("tg 21: key_configured=%v descrambled=%d, want the tg 21 key applied", st.keyConfigured, st.tracker.Descrambled)
+	}
+	if st := run(10); st.keyConfigured || st.tracker.Descrambled != 0 {
+		t.Fatalf("tg 10: key_configured=%v descrambled=%d, want no key (it is scoped to tg 21)", st.keyConfigured, st.tracker.Descrambled)
 	}
 }

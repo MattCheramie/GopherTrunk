@@ -109,10 +109,10 @@ func TestWithKeyFileKeysMergesWithoutTouchingConfig(t *testing.T) {
 		t.Fatalf("merged = %+v, want the 4 container TEK IDs with key 3 from encryption_keys", merged[0].EncryptionKeys)
 	}
 	res := buildKeyResolver(merged, quietLog())
-	if k, ok := res("county", "aes", 1); !ok || len(k) != 32 {
+	if k, ok := res("county", "aes", 1, 0); !ok || len(k) != 32 {
 		t.Fatalf("resolver(aes, 1) = %x, %v; want the container's AES-256 key", k, ok)
 	}
-	if k, ok := res("county", "rc4", 3); !ok || !bytes.Equal(k, []byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE}) {
+	if k, ok := res("county", "rc4", 3, 0); !ok || !bytes.Equal(k, []byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE}) {
 		t.Fatalf("resolver(rc4, 3) = %x, %v; want the explicit encryption_keys key", k, ok)
 	}
 	log := logBuf.String()

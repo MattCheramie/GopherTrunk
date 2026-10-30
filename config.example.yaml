@@ -1443,6 +1443,22 @@ trunking:
   #       - key_id: 3
   #         algorithm: des              # P25 DES-OFB (ALGID 0x81)
   #         key: "0123456789abcdef"
+  #
+  #   # One key ID, a different key per talkgroup (#1261): give each entry
+  #   # the `talkgroup` it belongs to. A talkgroup entry wins over an entry
+  #   # without one for the same key_id; omitted / 0 = every talkgroup.
+  #   - name: "Example-NXDN-Scrambler"
+  #     protocol: nxdn
+  #     control_channels: [453_775_000]
+  #     encryption_keys:
+  #       - key_id: 0
+  #         talkgroup: 21
+  #         algorithm: scrambler
+  #         key: "12345"
+  #       - key_id: 0
+  #         talkgroup: 10
+  #         algorithm: scrambler
+  #         key: "22122"
   #     # Keys can also come from KFDtool encrypted key containers (.ekc),
   #     # so they stay encrypted at rest instead of sitting in this file.
   #     # The daemon decrypts each at startup and adds its traffic keys
@@ -1612,7 +1628,9 @@ scanner:
   #   # voice chain descrambles in-process when a call's SACCH VCALL names a
   #   # matching key_id (the key slot the radios were programmed with). The
   #   # key is the radio's DECIMAL 15-bit key, 1..32767. Several groups on
-  #   # one channel with different keys = one entry per key_id. The same
+  #   # one channel with different keys = one entry per key_id, or, when
+  #   # they share a key_id, one entry per `talkgroup` (the VCALL's
+  #   # destination). The same
   #   # entries are accepted on a trunking system's encryption_keys. Calls
   #   # whose key is not listed record as ciphertext (see recordings.
   #   # mute_encrypted); NXDN DES / AES are identified, not decrypted.

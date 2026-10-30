@@ -259,6 +259,7 @@ var fieldMetas = map[string]FieldMeta{
 	"NXDNBandPlanTableEntryConfig.FreqHz":  {Label: "Frequency", Hz: true, Help: "Downlink frequency this channel maps to."},
 
 	"EncryptionKeyConfig.KeyID":     {Label: "Key ID", Help: "Key identifier the radios carry in the privacy header, so a system that rotates keys still resolves."},
+	"EncryptionKeyConfig.Talkgroup": {Help: "Optional: use this key only for calls on this talkgroup, for systems that give every talkgroup the same key ID but a different key. Wins over an entry without a talkgroup for the same key ID; 0 = every talkgroup. Issue #1261."},
 	"EncryptionKeyConfig.Algorithm": {Help: "Decryption algorithm: rc4 covers DMR Enhanced Privacy and P25 ADP (40-bit key); des = P25 DES-OFB (64-bit); tdes = P25 Triple-DES (128/192-bit); aes = P25 AES-128/256 (the key length picks the variant); scrambler = the NXDN 15-bit voice scrambler (Kenwood / Icom privacy, decimal key 1..32767, key_id 0..63 as the SACCH VCALL names it).", Options: opts("rc4", "rc4 (DMR Enhanced Privacy / P25 ADP)", "des", "des (P25 DES-OFB)", "tdes", "tdes (P25 Triple-DES)", "aes", "aes (P25 AES-128 / AES-256)", "scrambler", "scrambler (NXDN 15-bit scrambler)")},
 	"EncryptionKeyConfig.Key":       {Help: "Raw key, hex-encoded (spaces and a 0x prefix are tolerated) — except algorithm scrambler, whose key is the radio's decimal 15-bit key, 1..32767."},
 

@@ -58,17 +58,19 @@ trunking:
           key: "0123456789"    # hex; whitespace and a "0x" prefix are ignored
 ```
 
-Each entry has three fields:
+Each entry has three fields, plus an optional fourth:
 
 | Field | Meaning |
 | --- | --- |
 | `key_id` | The key identifier the radios advertise in the Privacy Indicator header. A system that rotates between several keys resolves to the right one by ID. |
 | `algorithm` | The cipher: `rc4` (aliases `arc4`, `adp`) for DMR Enhanced Privacy and P25 ADP, `des` / `tdes` / `aes` for the P25 OFB family, `scrambler` (alias `nxdn`) for the NXDN 15-bit scrambler. Anything else is rejected at config load. |
 | `key` | The raw key, hex-encoded (Enhanced Privacy keys are 40 bits = 10 hex digits). Surrounding whitespace, internal spaces and an optional `0x`/`0X` prefix are tolerated. 1–32 bytes. A `scrambler` key is the radio's decimal 15-bit key, 1..32767, as the codeplug shows it. |
+| `talkgroup` | Optional. Scopes the entry to calls on one talkgroup, for systems that program every talkgroup with the **same key ID but a different key** (see [Keys per talkgroup](#keys-per-talkgroup)). A talkgroup entry wins over an entry without one for the same `key_id`; omitted or `0` matches every talkgroup. |
 
 The config is validated when the daemon loads it: an unknown
 algorithm, malformed hex, an over-length key, or a duplicate `key_id`
-within one system is a hard error. At startup the daemon logs
+(the same `key_id` and `talkgroup` twice) within one system is a hard
+error. At startup the daemon logs
 `in-process decryption keys configured (DMR enhanced privacy)` when
 any system carries a key.
 
@@ -386,6 +388,39 @@ scanner:
           key: "12345"
 ```
 
+### Keys per talkgroup
+
+Some systems program every talkgroup with the same key ID (often 0) and
+a different key per talkgroup, so the key ID alone cannot tell the keys
+apart (issue #1261: an NXDN site where TG 21 and TG 10 both carry
+key ID 0 with different scrambler keys). Give each entry the
+`talkgroup` it belongs to:
+
+```yaml
+trunking:
+  systems:
+    - name: "SJPR NXDN"
+      protocol: nxdn
+      encryption_keys:
+        - key_id: 0
+          talkgroup: 21
+          algorithm: scrambler
+          key: "12345"
+        - key_id: 0
+          talkgroup: 10
+          algorithm: scrambler
+          key: "22122"
+```
+
+The lookup tries the call's talkgroup first and then an entry with no
+`talkgroup` for the same key ID, so the two styles mix: list the
+exceptions per talkgroup and keep one system-wide entry for the rest. A
+talkgroup-scoped key is never used for another talkgroup. The call's
+talkgroup is the grant's (a trunked call); on a conventional scan-list
+channel, whose grant carries no real talkgroup, the NXDN chain uses the
+destination the VCALL names. The same field works for DMR Enhanced
+Privacy and P25 keys.
+
 What the voice chain does:
 
 1. Every LICH-valid traffic frame's SACCH block is decoded (deinterleave
@@ -398,7 +433,8 @@ What the voice chain does:
    call log, web UI and `recordings.mute_encrypted` treat it like a DMR
    or P25 encrypted call.
 2. The key for `(algorithm scrambler, key_id)` is looked up on the
-   call's system, then on the channel at the call's frequency.
+   call's system, then on the channel at the call's frequency; on each,
+   an entry scoped to the call's talkgroup wins over an unscoped one.
 3. While keys are configured, voice is held until the first VCALL names
    the cipher (one superframe, ~320 ms, capped at two); a clear call's
    frames are released as they are, a scrambled call's are descrambled

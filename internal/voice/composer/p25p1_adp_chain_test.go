@@ -167,7 +167,7 @@ func TestComposerP25Phase1ADPDecryptsWithConfiguredKey(t *testing.T) {
 	iq := demod.ModulateP25C4FM(dibits, sampleRate, deviation)
 	framesPerSF := 2 * phase1.LDUVoiceSubframeCount
 
-	resolver := func(system, algorithm string, kid uint16) ([]byte, bool) {
+	resolver := func(system, algorithm string, kid uint16, _ uint32) ([]byte, bool) {
 		if system == "P25ADPSite" && algorithm == "rc4" && kid == keyID {
 			return key, true
 		}
@@ -211,7 +211,7 @@ func TestComposerP25Phase1ADPDecryptsWithConfiguredKey(t *testing.T) {
 		t.Fatalf("without a key %d frames match the clear frames — ciphertext should be recorded as-is", m)
 	}
 	// A resolver that has no key for this key ID leaves ciphertext too.
-	none := runP25ADPChain(t, iq, func(string, string, uint16) ([]byte, bool) { return nil, false }, minFrames)
+	none := runP25ADPChain(t, iq, func(string, string, uint16, uint32) ([]byte, bool) { return nil, false }, minFrames)
 	if m := bestAlignmentMatches(none, clear); m >= phase1.LDUVoiceSubframeCount {
 		t.Fatalf("with no matching key %d frames match the clear frames", m)
 	}
@@ -228,7 +228,7 @@ func TestComposerP25Phase1ADPLeavesClearCallsAlone(t *testing.T) {
 	)
 	dibits, want := buildP25P1VoiceStream(t, ldus)
 	iq := demod.ModulateP25C4FM(dibits, sampleRate, deviation)
-	resolver := func(string, string, uint16) ([]byte, bool) { return []byte{1, 2, 3, 4, 5}, true }
+	resolver := func(string, string, uint16, uint32) ([]byte, bool) { return []byte{1, 2, 3, 4, 5}, true }
 	got := runP25ADPChain(t, iq, resolver, (ldus-2)*phase1.LDUVoiceSubframeCount)
 	if m := bestAlignmentMatches(got, want); m < 3*phase1.LDUVoiceSubframeCount {
 		t.Fatalf("clear call with a key resolver: only %d of %d frames match the modulated frames", m, len(got))
@@ -274,7 +274,7 @@ func TestComposerP25Phase1OFBFamilyDecryptsWithConfiguredKey(t *testing.T) {
 			}
 			dibits, clear := buildP25P1EncryptedStream(t, tc.algID, key, keyID, mi0, superframes)
 			iq := demod.ModulateP25C4FM(dibits, sampleRate, deviation)
-			resolver := func(system, algorithm string, kid uint16) ([]byte, bool) {
+			resolver := func(system, algorithm string, kid uint16, _ uint32) ([]byte, bool) {
 				if system == "P25ADPSite" && algorithm == tc.algName && kid == keyID {
 					return key, true
 				}
@@ -295,7 +295,7 @@ func TestComposerP25Phase1OFBFamilyDecryptsWithConfiguredKey(t *testing.T) {
 				t.Fatalf("only %d of %d recorded frames are clear frames — %s descramble not applied", matches, len(got), tc.name)
 			}
 			// A key of the wrong length for the ALGID on air is refused.
-			wrongLen := func(system, algorithm string, kid uint16) ([]byte, bool) {
+			wrongLen := func(system, algorithm string, kid uint16, _ uint32) ([]byte, bool) {
 				return key[:tc.keyLen/2], true
 			}
 			raw := runP25ADPChain(t, iq, wrongLen, minFrames)
@@ -303,7 +303,7 @@ func TestComposerP25Phase1OFBFamilyDecryptsWithConfiguredKey(t *testing.T) {
 				t.Fatalf("a wrong-length key decrypted %d frames", m)
 			}
 			// A key under a different algorithm name is not used.
-			other := func(system, algorithm string, kid uint16) ([]byte, bool) {
+			other := func(system, algorithm string, kid uint16, _ uint32) ([]byte, bool) {
 				if algorithm == "rc4" {
 					return []byte{1, 2, 3, 4, 5}, true
 				}

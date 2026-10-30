@@ -365,6 +365,8 @@ export interface NXDNBandPlan {
 
 export interface EncryptionKey {
   KeyID: number;
+  // Talkgroup scopes the key to one talkgroup; 0 = every talkgroup.
+  Talkgroup: number;
   Algorithm: string;
   Key: string;
 }

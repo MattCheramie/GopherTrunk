@@ -117,7 +117,7 @@ type Recorder struct {
 	writeMBE           bool
 	skipEncrypted      bool
 	muteEncrypted      bool
-	keyConfigured      func(system string, algID uint8, keyID uint16) bool
+	keyConfigured      func(system string, algID uint8, keyID uint16, group uint32) bool
 	writeCallJSON      bool
 	normalize          NormalizeConfig
 	vocoderForProtocol map[string]string
@@ -366,7 +366,7 @@ type RecorderOptions struct {
 	// algorithm, key id) — the daemon builds it from encryption_keys.
 	// Consulted by MuteEncrypted and SkipEncrypted: a call a configured key
 	// decrypts is neither muted nor skipped.
-	KeyConfigured func(system string, algID uint8, keyID uint16) bool
+	KeyConfigured func(system string, algID uint8, keyID uint16, group uint32) bool
 
 	// Normalize configures optional per-call EBU R128 / BS.1770 loudness
 	// normalization. When Enabled, a finished WAV is measured and rewritten
@@ -1101,7 +1101,7 @@ func (r *Recorder) decryptable(g trunking.Grant) bool {
 	if r.keyConfigured == nil {
 		return false
 	}
-	return r.keyConfigured(g.System, g.AlgorithmID, g.KeyID)
+	return r.keyConfigured(g.System, g.AlgorithmID, g.KeyID, g.GroupID)
 }
 
 func (r *Recorder) backfillSessionGrant(deviceSerial string, encrypted bool, algID uint8, keyID uint16, sourceID uint32) {
