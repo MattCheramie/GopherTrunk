@@ -278,13 +278,23 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 		conn.Close()
 		return nil, fmt.Errorf("soapyremote: set antenna: %w", err)
 	}
-	// Best-effort: learn the native format for diagnostics.
-	if native, ok := dev.nativeStreamFormat(); ok {
+	// Best-effort: learn the native format and its full scale. The scale sets
+	// how CS16 samples are normalised (a 12-bit PlutoSDR streams ±2048, not
+	// ±32768; issue #1329); without an answer the conventional 32768 stays.
+	native, nativeScale, nativeOK := dev.nativeStreamFormat()
+	if nativeOK {
 		dev.info.TunerName = native
+		dev.format = dev.format.withNativeFormat(native, nativeScale)
+		if dev.mrc != nil {
+			dev.mrc.format = dev.format
+		}
 	}
 	d.log.Info("soapyremote: connected",
 		"addr", addr,
 		"format", format.soapyName(),
+		"native_format", native,
+		"native_full_scale", nativeScale,
+		"cs16_full_scale", dev.format.fullScale(),
 		"proto", proto,
 		"diversity", divMode.String())
 	if divMode.enabled() {
@@ -659,22 +669,28 @@ func (d *device) SetBiasTee(enable bool) error {
 	})
 }
 
-// nativeStreamFormat asks the server for the device's native RX format. Used
-// only for diagnostics; returns ok=false if the call fails.
-func (d *device) nativeStreamFormat() (string, bool) {
+// nativeStreamFormat asks the server for the device's native RX format and
+// its full scale: the reply is the format string followed by a double
+// (server/ClientHandler.cpp GET_NATIVE_STREAM_FORMAT). Returns ok=false if the
+// call fails; a reply without the scale yields fullScale 0, which
+// withNativeFormat ignores.
+func (d *device) nativeStreamFormat() (name string, fullScale float64, ok bool) {
 	u, err := d.rpc(func(p *packer) {
 		p.call(callGetNativeStreamFormat)
 		p.char(dirRX)
 		p.i32(0)
 	})
 	if err != nil || u.checkException() != nil {
-		return "", false
+		return "", 0, false
 	}
-	name, err := u.str()
+	name, err = u.str()
 	if err != nil {
-		return "", false
+		return "", 0, false
 	}
-	return name, true
+	if fs, err := u.f64(); err == nil {
+		fullScale = fs
+	}
+	return name, fullScale, true
 }
 
 // streamBufferLatency is how much IQ the stream channel is sized to hold. The

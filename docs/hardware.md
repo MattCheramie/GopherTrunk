@@ -22,7 +22,7 @@ transport (USBDEVFS on Linux, IOKit on macOS, WinUSB on Windows).
 | **HydraSDR RFOne** | `hydrasdr` | `0x38af:0x0001` · `0x1d50:0x60a1` (older units, told apart from an Airspy by the USB Product string) | Wire-protocol-complete against the vendor's `hydrasdr-host` library (#1325); shares the Airspy driver's stream path and real-to-IQ converter. Not yet run against attached hardware. |
 | **Airspy HF+ Discovery / HF+ Dual Port / legacy HF+** | `airspyhf` | `0x03eb:0x800c` | Wire-protocol-complete; HF (9 kHz – 31 MHz) + VHF (60 – 260 MHz). A hardware-gated harness now exists (`internal/sdr/airspyhf/airspyhf_real_test.go`, `GOPHERTRUNK_AIRSPYHF_REAL`); on-air validation against attached hardware is still pending. |
 | **rtl_tcp remote** (any librtlsdr-shipped server) | `rtltcp` | TCP | Remote RTL-SDR mounted over the network. See [Remote rtl_tcp SDRs](#remote-rtl_tcp-sdrs). |
-| **SoapySDRServer remote** (USRP / LimeSDR / bladeRF / HackRF / Airspy / RTL-SDR / SDRplay …) | `soapyremote` | TCP | Any SoapySDR-supported radio mounted over the network with 16/32-bit IQ + control. Field-tested on air against USRP X310 and B210 rigs (single-branch; MRC diversity combining is still experimental). See [Remote SoapySDRServer SDRs](#remote-soapysdrserver-sdrs). |
+| **SoapySDRServer remote** (USRP / LimeSDR / bladeRF / ADALM-Pluto & PlutoSky / HackRF / Airspy / RTL-SDR / SDRplay …) | `soapyremote` | TCP | Any SoapySDR-supported radio mounted over the network with 16/32-bit IQ + control. Field-tested on air against USRP X310 and B210 rigs (single-branch; MRC diversity combining is still experimental). See [Remote SoapySDRServer SDRs](#remote-soapysdrserver-sdrs). |
 
 The HackRF and Airspy / Airspy HF+ drivers speak the documented
 libhackrf, libairspy, and libairspyhf USB vendor protocols directly
@@ -1128,6 +1128,61 @@ opens but never streams, or when the server crashes on a client connect.
 > flow-control ACKs are byte-matched to SoapyRemote (issue #542). If you can
 > still reproduce a server crash, please report it upstream at
 > <https://github.com/pothosware/SoapyRemote/issues> with the server-side log.
+
+### ADALM-Pluto, PlutoSky and other AD936x boards
+
+PlutoSDR-class radios (Analog Devices' ADALM-Pluto, and Zynq + AD9361/AD9363
+boards running Pluto-compatible firmware, such as OpenSourceSDRLab's PlutoSky,
+issue #1329) are reached through libiio, which the **SoapyPlutoSDR** module
+wraps. There is no native GopherTrunk driver for them: run `SoapySDRServer`
+with that module on a host that can see the board, and point `soapy_remote`
+at the server.
+
+```sh
+# On the host the board is plugged into (or that can reach it on the network):
+# install SoapySDR, libiio and the SoapyPlutoSDR module, then check it is seen.
+SoapySDRUtil --find="driver=plutosdr"
+SoapySDRServer --bind=0.0.0.0:55132
+```
+
+```yaml
+sdr:
+  sample_rate: 2_400_000
+  soapy_remote:
+    - addr: "192.168.1.60:55132"   # the host running SoapySDRServer
+      driver: "plutosdr"
+      args: "uri=ip:192.168.2.1"     # the board's libiio URI: ip:<addr> or usb:<bus.dev>
+      serial: "plutosky"
+      role: control
+      format: "CS16"
+      gain: "400"                   # 40.0 dB of the RX gain's 0-73 dB range; "auto" = AD9361 AGC (slow_attack)
+```
+
+What the SoapyPlutoSDR module reports, so a config that disagrees fails for a
+known reason (all from its source):
+
+- **Device selection** is `uri=` (any libiio URI, e.g. `ip:192.168.2.1` or
+  `usb:1.5.5`) or `hostname=` in `args`; with neither, libiio's default context
+  is used. The board must expose the standard `ad9361-phy` and `cf-ad9361-lpc`
+  IIO devices, which Pluto-compatible firmware does.
+- **Tuning** 70 MHz to 6 GHz; **sample rates** from 25e6/96 ≈ 260.4 kS/s
+  (25e6/384 ≈ 65.1 kS/s when the module is built with libad9361) up to
+  61.44 MS/s. A board on USB 2.0 cannot sustain the top of that range; the
+  ADALM-Pluto is usually run at a few MS/s.
+- **One RX antenna port** (`A_BALANCED`), so leave `antenna:` unset.
+- **One gain element** (`PGA`), 0–73 dB on RX; `gain: "auto"` selects the
+  AD9361's `slow_attack` AGC.
+- **12-bit samples.** The native RX format is CS16 with a full scale of
+  **2048**, not 32768 (12-bit values, LSB-aligned). GopherTrunk reads the full
+  scale the server reports and normalises by it, as SoapyRemote's own client
+  does, so levels in dBFS, `squelch_dbfs` and the ADC-overload checks read
+  correctly. Builds before issue #1329 divided by 32768 and read every Pluto
+  signal 24 dB low. The `soapyremote: connected` log line prints
+  `native_format`, `native_full_scale` and `cs16_full_scale`; on a Pluto
+  `cs16_full_scale` should read `2048`.
+
+Not yet confirmed on air with a Pluto or PlutoSky (#764/#771); reports are
+welcome on #1329.
 
 ### Tracing the RPC conversation from GopherTrunk's side
 

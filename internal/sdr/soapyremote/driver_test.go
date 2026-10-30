@@ -48,6 +48,12 @@ type fakeSoapyServer struct {
 	streamSamples []complex64
 	streamElems   int
 
+	// nativeFullScale is the full scale GET_NATIVE_STREAM_FORMAT reports for
+	// the device's native CS16 RX format, and the scale the data server
+	// encodes streamSamples at. Zero means 32768, a 16-bit device such as a
+	// USRP; a PlutoSDR / AD936x reports 2048 (12-bit samples, LSB aligned).
+	nativeFullScale float64
+
 	// failGainMode makes SET_GAIN_MODE reply with a remote exception, mimicking
 	// a UHD front-end with no AGC ("set_rx_agc() is not supported"). Issue #542.
 	failGainMode bool
@@ -150,6 +156,14 @@ func newFakeSoapyServer(t *testing.T) *fakeSoapyServer {
 }
 
 func (s *fakeSoapyServer) Addr() string { return s.ln.Addr().String() }
+
+// fullScale is the native CS16 full scale the fake device reports and streams at.
+func (s *fakeSoapyServer) fullScale() float64 {
+	if s.nativeFullScale > 0 {
+		return s.nativeFullScale
+	}
+	return 32768
+}
 
 func (s *fakeSoapyServer) recorded() []recordedCall {
 	s.mu.Lock()
@@ -382,7 +396,7 @@ func (s *fakeSoapyServer) handleRPC(conn net.Conn) {
 			_, _ = u.i32()  // channel
 			reply = func(p *packer) {
 				p.str("CS16")
-				p.f64(1.0)
+				p.f64(s.fullScale())
 			}
 		case callSetupStream:
 			twoPhaseSetup = true
@@ -574,7 +588,7 @@ func (s *fakeSoapyServer) startDataServer(activate <-chan struct{}) (string, <-c
 
 		seq := uint32(0)
 		for {
-			payload := encodeCS16(s.streamSamples)
+			payload := encodeCS16Scaled(s.streamSamples, s.fullScale())
 			elems := s.streamElems
 			if elems == 0 {
 				elems = len(s.streamSamples)
@@ -595,10 +609,16 @@ func (s *fakeSoapyServer) startDataServer(activate <-chan struct{}) (string, <-c
 }
 
 func encodeCS16(samples []complex64) []byte {
+	return encodeCS16Scaled(samples, 32768)
+}
+
+// encodeCS16Scaled encodes samples as a device whose CS16 full scale is
+// fullScale would put them on the wire (2048 for a PlutoSDR's 12-bit RX).
+func encodeCS16Scaled(samples []complex64, fullScale float64) []byte {
 	buf := make([]byte, 0, len(samples)*4)
 	for _, c := range samples {
-		iv := int16(real(c) * 32768)
-		qv := int16(imag(c) * 32768)
+		iv := int16(float64(real(c)) * fullScale)
+		qv := int16(float64(imag(c)) * fullScale)
 		var b [4]byte
 		binary.LittleEndian.PutUint16(b[0:], uint16(iv))
 		binary.LittleEndian.PutUint16(b[2:], uint16(qv))
@@ -1039,6 +1059,56 @@ func TestStreamIQ(t *testing.T) {
 		case <-drain:
 			t.Fatal("stream channel not closed after ctx cancel")
 		}
+	}
+}
+
+// TestStreamIQHonoursNativeFullScale pins issue #1329: a PlutoSDR-class radio
+// (the reporter's PlutoSky is a Zynq 7020 + AD9361 board on the Pluto
+// firmware, served by SoapyPlutoSDR) reports its native RX format as CS16 with
+// fullScale 2048, because its samples are 12-bit, LSB-aligned in an int16
+// (SoapyPlutoSDR getNativeStreamFormat; its own CF32 path divides by 2048).
+// SoapyRemote's reference client scales by that native full scale whenever the
+// wire format is the native one (client/Streaming.cpp, ClientStreamData.cpp).
+// GopherTrunk divided every CS16 sample by 32768, so a Pluto read 16x (24 dB)
+// low: every dBFS reading, squelch_dbfs, and the ADC-overload checks were off
+// by 24 dB, and a sample at the ADC rail looked like -24 dBFS.
+func TestStreamIQHonoursNativeFullScale(t *testing.T) {
+	srv := newFakeSoapyServer(t)
+	srv.nativeFullScale = 2048
+	srv.streamSamples = []complex64{
+		complex(0.5, -0.5),
+		complex(0.25, 0.75),
+		complex(-0.999, 0.125),
+	}
+	drv := New([]Spec{{Addr: srv.Addr(), Format: "CS16"}}, testLogger())
+	dev, err := drv.Open(0)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer dev.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := dev.StreamIQ(ctx)
+	if err != nil {
+		t.Fatalf("StreamIQ: %v", err)
+	}
+	select {
+	case got, ok := <-ch:
+		if !ok {
+			t.Fatal("stream channel closed before any data")
+		}
+		if len(got) != len(srv.streamSamples) {
+			t.Fatalf("chunk len = %d, want %d", len(got), len(srv.streamSamples))
+		}
+		for i, want := range srv.streamSamples {
+			// 12-bit quantisation: one LSB is 1/2048.
+			if absDiff(got[i], want) > 2.0/2048 {
+				t.Errorf("sample %d = %v, want ~%v (12-bit CS16 must be scaled by the device's native full scale 2048, not 32768)", i, got[i], want)
+			}
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for IQ")
 	}
 }
 
