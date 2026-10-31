@@ -31,10 +31,23 @@ import (
 //     capability is the 12-bit raw ADC at every rate, as libhydrasdr assumes.
 //   - LNA gain tops out at 14 (mixer and VGA at 15, like the Airspy).
 //
-// What is NOT used: sample packing (left off, its default, so the stream
-// stays unpacked uint16), RF port selection (the firmware default, port 0 =
-// ANT, the only port with the bias tee), and the firmware's data_format flag
-// (libhydrasdr runs its real-to-IQ converter whatever the flag says; this
+//   - Sample packing is set OFF on every open (SET_PACKING 26, wIndex 0), as
+//     libhydrasdr's hydrasdr_generic_device_init does. The firmware keeps the
+//     packing state while powered, so a unit last used by an application
+//     that turned packing on would otherwise stream 12-bit packed samples
+//     this driver reads as unpacked uint16, i.e. noise.
+//   - The IF filter bandwidth: GET_BANDWIDTHS (31) lists the firmware's
+//     bandwidths (old firmware answers with none); after RX mode is switched
+//     on, SET_BANDWIDTH (30, wIndex = table index) selects the narrowest one
+//     at least as wide as the sample rate. The firmware applies its own
+//     default when RX starts, so libhydrasdr's start_rx overrides it at that
+//     point; this driver does the same, in StreamIQ.
+//
+// What is NOT used: RF port selection (the firmware default, port 0 = ANT,
+// the only port with the bias tee), the unified SET_GAIN (33; libhydrasdr's
+// RFOne gain calls still use the per-stage commands this driver sends), and
+// the firmware's data_format flag (libhydrasdr reads it only to pick its ADC
+// lookup table and runs its real-to-IQ converter whatever it says; this
 // driver does the same).
 //
 // Verified against the reference's wire constants only. No RFOne has been
@@ -46,9 +59,13 @@ const (
 
 	hydraDriverName = "hydrasdr"
 
-	reqSetRFBias              uint8 = 20 // HYDRASDR_SET_RF_BIAS_CMD
-	reqGetCapabilities        uint8 = 29 // HYDRASDR_GET_CAPABILITIES
-	hydraLNAMaxGain                 = 14 // RFONE_LNA_MAX_GAIN
+	reqSetRFBias              uint8 = 20  // HYDRASDR_SET_RF_BIAS_CMD
+	reqSetPacking             uint8 = 26  // HYDRASDR_SET_PACKING
+	reqGetCapabilities        uint8 = 29  // HYDRASDR_GET_CAPABILITIES
+	reqSetBandwidth           uint8 = 30  // HYDRASDR_SET_BANDWIDTH
+	reqGetBandwidths          uint8 = 31  // HYDRASDR_GET_BANDWIDTHS
+	hydraMaxListLen                 = 100 // MAX_SUPPORTED_RATE_COUNT
+	hydraLNAMaxGain                 = 14  // RFONE_LNA_MAX_GAIN
 	hydraCapExtendedRates           = 1 << 21
 	hydraRateInfoLen                = 8 // sizeof(hydrasdr_samplerate_info_t)
 	hydraSetRateExtReplyLen         = 4 // result, adc_bits, data_format, reserved
@@ -198,4 +215,72 @@ func (d *Device) fetchHydraRateInfo() {
 	d.mu.Lock()
 	d.rateADCBits = bits
 	d.mu.Unlock()
+}
+
+// hydraOpenInit runs the RFOne-only steps of opening, after the rate table
+// has been read: the per-rate ADC width, the bandwidth table, and packing
+// off. All are best effort, like the rest of open: a failure leaves the
+// device on the defaults old firmware streams with.
+func (d *Device) hydraOpenInit() {
+	d.fetchHydraRateInfo()
+	d.fetchHydraBandwidths()
+	// Packing off, so the stream is the unpacked uint16 this driver
+	// converts, whatever the last application left the firmware in.
+	_, _ = d.t.ControlIn(reqSetPacking, 0, 0, 1, controlTimeoutMs)
+}
+
+// fetchHydraBandwidths reads the IF filter bandwidths (Hz) the firmware
+// offers: a uint32 count, then that many uint32s, as libhydrasdr reads them.
+// Firmware without the request leaves the table empty and the filter on the
+// firmware's own default.
+func (d *Device) fetchHydraBandwidths() {
+	b, err := d.t.ControlIn(reqGetBandwidths, 0, 0, 4, controlTimeoutMs)
+	if err != nil || len(b) < 4 {
+		return
+	}
+	n := int(binary.LittleEndian.Uint32(b))
+	if n <= 0 || n >= hydraMaxListLen {
+		return
+	}
+	list, err := d.t.ControlIn(reqGetBandwidths, 0, uint16(n), 4*n, controlTimeoutMs)
+	if err != nil || len(list) < 4*n {
+		return
+	}
+	bws := make([]uint32, n)
+	for i := range bws {
+		bws[i] = binary.LittleEndian.Uint32(list[4*i:])
+	}
+	d.mu.Lock()
+	d.bandwidths = bws
+	d.mu.Unlock()
+}
+
+// hydraBandwidthIndex picks the narrowest advertised bandwidth at least as
+// wide as iqHz (libhydrasdr's auto-bandwidth rule), or -1 when the firmware
+// listed none or none is wide enough.
+func hydraBandwidthIndex(bws []uint32, iqHz uint32) int {
+	best := -1
+	for i, bw := range bws {
+		if bw >= iqHz && (best < 0 || bw < bws[best]) {
+			best = i
+		}
+	}
+	return best
+}
+
+// applyHydraBandwidth sets the IF filter for the programmed sample rate. It
+// runs after RX mode is on, because the firmware sets its default bandwidth
+// when RX starts. Best effort: on failure the firmware default stays.
+func (d *Device) applyHydraBandwidth() {
+	d.mu.Lock()
+	bws, last := d.bandwidths, d.lastReqRate
+	d.mu.Unlock()
+	if len(bws) == 0 || last == 0 {
+		return
+	}
+	idx := hydraBandwidthIndex(bws, d.resolvedIQRate(last))
+	if idx < 0 {
+		return
+	}
+	_, _ = d.t.ControlIn(reqSetBandwidth, 0, uint16(idx), 1, controlTimeoutMs)
 }

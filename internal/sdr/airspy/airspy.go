@@ -228,10 +228,10 @@ func (d *Driver) openDevice(desc usb.Descriptor, idx int, serial string) (*Devic
 		dev.rates = rates
 	}
 	if dev.hydra {
-		// Per-rate ADC width, on firmware that reports it (best effort:
-		// without it every rate is the 12-bit raw ADC, as libhydrasdr
-		// assumes for old firmware).
-		dev.fetchHydraRateInfo()
+		// Per-rate ADC width, the bandwidth table and packing off (see
+		// hydraOpenInit; best effort, as libhydrasdr's old-firmware
+		// defaults apply without them).
+		dev.hydraOpenInit()
 	}
 	return dev, nil
 }
@@ -277,6 +277,9 @@ type Device struct {
 	// sizes the next stream's real-to-IQ converter. Both guarded by mu.
 	rateADCBits []uint8
 	adcBits     uint8
+	// bandwidths is the HydraSDR firmware's IF filter bandwidth table
+	// (Hz; nil on old firmware and on the Airspy). Guarded by mu.
+	bandwidths []uint32
 
 	mu        sync.Mutex
 	closed    bool
@@ -625,6 +628,11 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		d.mu.Unlock()
 		close(done)
 		return nil, fmt.Errorf("%s: receiver on: %w", d.info.Driver, err)
+	}
+	if d.hydra {
+		// The firmware picks its own IF bandwidth when RX starts; set the
+		// one that fits the sample rate, as libhydrasdr's start_rx does.
+		d.applyHydraBandwidth()
 	}
 
 	// Decouple USB reaping from the (heavy, sequential) real→IQ conversion. On
