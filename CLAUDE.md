@@ -1056,6 +1056,16 @@ confirmation before any close-as-completed.
   `Streaming` is now a session COUNT, not a flag (an old session ending no longer reports a
   new one stopped). The Spectrum panel gained a typed MHz tune entry (an untuned SDR sits at
   0 Hz, out of click-to-tune reach) and a hint when an open stream delivers nothing.
+- **A recording made across an IQ hole is announced PARTIAL (#1288), not complete.** Voice sources
+  implement `StreamIQWithLoss` (wideband channel fan-out, `wbvoice` taps, the sequential scanner's broker
+  subscription): their own subscriber drops + the PHYSICAL serial's driver drops (`sdr.IQDropCount`,
+  counted inside `NotifyIQDrop`) since the call began; a plain source falls back to its own serial's
+  driver count. The composer reads it after the chain drains and calls `NotifyIQLoss` BEFORE the drain
+  signal (the recorder finalizes on the drain), so it lands on `CallComplete.IQLostChunks`, the sidecar's
+  `iq_lost_chunks`, `call_recordings.iq_lost_chunks` → `GET /api/v1/recordings` `partial`, and
+  `recordings_partial_total`. `fanoutSink` MUST forward `NotifyIQLoss` (`TestFanoutSinkForwardsIQLoss`).
+  Gaps: same-carrier demuxes (TETRA, ccdecoder) report nothing, and the count rides the call's FINAL
+  file only, so an earlier per-over segment of a multi-over call is not marked.
 - **`soapyremote: SDR overruns … host_drops` is a DOWNSTREAM signal, not a driver bug.**
   `sendOrDrop` (`internal/sdr/soapyremote/driver.go`) only sheds when the consumer stops draining
   a ~400 ms / ~1084-chunk channel, and it drops the OLDEST queued chunk, so each event is an IQ

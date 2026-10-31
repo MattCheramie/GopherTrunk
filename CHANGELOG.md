@@ -40,6 +40,18 @@ for tagged releases.
   from 1.024 to 1.6 MS/s, so a lower rate does not help a slow phone.
 
 ### Added
+- **Recordings are marked partial when IQ was lost during the call (#1288).**
+  A recording made while its voice tap dropped IQ to a lagging consumer, or
+  while the SDR's driver dropped IQ, used to be announced like a complete one.
+  Now the count of lost IQ chunks reaches the recorder at call end. It appears
+  on the `call.complete` event (`IQLostChunks`), in the `.json` sidecar
+  (`iq_lost_chunks`), and in `GET /api/v1/recordings` (`partial`,
+  `iq_lost_chunks`). The `gophertrunk_recordings_partial_total` metric counts
+  these recordings, and the daemon logs a `recorder: recording is partial`
+  WARN for each. Covered: wideband conventional channels, wideband virtual
+  voice taps, the sequential scanner and physical voice SDRs. Not yet covered:
+  same-carrier voice taps (TETRA and the single-channel CC decoder's), whose
+  calls share one demux stream.
 - **Encryption keys per talkgroup (#1261).** An `encryption_keys` entry takes
   an optional `talkgroup`, for systems that give every talkgroup the same key
   ID but a different key (a reporter's NXDN site: TG 21 and TG 10 both on key

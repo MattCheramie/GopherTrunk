@@ -112,6 +112,8 @@ CREATE TABLE IF NOT EXISTS call_recordings (
     path        TEXT    NOT NULL,
     started_at  INTEGER NOT NULL,           -- unix nanoseconds, this file's span
     ended_at    INTEGER,
+    -- IQ chunks the call's stream lost; > 0 marks the file PARTIAL (#1288)
+    iq_lost_chunks INTEGER NOT NULL DEFAULT 0,
     UNIQUE(call_id, path)
 );
 CREATE INDEX IF NOT EXISTS idx_call_recordings_call ON call_recordings(call_id, seq);
@@ -456,6 +458,13 @@ func (d *DB) migrate() error {
 	if err := d.ensureColumns("mdc1200_log", []columnAdd{
 		{"serial", `ALTER TABLE mdc1200_log ADD COLUMN serial TEXT NOT NULL DEFAULT ''`},
 		{"frequency_hz", `ALTER TABLE mdc1200_log ADD COLUMN frequency_hz INTEGER NOT NULL DEFAULT 0`},
+	}); err != nil {
+		return err
+	}
+	// call_recordings gained the partial-recording marker (#1288): a
+	// database created before it lacks the column.
+	if err := d.ensureColumns("call_recordings", []columnAdd{
+		{"iq_lost_chunks", `ALTER TABLE call_recordings ADD COLUMN iq_lost_chunks INTEGER NOT NULL DEFAULT 0`},
 	}); err != nil {
 		return err
 	}

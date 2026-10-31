@@ -250,10 +250,10 @@ UPDATE call_log
 		endedAt = cc.EndedAt.UnixNano()
 	}
 	const ins = `
-INSERT OR IGNORE INTO call_recordings (call_id, seq, path, started_at, ended_at)
-SELECT id, ?, ?, ?, ? FROM call_log WHERE device_serial = ? AND started_at = ?`
+INSERT OR IGNORE INTO call_recordings (call_id, seq, path, started_at, ended_at, iq_lost_chunks)
+SELECT id, ?, ?, ?, ?, ? FROM call_log WHERE device_serial = ? AND started_at = ?`
 	_, err := c.db.sql.Exec(ins, cc.Segment, cc.AudioPath, cc.StartedAt.UnixNano(), endedAt,
-		cc.DeviceSerial, callKey)
+		int64(cc.IQLostChunks), cc.DeviceSerial, callKey)
 	return err
 }
 
@@ -693,6 +693,9 @@ type FinalizedRecording struct {
 	Path      string
 	StartedAt time.Time
 	EndedAt   time.Time
+	// IQLostChunks is how many IQ chunks the call's stream lost; > 0 means
+	// the file is partial (its audio has gaps), issue #1288.
+	IQLostChunks uint64
 }
 
 // RecordingFeed returns up to limit finalized recordings with an id above
@@ -709,7 +712,7 @@ func (d *DB) RecordingFeed(ctx context.Context, afterID int64, limit int) ([]Fin
 		limit = 100
 	}
 	rows, err := d.sql.QueryContext(ctx,
-		`SELECT id, call_id, seq, path, started_at, ended_at FROM call_recordings
+		`SELECT id, call_id, seq, path, started_at, ended_at, iq_lost_chunks FROM call_recordings
 		  WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("storage: recording feed: %w", err)
@@ -718,14 +721,17 @@ func (d *DB) RecordingFeed(ctx context.Context, afterID int64, limit int) ([]Fin
 	var out []FinalizedRecording
 	for rows.Next() {
 		var r FinalizedRecording
-		var startNs int64
+		var startNs, lost int64
 		var endNs sql.NullInt64
-		if err := rows.Scan(&r.ID, &r.CallID, &r.Seq, &r.Path, &startNs, &endNs); err != nil {
+		if err := rows.Scan(&r.ID, &r.CallID, &r.Seq, &r.Path, &startNs, &endNs, &lost); err != nil {
 			return nil, err
 		}
 		r.StartedAt = time.Unix(0, startNs).UTC()
 		if endNs.Valid {
 			r.EndedAt = time.Unix(0, endNs.Int64).UTC()
+		}
+		if lost > 0 {
+			r.IQLostChunks = uint64(lost)
 		}
 		out = append(out, r)
 	}
