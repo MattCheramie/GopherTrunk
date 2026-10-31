@@ -29,7 +29,7 @@ func conventionalKeySystems(cfg config.Config) []config.SystemConfig {
 	next:
 		for _, k := range ch.EncryptionKeys {
 			for _, have := range s.EncryptionKeys {
-				if have.KeyID == k.KeyID {
+				if have.Scope() == k.Scope() {
 					continue next
 				}
 			}

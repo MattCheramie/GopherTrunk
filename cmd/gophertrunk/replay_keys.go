@@ -84,7 +84,7 @@ func replayKeyResolver(keys []config.EncryptionKeyConfig, log *slog.Logger) comp
 	if res == nil {
 		return nil
 	}
-	return func(_, algorithm string, keyID uint16) ([]byte, bool) {
-		return res(sys, algorithm, keyID)
+	return func(_, algorithm string, keyID uint16, group uint32) ([]byte, bool) {
+		return res(sys, algorithm, keyID, group)
 	}
 }

@@ -570,15 +570,15 @@ func validateSystem(i int, s SystemConfig) error {
 			}
 		}
 	}
-	seenKeyIDs := make(map[uint16]struct{}, len(s.EncryptionKeys))
+	seenKeyIDs := make(map[EncryptionKeyScope]struct{}, len(s.EncryptionKeys))
 	for k, ek := range s.EncryptionKeys {
 		if err := ek.Validate(); err != nil {
 			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: %w", i, k, err)
 		}
-		if _, dup := seenKeyIDs[ek.KeyID]; dup {
-			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: duplicate key_id %d", i, k, ek.KeyID)
+		if _, dup := seenKeyIDs[ek.Scope()]; dup {
+			return fmt.Errorf("trunking.systems[%d].encryption_keys[%d]: duplicate %s", i, k, ek.Scope())
 		}
-		seenKeyIDs[ek.KeyID] = struct{}{}
+		seenKeyIDs[ek.Scope()] = struct{}{}
 	}
 	for k, kf := range s.EncryptionKeyFiles {
 		if err := kf.Validate(); err != nil {
@@ -838,15 +838,15 @@ func validateConvChannelAt(path string, ch ConvChannelConfig) error {
 		default:
 			return fmt.Errorf("%s.encryption_keys: decryption keys apply to digital channels (mode nxdn / nxdn48 / dmr / p25), not mode: %s", path, ch.Mode)
 		}
-		ids := make(map[uint16]bool, len(ch.EncryptionKeys))
+		ids := make(map[EncryptionKeyScope]bool, len(ch.EncryptionKeys))
 		for j, k := range ch.EncryptionKeys {
 			if err := k.Validate(); err != nil {
 				return fmt.Errorf("%s.encryption_keys[%d]: %w", path, j, err)
 			}
-			if ids[k.KeyID] {
-				return fmt.Errorf("%s.encryption_keys: duplicate key_id %d", path, k.KeyID)
+			if ids[k.Scope()] {
+				return fmt.Errorf("%s.encryption_keys: duplicate %s", path, k.Scope())
 			}
-			ids[k.KeyID] = true
+			ids[k.Scope()] = true
 		}
 	}
 	if ch.Mode == "p25" {

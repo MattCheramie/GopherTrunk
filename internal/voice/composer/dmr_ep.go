@@ -12,9 +12,11 @@ import (
 )
 
 // KeyResolver returns the raw key bytes an operator configured for a
-// system's (algorithm, key ID), or false when none is configured. The daemon
-// builds one from trunking.systems[].encryption_keys.
-type KeyResolver func(system, algorithm string, keyID uint16) ([]byte, bool)
+// system's (algorithm, key ID), or false when none is configured. group is
+// the call's talkgroup (0 = unknown): a key the operator scoped to that
+// talkgroup wins over an unscoped one with the same key ID (issue #1261).
+// The daemon builds one from trunking.systems[].encryption_keys.
+type KeyResolver func(system, algorithm string, keyID uint16, group uint32) ([]byte, bool)
 
 // dmrEPState is one DMR voice call's Enhanced Privacy state (issue #1187):
 // what the Privacy Indicator header announced, the key resolved for it, and
@@ -84,7 +86,7 @@ func (s *dmrEPState) onPIHeader(h dmr.PIHeader) {
 	}
 	s.key = nil
 	if s.c.keyResolver != nil && h.IsRC4() {
-		if k, ok := s.c.keyResolver(s.system, "rc4", uint16(h.KeyID)); ok && len(k) > 0 {
+		if k, ok := s.c.keyResolver(s.system, "rc4", uint16(h.KeyID), s.groupID); ok && len(k) > 0 {
 			s.key = k
 		}
 	}

@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func u8ptr(v uint8) *uint8 { return &v }
@@ -837,5 +839,38 @@ func TestEncryptionKeyScrambler(t *testing.T) {
 	dup := append(keys, EncryptionKeyConfig{KeyID: 3, Algorithm: "scrambler", Key: "1"})
 	if err := validateConvChannel(0, ConvChannelConfig{FrequencyHz: 447_100_000, Mode: "nxdn48", EncryptionKeys: dup}); err == nil {
 		t.Error("duplicate key_id on one channel must be rejected")
+	}
+}
+
+// TestEncryptionKeysTalkgroupScope (issue #1261): one key id may repeat
+// across talkgroups — that is the whole point of the talkgroup field — but
+// the same (key id, talkgroup) twice is still a duplicate, on a trunking
+// system and on a scan-list channel, and the field round-trips from YAML.
+func TestEncryptionKeysTalkgroupScope(t *testing.T) {
+	sys := func(keys ...EncryptionKeyConfig) Config {
+		return Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", EncryptionKeys: keys}}}}
+	}
+	tg21 := EncryptionKeyConfig{KeyID: 0, Talkgroup: 21, Algorithm: "scrambler", Key: "12345"}
+	tg10 := EncryptionKeyConfig{KeyID: 0, Talkgroup: 10, Algorithm: "scrambler", Key: "22122"}
+	any0 := EncryptionKeyConfig{KeyID: 0, Algorithm: "scrambler", Key: "1"}
+	if err := sys(tg21, tg10, any0).Validate(); err != nil {
+		t.Fatalf("same key_id on different talkgroups must be accepted: %v", err)
+	}
+	if err := sys(tg21, tg21).Validate(); err == nil || !strings.Contains(err.Error(), "talkgroup 21") {
+		t.Fatalf("the same key_id / talkgroup twice must be rejected, naming the talkgroup: %v", err)
+	}
+	if err := validateConvChannel(0, ConvChannelConfig{FrequencyHz: 447_100_000, Mode: "nxdn", EncryptionKeys: []EncryptionKeyConfig{tg21, tg10}}); err != nil {
+		t.Fatalf("scan-list channel: same key_id on different talkgroups must be accepted: %v", err)
+	}
+	if err := validateConvChannel(0, ConvChannelConfig{FrequencyHz: 447_100_000, Mode: "nxdn", EncryptionKeys: []EncryptionKeyConfig{tg21, tg21}}); err == nil {
+		t.Fatal("scan-list channel: the same key_id / talkgroup twice must be rejected")
+	}
+
+	var k EncryptionKeyConfig
+	if err := yaml.Unmarshal([]byte("key_id: 0\ntalkgroup: 21\nalgorithm: scrambler\nkey: \"12345\"\n"), &k); err != nil {
+		t.Fatal(err)
+	}
+	if k.Talkgroup != 21 || k.Scope() != (EncryptionKeyScope{KeyID: 0, Talkgroup: 21}) {
+		t.Fatalf("parsed %+v", k)
 	}
 }

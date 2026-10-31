@@ -1972,10 +1972,39 @@ type NXDNBandPlanTableEntryConfig struct {
 // NXDN scrambler (algorithm "scrambler") Key is the radio's 15-bit key
 // as a decimal number 1..32767, the way the codeplug shows it ("0x" hex
 // is accepted too); KeyBytes returns it as two big-endian bytes.
+//
+// Talkgroup, when non-zero, scopes the entry to calls on that talkgroup:
+// systems that program every talkgroup with the same key ID but a
+// different key (issue #1261 — an NXDN site where TG 21 and TG 10 both
+// carry key ID 0 with different scrambler keys) list one entry per
+// talkgroup. A talkgroup entry wins over an unscoped entry with the same
+// key ID; 0 (the default) matches every talkgroup, as before.
 type EncryptionKeyConfig struct {
 	KeyID     uint16 `yaml:"key_id"`
+	Talkgroup uint32 `yaml:"talkgroup,omitempty"`
 	Algorithm string `yaml:"algorithm"`
 	Key       string `yaml:"key"`
+}
+
+// EncryptionKeyScope identifies one encryption_keys entry for duplicate
+// detection: a key ID, optionally scoped to one talkgroup (0 = any).
+type EncryptionKeyScope struct {
+	KeyID     uint16
+	Talkgroup uint32
+}
+
+// Scope is k's (key ID, talkgroup) identity.
+func (k EncryptionKeyConfig) Scope() EncryptionKeyScope {
+	return EncryptionKeyScope{KeyID: k.KeyID, Talkgroup: k.Talkgroup}
+}
+
+// String renders the scope for error messages: "key_id 3" or
+// "key_id 0 / talkgroup 21".
+func (s EncryptionKeyScope) String() string {
+	if s.Talkgroup == 0 {
+		return fmt.Sprintf("key_id %d", s.KeyID)
+	}
+	return fmt.Sprintf("key_id %d / talkgroup %d", s.KeyID, s.Talkgroup)
 }
 
 // EncryptionKeyFileConfig is one KFDtool key container to load keys from.

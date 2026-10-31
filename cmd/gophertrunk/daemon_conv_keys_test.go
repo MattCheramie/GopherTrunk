@@ -34,24 +34,24 @@ func TestConventionalChannelKeysResolveByFrequency(t *testing.T) {
 	if res == nil {
 		t.Fatal("nil resolver")
 	}
-	k, ok := res(composer.ConventionalKeySystem(447_100_000), "scrambler", 3)
+	k, ok := res(composer.ConventionalKeySystem(447_100_000), "scrambler", 3, 0)
 	if !ok || len(k) != 2 || uint16(k[0])<<8|uint16(k[1]) != 32767 {
 		t.Fatalf("key 3 → %x %v, want 7fff", k, ok)
 	}
-	if k, ok := res(composer.ConventionalKeySystem(447_100_000), "scrambler", 1); !ok || uint16(k[0])<<8|uint16(k[1]) != 12345 {
+	if k, ok := res(composer.ConventionalKeySystem(447_100_000), "scrambler", 1, 0); !ok || uint16(k[0])<<8|uint16(k[1]) != 12345 {
 		t.Fatalf("key 1 → %x %v", k, ok)
 	}
-	if _, ok := res(composer.ConventionalKeySystem(447_100_000), "rc4", 3); ok {
+	if _, ok := res(composer.ConventionalKeySystem(447_100_000), "rc4", 3, 0); ok {
 		t.Fatal("algorithm mismatch must not resolve")
 	}
-	if _, ok := res("scanner", "scrambler", 3); ok {
+	if _, ok := res("scanner", "scrambler", 3, 0); ok {
 		t.Fatal("the bare scanner system holds no keys")
 	}
-	if k, ok := res(composer.ConventionalKeySystem(451_000_000), "rc4", 7); !ok || len(k) != 5 {
+	if k, ok := res(composer.ConventionalKeySystem(451_000_000), "rc4", 7, 0); !ok || len(k) != 5 {
 		t.Fatalf("wideband channel key → %x %v", k, ok)
 	}
 	kc := buildKeyConfigured(systems)
-	if kc == nil || !kc("scanner", 1, 3) || !kc("scanner", 1, 0) || kc("scanner", 1, 9) {
+	if kc == nil || !kc("scanner", 1, 3, 0) || !kc("scanner", 1, 0, 0) || kc("scanner", 1, 9, 0) {
 		t.Fatal("KeyConfigured must cover a scanner call by the channels' key ids")
 	}
 }

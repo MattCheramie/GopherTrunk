@@ -27,7 +27,7 @@ func (loudFakeVocoder) Decode([]byte) ([]int16, error) {
 func (loudFakeVocoder) Reset()       {}
 func (loudFakeVocoder) Close() error { return nil }
 
-func runMuteCase(t *testing.T, mute bool, encrypted bool, keyConfigured func(string, uint8, uint16) bool, midCall bool) (wav []int16, raw []byte) {
+func runMuteCase(t *testing.T, mute bool, encrypted bool, keyConfigured func(string, uint8, uint16, uint32) bool, midCall bool) (wav []int16, raw []byte) {
 	t.Helper()
 	DefaultRegistry.Register("loud-fake-voc", func() (Vocoder, error) { return loudFakeVocoder{}, nil })
 	bus := events.NewBus(8)
@@ -131,8 +131,8 @@ func countLoud(samples []int16) int {
 // whose key IS configured, a clear call, and the default (mute off) all
 // record the decoded audio unchanged.
 func TestRecorderMutesUndecryptableEncryptedAudio(t *testing.T) {
-	noKey := func(string, uint8, uint16) bool { return false }
-	hasKey := func(sys string, _ uint8, kid uint16) bool { return sys == "S" && kid == 3 }
+	noKey := func(string, uint8, uint16, uint32) bool { return false }
+	hasKey := func(sys string, _ uint8, kid uint16, _ uint32) bool { return sys == "S" && kid == 3 }
 
 	wav, raw := runMuteCase(t, true, true, noKey, false)
 	if countLoud(wav) != 0 {

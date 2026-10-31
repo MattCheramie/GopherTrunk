@@ -376,12 +376,13 @@ function SystemEditor(props: { sys: SystemConfig; onChange: (next: SystemConfig)
           label="Keys"
           items={sys.EncryptionKeys}
           onChange={(x) => onChange({ ...sys, EncryptionKeys: x })}
-          makeNew={() => ({ KeyID: 0, Algorithm: "rc4", Key: "" })}
-          itemTitle={(e) => `Key ID ${e.KeyID}`}
+          makeNew={() => ({ KeyID: 0, Talkgroup: 0, Algorithm: "rc4", Key: "" })}
+          itemTitle={(e) => (e.Talkgroup ? `Key ID ${e.KeyID} · TG ${e.Talkgroup}` : `Key ID ${e.KeyID}`)}
           emptyHint="Operator-supplied decryption keys (DMR RC4 / Enhanced Privacy, P25 ADP, DES-OFB, TDES, AES). Saved keys are never sent to the browser: they show as <redacted> and are kept when you save. To keep keys out of the config file entirely, use a key container below (gophertrunk ekc import)."
           renderItem={(e, set) => (
             <div className="grid gap-3 sm:grid-cols-3">
               <NumberField label="Key ID" value={e.KeyID} onChange={(v) => set({ ...e, KeyID: v })} />
+              <NumberField label="Talkgroup (0 = all)" value={e.Talkgroup ?? 0} onChange={(v) => set({ ...e, Talkgroup: v })} />
               <SelectField
                 label="Algorithm"
                 value={e.Algorithm}

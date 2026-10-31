@@ -9,35 +9,44 @@ import (
 )
 
 // buildKeyResolver turns trunking.systems[].encryption_keys into the
-// composer's KeyResolver: (system name, algorithm, key ID) → raw key bytes.
-// The config has already been validated (algorithm, hex, length, duplicate
-// IDs), so a decode failure here is logged and the entry skipped rather
-// than failing startup. Returns nil when no system configures a key, which
-// leaves the voice path exactly as it was (issue #1187).
+// composer's KeyResolver: (system name, algorithm, key ID, talkgroup) → raw
+// key bytes. An entry scoped to the call's talkgroup wins over an unscoped
+// entry with the same key ID (issue #1261: one key ID, a different key per
+// talkgroup); an unscoped entry matches every talkgroup. The config has
+// already been validated (algorithm, hex, length, duplicate key ID /
+// talkgroup pairs), so a decode failure here is logged and the entry skipped
+// rather than failing startup. Returns nil when no system configures a key,
+// which leaves the voice path exactly as it was (issue #1187).
 func buildKeyResolver(systems []config.SystemConfig, log *slog.Logger) composer.KeyResolver {
 	type entry struct {
 		alg string
 		key []byte
 	}
-	keys := map[string]map[uint16]entry{}
+	keys := map[string]map[config.EncryptionKeyScope]entry{}
 	for _, s := range systems {
 		for _, k := range s.EncryptionKeys {
 			b, err := k.KeyBytes()
 			if err != nil {
-				log.Warn("daemon: encryption key skipped", "system", s.Name, "key_id", k.KeyID, "err", err)
+				log.Warn("daemon: encryption key skipped", "system", s.Name, "key_id", k.KeyID, "talkgroup", k.Talkgroup, "err", err)
 				continue
 			}
 			if keys[s.Name] == nil {
-				keys[s.Name] = map[uint16]entry{}
+				keys[s.Name] = map[config.EncryptionKeyScope]entry{}
 			}
-			keys[s.Name][k.KeyID] = entry{alg: k.NormalizedAlgorithm(), key: b}
+			keys[s.Name][k.Scope()] = entry{alg: k.NormalizedAlgorithm(), key: b}
 		}
 	}
 	if len(keys) == 0 {
 		return nil
 	}
-	return func(system, algorithm string, keyID uint16) ([]byte, bool) {
-		e, ok := keys[system][keyID]
+	return func(system, algorithm string, keyID uint16, group uint32) ([]byte, bool) {
+		sys := keys[system]
+		if group != 0 {
+			if e, ok := sys[config.EncryptionKeyScope{KeyID: keyID, Talkgroup: group}]; ok && e.alg == algorithm {
+				return e.key, true
+			}
+		}
+		e, ok := sys[config.EncryptionKeyScope{KeyID: keyID}]
 		if !ok || e.alg != algorithm {
 			return nil, false
 		}
@@ -47,35 +56,36 @@ func buildKeyResolver(systems []config.SystemConfig, log *slog.Logger) composer.
 
 // buildKeyConfigured turns trunking.systems[].encryption_keys into the
 // recorder's "is this call decryptable" predicate (RecorderOptions.
-// KeyConfigured): true when the system lists the call's key id, or — while
-// the key id is still unknown (0, before the first Encryption Sync / PI
-// header) — when the system has any key at all, mirroring the engine's
-// systemHasKeys deferral. The algorithm is not checked here: the voice
-// chain refuses a key whose length disagrees with the ALGID on air, and a
-// mismatched entry is an operator error better seen in the log than
-// silently muted. A call from a system with no keys of its own (the
-// conventional scanner's synthetic grants, system "scanner") is covered by
-// the conventional channels' keys as a whole — the recorder knows the
-// call's system, not its frequency, so a key id configured on any channel
-// counts (issue #1261). Returns nil when nothing configures a key.
-func buildKeyConfigured(systems []config.SystemConfig) func(system string, algID uint8, keyID uint16) bool {
-	keys := map[string]map[uint16]bool{}
-	conv := map[uint16]bool{}
+// KeyConfigured): true when the system lists the call's key id — unscoped,
+// or scoped to the call's talkgroup (issue #1261) — or, while the key id is
+// still unknown (0, before the first Encryption Sync / PI header), when the
+// system has any key at all, mirroring the engine's systemHasKeys deferral.
+// The algorithm is not checked here: the voice chain refuses a key whose
+// length disagrees with the ALGID on air, and a mismatched entry is an
+// operator error better seen in the log than silently muted. A call from a
+// system with no keys of its own (the conventional scanner's synthetic
+// grants, system "scanner") is covered by the conventional channels' keys as
+// a whole — the recorder knows the call's system, not its frequency, so a
+// key id configured on any channel counts (issue #1261). Returns nil when
+// nothing configures a key.
+func buildKeyConfigured(systems []config.SystemConfig) func(system string, algID uint8, keyID uint16, group uint32) bool {
+	keys := map[string]map[config.EncryptionKeyScope]bool{}
+	conv := map[config.EncryptionKeyScope]bool{}
 	for _, s := range systems {
 		for _, k := range s.EncryptionKeys {
 			if keys[s.Name] == nil {
-				keys[s.Name] = map[uint16]bool{}
+				keys[s.Name] = map[config.EncryptionKeyScope]bool{}
 			}
-			keys[s.Name][k.KeyID] = true
+			keys[s.Name][k.Scope()] = true
 			if strings.HasPrefix(s.Name, conventionalKeySystemPrefix) {
-				conv[k.KeyID] = true
+				conv[k.Scope()] = true
 			}
 		}
 	}
 	if len(keys) == 0 {
 		return nil
 	}
-	return func(system string, _ uint8, keyID uint16) bool {
+	return func(system string, _ uint8, keyID uint16, group uint32) bool {
 		ids := keys[system]
 		if len(ids) == 0 {
 			ids = conv
@@ -86,7 +96,10 @@ func buildKeyConfigured(systems []config.SystemConfig) func(system string, algID
 		if keyID == 0 {
 			return true
 		}
-		return ids[keyID]
+		if ids[config.EncryptionKeyScope{KeyID: keyID}] {
+			return true
+		}
+		return group != 0 && ids[config.EncryptionKeyScope{KeyID: keyID, Talkgroup: group}]
 	}
 }
 

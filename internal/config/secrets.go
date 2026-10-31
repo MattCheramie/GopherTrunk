@@ -65,7 +65,7 @@ func (c Config) HasRedactedSecrets() bool {
 
 // RestoreSecrets replaces every RedactedSecret in c with the value stored in
 // onDisk, the config file being saved over: a key by its system's name and
-// its key_id, a container password by its system's name and path. A
+// its key_id (and talkgroup, when the entry is talkgroup-scoped), a container password by its system's name and path. A
 // placeholder with no stored counterpart (a renamed system, a changed key_id
 // or path, a new file) is an error naming it, so a save can never write the
 // placeholder in place of a key.
@@ -84,14 +84,14 @@ func (c *Config) RestoreSecrets(onDisk Config) error {
 			}
 			found := false
 			for _, dk := range disk.EncryptionKeys {
-				if haveSys && dk.KeyID == k.KeyID && dk.Key != RedactedSecret {
+				if haveSys && dk.Scope() == k.Scope() && dk.Key != RedactedSecret {
 					k.Key, found = dk.Key, true
 					break
 				}
 			}
 			if !found {
-				return fmt.Errorf("trunking.systems[%d] (%s).encryption_keys[%d]: the key for key_id %d is hidden and the saved file "+
-					"has none to keep for that system and key_id; enter the key again", i, s.Name, j, k.KeyID)
+				return fmt.Errorf("trunking.systems[%d] (%s).encryption_keys[%d]: the key for %s is hidden and the saved file "+
+					"has none to keep for that system and key_id; enter the key again", i, s.Name, j, k.Scope())
 			}
 		}
 		for j := range s.EncryptionKeyFiles {

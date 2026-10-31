@@ -39,6 +39,7 @@ type p25ADPState struct {
 	c      *Composer
 	serial string
 	system string
+	group  uint32 // the grant's talkgroup, for talkgroup-scoped keys
 
 	haveES    bool
 	algID     uint8
@@ -78,8 +79,8 @@ type p25HeldFrame struct {
 // its FEC corrected-bit count to the recorder.
 type p25FrameWriter func(frame []byte, errs int)
 
-func newP25ADPState(c *Composer, serial, system string) *p25ADPState {
-	return &p25ADPState{c: c, serial: serial, system: system, holding: true}
+func newP25ADPState(c *Composer, serial, system string, group uint32) *p25ADPState {
+	return &p25ADPState{c: c, serial: serial, system: system, group: group, holding: true}
 }
 
 // onES is called for every LDU2 BEFORE its voice frames are handled, with
@@ -145,7 +146,7 @@ func (s *p25ADPState) resolveKey() {
 	if s.c.keyResolver == nil {
 		return
 	}
-	key, found := s.c.keyResolver(s.system, algName, s.keyID)
+	key, found := s.c.keyResolver(s.system, algName, s.keyID, s.group)
 	if !found {
 		s.c.log.Debug("composer: p25p1 encrypted call has no configured key",
 			"serial", s.serial, "system", s.system, "alg", p25.FormatAlgorithm(s.algID), "key_id", s.keyID)

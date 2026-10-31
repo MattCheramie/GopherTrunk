@@ -21,7 +21,7 @@ func mkSkipEncKeyedRecorder(t *testing.T) (*Recorder, *events.Bus, string) {
 		OutDir:        dir,
 		SampleRate:    8000,
 		SkipEncrypted: true,
-		KeyConfigured: func(_ string, _ uint8, keyID uint16) bool {
+		KeyConfigured: func(_ string, _ uint8, keyID uint16, _ uint32) bool {
 			return keyID == 0 || keyID == 1 || keyID == 3
 		},
 	})

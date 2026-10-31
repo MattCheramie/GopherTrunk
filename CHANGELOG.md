@@ -7,6 +7,19 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Encryption keys per talkgroup (#1261).** An `encryption_keys` entry takes
+  an optional `talkgroup`, for systems that give every talkgroup the same key
+  ID but a different key (a reporter's NXDN site: TG 21 and TG 10 both on key
+  ID 0, with different scrambler keys, so only one could ever decode). A key
+  scoped to the call's talkgroup wins over an entry without one for the same
+  `key_id`, and is never used for another talkgroup; entries without
+  `talkgroup` behave as before. Works for NXDN scrambler, DMR Enhanced Privacy
+  and P25 keys, on trunking systems and scan-list channels, and
+  `recordings.skip_encrypted` honours it. See `docs/dmr-encryption.md`.
+
+## [v1.3.6] — 2026-10-30
+
 ### Fixed
 - **Airspy Mini on a Raspberry Pi 4 saturated one core at 3 MS/s with two TETRA
   cells ("dropping live IQ chunks", #1321).** Three things on the wideband
