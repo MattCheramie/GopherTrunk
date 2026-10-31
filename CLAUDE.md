@@ -1228,7 +1228,10 @@ confirmation before any close-as-completed.
   `iqconverter_ref_test.go`, agreement 2e-6). Net: 0.39× → 0.18× wall, CPU 3.8 → 2.4 s per 10 s;
   remaining pump cost is the TETRA receiver's channel-filter FIR (~25 %) and the shared decimator.
   `sdr.input_sample_rate` (the systemwide pre-decimator) was missing from config.example.yaml (the 4 Sep
-  rule) — added. STILL ON-AIR-GATED: the reporter's Pi 4 run; nothing here was measured on ARM.
+  rule) — added. Pi 4 confirmed (28 Oct): 2 cells 513 → 7 drops/10 min. The 4-cell residual (~9/min, cores mostly idle) was the depth-8
+  class AGAIN, in the Airspy driver: `out` held 8 URBs of 16 KiB = ~11 ms at 3 MS/s; both stream channels are now
+  time-sized (400 ms, `streamDepthFor`, pinned by `stream_depth_test.go`). HackRF and AirspyHF still have a fixed
+  8-deep `out` AND a BLOCKING send in onPacket (the shape the Airspy reaper-freeze fix removed, `airspy_overrun_test.go`) — not changed, separate fix.
 - **The NXDN "scrambler" (SACCH VCALL cipher type 1, 15-bit key) IS DECODED and capture-pinned
   (#1261, 26 Oct): the reporter's two known-key captures (Kenwood, keys 32767 / 12345 on 447.100 MHz
   NXDN96, `nxdn/testdata/scrambler_key*_frames.json`) descramble to speech (AMBE b0 pitch continuity

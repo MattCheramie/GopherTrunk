@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -579,6 +580,35 @@ func (d *Device) SetBiasTee(enable bool) error {
 	return d.t.ControlOut(reqGPIOWrite, v, portPin, nil, controlTimeoutMs)
 }
 
+// streamBufferLatency is how much IQ the stream channels are sized to hold at
+// the stream's rate (#1321). Same value as the RTL-SDR driver's, soapyremote's
+// streamBufferLatency and iqtap's SubBufferLatency (#1242: size buffers by
+// time, not by chunk count).
+const streamBufferLatency = 400 * time.Millisecond
+
+// minStreamChanDepth is the floor for the output channel, and the depth when
+// the rate is unknown (SetSampleRate not yet called).
+const minStreamChanDepth = 8
+
+// streamDepthFor sizes a stream channel to hold streamBufferLatency of IQ at
+// iqRateHz in chunks of iqPerChunk samples, never fewer than
+// minStreamChanDepth.
+func streamDepthFor(iqRateHz uint32, iqPerChunk int) int {
+	if iqRateHz == 0 || iqPerChunk <= 0 {
+		return minStreamChanDepth
+	}
+	depth := int(math.Ceil(streamBufferLatency.Seconds() * float64(iqRateHz) / float64(iqPerChunk)))
+	return max(depth, minStreamChanDepth)
+}
+
+// lastRequestedRate returns the IQ rate from the most recent SetSampleRate
+// (0 before one).
+func (d *Device) lastRequestedRate() uint32 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.lastReqRate
+}
+
 // StreamIQ flips the receiver on and starts the bulk-IN reaper,
 // delivering one complex64 chunk per URB.
 func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
@@ -635,6 +665,11 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		d.applyHydraBandwidth()
 	}
 
+	// Capture the fresh converter as a local so the converter goroutine never
+	// reads the d.cnv field: a fast retune (#686) may reassign d.cnv for the
+	// next stream while this one is still draining.
+	cnv := d.cnv
+
 	// Decouple USB reaping from the (heavy, sequential) real→IQ conversion. On
 	// macOS the transport delivers each bulk-IN payload from one of
 	// usb.DefaultRingBuffers (32) concurrent reaper goroutines, each of which
@@ -647,20 +682,24 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	// and hands it to a single converter goroutine, returning immediately so the
 	// reaper re-posts at once and the queue stays full. Linux uses one in-order
 	// reaper so it never hit this, but the split is harmless there.
-	out := make(chan []complex64, 8)
-	// rawCh carries copied raw payloads to the converter. Depth = the in-flight
-	// URB count (DefaultRingBuffers) so a whole ring completing at once enqueues
-	// without shedding as long as the converter keeps up on average.
-	rawCh := make(chan *[]byte, usb.DefaultRingBuffers)
+	//
+	// Both channels are sized by TIME at the stream's rate (#1321), not by a
+	// fixed chunk count: a URB is only usb.DefaultBufferLen (16 KiB) = 4096 IQ
+	// samples, so the old 8-deep `out` held ~11 ms at 3 MS/s (~3 ms at 10 MS/s)
+	// and any consumer pause longer than that (a GC cycle, a TETRA resync, the
+	// Pi's scheduler) shed live IQ even with the CPU mostly idle.
+	depth := streamDepthFor(d.resolvedIQRate(d.lastRequestedRate()), cnv.iqSamplesPerChunk(usb.DefaultBufferLen))
+	out := make(chan []complex64, depth)
+	// rawCh carries copied raw payloads to the converter. Never shallower than
+	// the in-flight URB count (DefaultRingBuffers) so a whole ring completing at
+	// once enqueues without shedding; time-sized like `out` so a converter
+	// pause is absorbed too.
+	rawCh := make(chan *[]byte, max(depth, usb.DefaultRingBuffers))
 	// Per-stream pool of raw byte buffers so a copied payload can outlive the
 	// reaper's slot buffer (reused on the next ReadPipe) without per-URB GC
 	// churn. Per-stream so it is collected with the stream and never aliases a
 	// previous session's buffers.
 	pool := &sync.Pool{New: func() any { b := make([]byte, usb.DefaultBufferLen); return &b }}
-	// Capture the fresh converter as a local so the converter goroutine never
-	// reads the d.cnv field: a fast retune (#686) may reassign d.cnv for the
-	// next stream while this one is still draining.
-	cnv := d.cnv
 	converterDone := make(chan struct{})
 
 	onPacket := func(buf []byte) {
