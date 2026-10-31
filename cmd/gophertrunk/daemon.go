@@ -5288,6 +5288,22 @@ func (f fanoutSink) NotifyDrainCompleteForCall(serial string, callID uint64) {
 	}
 }
 
+// NotifyIQLoss forwards a call's IQ-loss count (issue #1288) to the sinks
+// that use it (the recorder). Like the drain signals it MUST be forwarded: the
+// composer finds it by asserting on its sink, which is this fanoutSink whenever
+// more than one sink is configured, and an unforwarded count would leave every
+// partial recording marked complete in the daemon while the recorder's own
+// tests pass.
+func (f fanoutSink) NotifyIQLoss(serial string, callID uint64, lostChunks uint64) {
+	for _, s := range f {
+		if ls, ok := s.(interface {
+			NotifyIQLoss(string, uint64, uint64)
+		}); ok {
+			ls.NotifyIQLoss(serial, callID, lostChunks)
+		}
+	}
+}
+
 // toneProfilesFromConfig converts the YAML config shape into the
 // internal toneout.Profile shape, parsing duration strings.
 func toneProfilesFromConfig(in []config.ToneProfileConfig) ([]toneout.Profile, error) {
@@ -5859,12 +5875,24 @@ type convScanVoiceSource struct {
 func (s *convScanVoiceSource) SampleRateHz() uint32 { return s.rate }
 
 func (s *convScanVoiceSource) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
+	ch, _, err := s.StreamIQWithLoss(ctx)
+	return ch, err
+}
+
+// StreamIQWithLoss is StreamIQ plus a func reporting the IQ chunks the call
+// lost: chunks the broker dropped to this subscription, plus chunks the
+// scanner SDR's driver dropped since the call began. The composer reads it at
+// call end to mark the recording partial (issue #1288).
+func (s *convScanVoiceSource) StreamIQWithLoss(ctx context.Context) (<-chan []complex64, func() uint64, error) {
+	physical := s.broker.Info().Serial
+	base := sdr.IQDropCount(physical)
 	sub := s.broker.Subscribe()
 	go func() {
 		<-ctx.Done()
 		sub.Close() // closes sub.C, ending the composer's read loop
 	}()
-	return mixToChannel(ctx, sub.C, s.offsetHz, s.rate, nil), nil
+	lost := func() uint64 { return sub.Dropped() + (sdr.IQDropCount(physical) - base) }
+	return mixToChannel(ctx, sub.C, s.offsetHz, s.rate, nil), lost, nil
 }
 
 // deviceWithRate makes an sdr.Device satisfy composer.IQSource by

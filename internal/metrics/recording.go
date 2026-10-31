@@ -15,6 +15,7 @@ type recordingMetrics struct {
 	discarded *prometheus.CounterVec
 	errors    *prometheus.CounterVec
 	truncated prometheus.Counter
+	partial   prometheus.Counter
 	finalize  prometheus.Histogram
 }
 
@@ -36,13 +37,17 @@ func newRecordingMetrics() (*recordingMetrics, []prometheus.Collector) {
 			Namespace: namespace, Name: "recordings_truncated_total",
 			Help: "Calls finalized on the drain timeout because the voice chain never signalled it had flushed: the file may lack its last frames.",
 		}),
+		partial: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace, Name: "recordings_partial_total",
+			Help: "Recordings announced whose call lost IQ (dropped to a lagging consumer, or by the SDR driver): the audio has gaps. The call.complete event and the .json sidecar carry iq_lost_chunks.",
+		}),
 		finalize: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Namespace: namespace, Name: "recording_finalize_seconds",
 			Help:    "Time from the start of finalizing a recording file to its announcement (close, loudness normalize, sidecar).",
 			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		}),
 	}
-	return r, []prometheus.Collector{r.completed, r.discarded, r.errors, r.truncated, r.finalize}
+	return r, []prometheus.Collector{r.completed, r.discarded, r.errors, r.truncated, r.partial, r.finalize}
 }
 
 // RecordingCompleted implements voice.RecorderObserver.
@@ -59,3 +64,7 @@ func (m *Metrics) RecordingError(stage string) { m.rec.errors.WithLabelValues(st
 
 // RecordingTruncated implements voice.RecorderObserver.
 func (m *Metrics) RecordingTruncated() { m.rec.truncated.Inc() }
+
+// RecordingPartial implements the recorder's optional partial-recording
+// observer (issue #1288).
+func (m *Metrics) RecordingPartial() { m.rec.partial.Inc() }
