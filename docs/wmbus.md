@@ -122,11 +122,11 @@ wmbus: listening 5m0s: 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0
   signal is there but weak, clipped or interfered with. Add `-all` to see them.
 - *Dropped chunks* must stay at 0. Any drop means the computer did not keep
   up with the SDR and a telegram in the gap is lost. A warning is printed the
-  first time it happens. On a slow phone, use `-rate 1200000`: it is the
-  cheapest rate to decode and decodes the same telegrams as the 1.6 MS/s
-  default. Not `-rate 1024000`, which needs about twice the CPU (its
-  resampling ratio is awkward). Or record with `capture` and decode the file
-  afterwards, which has no real-time limit.
+  first time it happens. Lowering `-rate` does not help: since v1.3.5 the
+  decoder costs about the same at any rate from 1.024 to 1.6 MS/s, so keep
+  the 1.6 MS/s default. Close other programs and check the USB link, or
+  record with `capture` and decode the file afterwards, which has no
+  real-time limit.
 
 - *Repaired* (`12 CRC-valid of which 2 repaired`) counts telegrams that
   passed only after a CRC repair; see **Weak telegrams** below.

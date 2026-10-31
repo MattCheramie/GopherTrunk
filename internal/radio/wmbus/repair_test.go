@@ -137,3 +137,36 @@ func TestReceiverRealAirWeakTelegrams(t *testing.T) {
 		}
 	}
 }
+
+// TestReceiverRealAirClickClip pins the click clip at 4 samples per chip
+// (issue #1256): a Qundis heat cost allocator from the reporter's 25 Oct
+// walk (S5 + RTL-SDR, the dongle's -50 kHz offset), decoded by a fresh
+// receiver. With the 64 kHz clip chosen at 8 samples per chip it fails its
+// CRC even with the repair; at 48 kHz it decodes. That
+// change took the walk's 945 telegrams from 543 CRC-valid in sequence
+// (fewer than v1.3.4's 570) to 582.
+func TestReceiverRealAirClickClip(t *testing.T) {
+	iq, rate := loadIQWav(t, "testdata/issue1256_qds_29547582_clickclip.wav")
+	var ok []Telegram
+	rx, err := NewReceiver(ReceiverOptions{SampleRateHz: rate, OnFrame: func(f Frame, info FrameInfo) {
+		if !f.CRCOK || info.Inverted {
+			return
+		}
+		tg, err := ParseTelegram(f)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		ok = append(ok, tg)
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for j := 0; j < len(iq); j += 16384 {
+		rx.Process(iq[j:min(j+16384, len(iq))])
+	}
+	rx.Flush()
+	if len(ok) != 1 || ok[0].Manufacturer != "QDS" || ok[0].ID != "29547582" {
+		t.Fatalf("CRC-valid telegrams %+v, want QDS 29547582", ok)
+	}
+}
