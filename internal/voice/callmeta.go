@@ -43,6 +43,12 @@ type callMeta struct {
 	// consumer render the recording as an individual call instead of mistaking the
 	// radio ID for a talkgroup. Omitted (false) for ordinary group calls.
 	Individual bool `json:"individual,omitempty"`
+	// IQLostChunks is a GopherTrunk extension: the IQ chunks the call's stream
+	// lost (to a lagging consumer or the SDR driver). Non-zero means the
+	// recording is PARTIAL — its audio has gaps where IQ was missing — so a
+	// consumer never mistakes it for a complete capture (issue #1288).
+	// Omitted when nothing was lost.
+	IQLostChunks uint64 `json:"iq_lost_chunks,omitempty"`
 	// AlgorithmID / KeyID are the P25 ALGID / DMR algorithm and key
 	// identifier the call's encryption signalling carried (omitted for a
 	// clear call) — so a consumer can tell an ADP call from AES without

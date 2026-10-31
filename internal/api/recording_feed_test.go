@@ -57,7 +57,7 @@ func TestRecordingFeedFollowsCompletionOrder(t *testing.T) {
 	publish(events.KindCallEnd, trunking.CallEnd{Grant: callB.Grant, DeviceSerial: callB.DeviceSerial,
 		StartedAt: callB.StartedAt, EndedAt: t0.Add(2 * time.Second), Reason: trunking.EndReasonNormal})
 	publish(events.KindCallComplete, trunking.CallComplete{Grant: callB.Grant, DeviceSerial: callB.DeviceSerial,
-		StartedAt: callB.StartedAt, EndedAt: t0.Add(2 * time.Second), AudioPath: fileB})
+		StartedAt: callB.StartedAt, EndedAt: t0.Add(2 * time.Second), AudioPath: fileB, IQLostChunks: 3})
 	publish(events.KindCallEnd, trunking.CallEnd{Grant: callA.Grant, DeviceSerial: callA.DeviceSerial,
 		StartedAt: callA.StartedAt, EndedAt: t0.Add(5 * time.Second), Reason: trunking.EndReasonNormal})
 	publish(events.KindCallComplete, trunking.CallComplete{Grant: callA.Grant, DeviceSerial: callA.DeviceSerial,
@@ -107,6 +107,14 @@ func TestRecordingFeedFollowsCompletionOrder(t *testing.T) {
 	}
 	if first.Format != "wav" || first.AudioURL != "/api/v1/recordings/"+strconv.FormatInt(first.ID, 10)+"/audio" {
 		t.Errorf("B's format %q / audio_url %q", first.Format, first.AudioURL)
+	}
+	// B's stream lost IQ: the feed must say so, so an archiving consumer never
+	// takes it for a complete capture (issue #1288); A lost nothing.
+	if !first.Partial || first.IQLostChunks != 3 {
+		t.Errorf("B partial=%v iq_lost_chunks=%d, want true / 3", first.Partial, first.IQLostChunks)
+	}
+	if second.Partial || second.IQLostChunks != 0 {
+		t.Errorf("A partial=%v iq_lost_chunks=%d, want false / 0", second.Partial, second.IQLostChunks)
 	}
 	if all.NextAfter != second.ID {
 		t.Errorf("next_after = %d, want the last id %d", all.NextAfter, second.ID)

@@ -794,6 +794,11 @@ type FinalizedRecording struct {
 	// Format is the file's container from its extension: wav, flac or mp3.
 	Format   string `json:"format"`
 	AudioURL string `json:"audio_url"`
+	// Partial is true when IQ was lost during the call, so the audio has
+	// gaps; IQLostChunks says how much (issue #1288). A consumer archiving
+	// recordings must not treat a partial file as a complete capture.
+	Partial      bool   `json:"partial"`
+	IQLostChunks uint64 `json:"iq_lost_chunks,omitempty"`
 	// Call is the recording's call row (nil if retention removed it).
 	Call *CallRow `json:"call,omitempty"`
 	path string

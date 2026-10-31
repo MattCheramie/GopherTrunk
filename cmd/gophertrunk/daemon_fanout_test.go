@@ -255,3 +255,31 @@ func TestFanoutSinkForwardsErrorCounts(t *testing.T) {
 		t.Errorf("pcm-only sink got %d WritePCM calls; raw-frame write must not call WritePCM", pcm.written)
 	}
 }
+
+// iqLossRecorder stands in for the recorder's IQ-loss input (issue #1288).
+type iqLossRecorder struct {
+	pcmOnlySink
+	serial string
+	callID uint64
+	lost   uint64
+}
+
+func (r *iqLossRecorder) NotifyIQLoss(serial string, callID uint64, n uint64) {
+	r.serial, r.callID, r.lost = serial, callID, n
+}
+
+// TestFanoutSinkForwardsIQLoss: the composer finds the recorder's NotifyIQLoss
+// by asserting on its sink, which is a fanoutSink whenever several sinks are
+// configured, so the fanout must forward it — or every partial recording
+// passes as complete in the daemon while the recorder's own tests pass.
+func TestFanoutSinkForwardsIQLoss(t *testing.T) {
+	rec := &iqLossRecorder{}
+	f := fanoutSink{&pcmOnlySink{}, rec}
+	var _ interface {
+		NotifyIQLoss(string, uint64, uint64)
+	} = f
+	f.NotifyIQLoss("WB-1", 9, 4)
+	if rec.serial != "WB-1" || rec.callID != 9 || rec.lost != 4 {
+		t.Fatalf("forwarded (%q, %d, %d), want (WB-1, 9, 4)", rec.serial, rec.callID, rec.lost)
+	}
+}
