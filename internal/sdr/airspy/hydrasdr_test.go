@@ -1,11 +1,13 @@
 package airspy
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"math"
 	"math/cmplx"
 	"testing"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
@@ -36,7 +38,10 @@ func TestHydraSDRWireConstantsMatchReference(t *testing.T) {
 		{"HYDRASDR_SET_MIXER_AGC", int(reqSetMixerAGC), 18},
 		{"HYDRASDR_SET_RF_BIAS_CMD", int(reqSetRFBias), 20},
 		{"HYDRASDR_GET_SAMPLERATES", int(reqGetSamplerates), 25},
+		{"HYDRASDR_SET_PACKING", int(reqSetPacking), 26},
 		{"HYDRASDR_GET_CAPABILITIES", int(reqGetCapabilities), 29},
+		{"HYDRASDR_SET_BANDWIDTH", int(reqSetBandwidth), 30},
+		{"HYDRASDR_GET_BANDWIDTHS", int(reqGetBandwidths), 31},
 		{"HYDRASDR_CAP_EXTENDED_SAMPLERATES", hydraCapExtendedRates, 1 << 21},
 		{"RFONE_LNA_MAX_GAIN", hydraLNAMaxGain, 14},
 		{"sizeof(hydrasdr_samplerate_info_t)", hydraRateInfoLen, 8},
@@ -110,7 +115,8 @@ func rateInfo(rate uint32, adcBits, format uint8) []byte {
 }
 
 // Opening an RFOne on extended-rate firmware reads the rate table, the
-// capability mask and the per-rate ADC record, in that order.
+// capability mask, the per-rate ADC record and the bandwidth table, then
+// turns packing off, in that order.
 func TestHydraSDROpenReadsExtendedRateInfo(t *testing.T) {
 	var mt *usb.MockTransport
 	enum := &usb.MockEnumerator{
@@ -124,6 +130,9 @@ func TestHydraSDROpenReadsExtendedRateInfo(t *testing.T) {
 				{In: true, BRequest: 25, WValue: 0, WIndex: 2, Reply: u32le(10_000_000, 2_500_000), N: 8},
 				{In: true, BRequest: 29, WValue: 0, WIndex: 0, Reply: u32le(1 << 21), N: 4},
 				{In: true, BRequest: 25, WValue: 1, WIndex: 2, Reply: ext, N: 16},
+				{In: true, BRequest: 31, WIndex: 0, Reply: u32le(2), N: 4},
+				{In: true, BRequest: 31, WIndex: 2, Reply: u32le(8_000_000, 3_000_000), N: 8},
+				{In: true, BRequest: 26, WValue: 0, WIndex: 0, Reply: []byte{1}, N: 1},
 				// SET_SAMPLERATE on extended firmware is read with 4 bytes.
 				{In: true, BRequest: 12, WValue: 0, WIndex: 1, Reply: []byte{1, 8, 0, 0}, N: 4},
 			}
@@ -137,6 +146,9 @@ func TestHydraSDROpenReadsExtendedRateInfo(t *testing.T) {
 	d := dev.(*Device)
 	if !d.hydra || len(d.rateADCBits) != 2 || d.rateADCBits[1] != 8 {
 		t.Fatalf("hydra=%v rateADCBits=%v", d.hydra, d.rateADCBits)
+	}
+	if len(d.bandwidths) != 2 || d.bandwidths[1] != 3_000_000 {
+		t.Fatalf("bandwidths=%v", d.bandwidths)
 	}
 	if err := dev.SetSampleRate(2_500_000); err != nil {
 		t.Fatalf("SetSampleRate: %v", err)
@@ -162,6 +174,8 @@ func TestHydraSDROpenOldFirmwareKeepsDefaults(t *testing.T) {
 				{In: true, BRequest: 25, WIndex: 0, Reply: u32le(1), N: 4},
 				{In: true, BRequest: 25, WIndex: 1, Reply: u32le(10_000_000), N: 4},
 				{In: true, BRequest: 29, Err: errors.New("stall")},
+				{In: true, BRequest: 31, Err: errors.New("stall")},
+				{In: true, BRequest: 26, WIndex: 0, Reply: []byte{1}, N: 1},
 				{In: true, BRequest: 12, WIndex: 0, Reply: []byte{1}, N: 1},
 			}
 			return mt, nil
@@ -180,7 +194,7 @@ func TestHydraSDROpenOldFirmwareKeepsDefaults(t *testing.T) {
 	if mt.Err != nil {
 		t.Fatalf("transport: %v", mt.Err)
 	}
-	if d := dev.(*Device); d.rateADCBits != nil || d.adcBits != 0 {
+	if d := dev.(*Device); d.rateADCBits != nil || d.adcBits != 0 || d.bandwidths != nil {
 		t.Errorf("rateADCBits=%v adcBits=%d, want nil/0 (12-bit default)", d.rateADCBits, d.adcBits)
 	}
 }
@@ -301,5 +315,76 @@ func TestIQConverterADCDefaults(t *testing.T) {
 		if c.mid != 2048 || c.byteSamples {
 			t.Errorf("newIQConverterADC(%d) mid=%v byte=%v, want 12-bit", bits, c.mid, c.byteSamples)
 		}
+	}
+}
+
+// libhydrasdr's auto-bandwidth rule: the narrowest advertised IF bandwidth at
+// least as wide as the sample rate, whatever order the table is in.
+func TestHydraSDRBandwidthIndex(t *testing.T) {
+	bws := []uint32{8_000_000, 1_700_000, 3_000_000, 5_000_000}
+	for _, c := range []struct {
+		rate uint32
+		want int
+	}{
+		{2_500_000, 2}, // 3 MHz
+		{1_000_000, 1}, // 1.7 MHz
+		{5_000_000, 3}, // exactly 5 MHz
+		{6_000_000, 0}, // 8 MHz
+		{10_000_000, -1},
+	} {
+		if got := hydraBandwidthIndex(bws, c.rate); got != c.want {
+			t.Errorf("rate %d: index %d, want %d", c.rate, got, c.want)
+		}
+	}
+	if got := hydraBandwidthIndex(nil, 2_500_000); got != -1 {
+		t.Errorf("no table: index %d, want -1", got)
+	}
+}
+
+// The firmware applies its own IF bandwidth when RX mode goes on, so the
+// driver must set the one that fits the sample rate AFTER receiver-on, as
+// libhydrasdr's start_rx does (here 2.5 MS/s -> the 3 MHz entry, index 1).
+// Old firmware with no bandwidth table gets no SET_BANDWIDTH at all.
+func TestHydraSDRStreamSetsBandwidthAfterReceiverOn(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		bws    []uint32
+		script []usb.CtrlExchange
+	}{
+		{"bandwidth table", []uint32{8_000_000, 3_000_000, 1_700_000}, []usb.CtrlExchange{
+			{BRequest: reqReceiverMode, WValue: receiverModeOn},
+			{In: true, BRequest: 30, WValue: 0, WIndex: 1, Reply: []byte{1}, N: 1},
+			{BRequest: reqReceiverMode, WValue: receiverModeOff},
+		}},
+		{"old firmware", nil, []usb.CtrlExchange{
+			{BRequest: reqReceiverMode, WValue: receiverModeOn},
+			{BRequest: reqReceiverMode, WValue: receiverModeOff},
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dev, mt := hydraDevice()
+			dev.rates = []uint32{10_000_000, 2_500_000}
+			dev.lastReqRate = 2_500_000
+			dev.bandwidths = c.bws
+			mt.Script = c.script
+			ctx, cancel := context.WithCancel(context.Background())
+			ch, err := dev.StreamIQ(ctx)
+			if err != nil {
+				t.Fatalf("StreamIQ: %v", err)
+			}
+			cancel()
+			deadline := time.Now().Add(time.Second)
+			for time.Now().Before(deadline) {
+				if _, ok := <-ch; !ok {
+					break
+				}
+			}
+			if mt.Err != nil {
+				t.Fatalf("transport: %v", mt.Err)
+			}
+			if mt.Step != len(c.script) {
+				t.Fatalf("ran %d of %d scripted transfers", mt.Step, len(c.script))
+			}
+		})
 	}
 }

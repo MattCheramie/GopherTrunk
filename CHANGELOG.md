@@ -8,6 +8,17 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **HydraSDR RFOne: packing and IF bandwidth now set as the vendor library
+  sets them (#1325).** Checked against the current `hydrasdr-host` while
+  answering a macOS user on firmware v1.0.2. The driver never sent
+  `SET_PACKING`, and the firmware keeps the packing state while powered, so
+  an RFOne last used by an application that turned 12-bit packing on (common
+  at 10 MS/s) would have streamed packed samples GopherTrunk reads as noise;
+  packing is now switched off on every open, as libhydrasdr does. On firmware
+  with selectable IF bandwidths, the narrowest one at least as wide as the
+  sample rate is now set once RX starts (the firmware applies its own default
+  at that point), matching libhydrasdr's auto-bandwidth. Old firmware is
+  unaffected. Not yet run on an RFOne.
 - **`wmbus` decoded fewer telegrams on v1.3.5 than on v1.3.4 (#1256).** The
   FM click limit was tuned when the receiver ran at 8 samples per chip;
   halving that for the S5's CPU (v1.3.5) gave each click twice the weight in a
