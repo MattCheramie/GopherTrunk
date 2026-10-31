@@ -114,6 +114,16 @@ func newIQConverterADC(bits uint8) *iqConverter {
 // uint16, or one byte each for an 8-bit ADC) into complex64 baseband. Two
 // real samples collapse to one complex sample, so a uint16 payload yields
 // len(buf)/4 complex samples.
+// iqSamplesPerChunk is how many IQ samples processRaw yields from a raw
+// payload of n bytes: a real sample is 2 bytes (1 on an 8-bit ADC) and the
+// Fs/4 mix halves the count.
+func (c *iqConverter) iqSamplesPerChunk(n int) int {
+	if c.byteSamples {
+		return n / 2
+	}
+	return n / 4
+}
+
 func (c *iqConverter) processRaw(buf []byte) []complex64 {
 	nReal := len(buf) / 2
 	if c.byteSamples {
