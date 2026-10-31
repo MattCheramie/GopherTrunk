@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Airspy / HydraSDR: "dropping live IQ chunks" on short consumer pauses
+  (#1321).** Each USB transfer carries only 16 KiB (~1.4 ms of IQ at 3 MS/s),
+  and the driver's output buffer held 8 of them, so any downstream pause over
+  ~11 ms (a garbage-collection cycle, a TETRA resync, a busy scheduler) shed
+  IQ even with the CPU mostly idle: the residual ~9 drops/min a Raspberry Pi 4
+  showed with an Airspy Mini and 4 TETRA cells. The driver's buffers now hold
+  400 ms of IQ at the stream's rate, like the RTL-SDR driver's. Not yet run on
+  a Pi.
 - **HydraSDR RFOne: packing and IF bandwidth now set as the vendor library
   sets them (#1325).** Checked against the current `hydrasdr-host` while
   answering a macOS user on firmware v1.0.2. The driver never sent
