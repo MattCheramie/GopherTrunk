@@ -7,6 +7,19 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **`wmbus` decoded fewer telegrams on v1.3.5 than on v1.3.4 (#1256).** The
+  FM click limit was tuned when the receiver ran at 8 samples per chip;
+  halving that for the S5's CPU (v1.3.5) gave each click twice the weight in a
+  bit decision, so the old limit let strong clicks flip bits. Replayed through
+  one receiver in order, the reporter's 25 Oct walk (945 saved telegrams)
+  decoded 543 on v1.3.5 against 570 on v1.3.4; with the limit lowered from
+  64 to 48 kHz it decodes 582, and the 20 / 23 Oct walks go from 133 / 78 to
+  134 / 83. T mode telegrams and the rtl-wmbus sample captures decode as
+  before. The dropped-chunk warning and `docs/wmbus.md` no longer recommend
+  `-rate 1200000`: since v1.3.5 the decoder costs about the same at any rate
+  from 1.024 to 1.6 MS/s, so a lower rate does not help a slow phone.
+
 ### Added
 - **Encryption keys per talkgroup (#1261).** An `encryption_keys` entry takes
   an optional `talkgroup`, for systems that give every talkgroup the same key

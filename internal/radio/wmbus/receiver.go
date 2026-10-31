@@ -59,15 +59,23 @@ const (
 	// boxcar that makes about a chip-long matched filter.
 	decideSpan = 2
 	// clickClipRad bounds each discriminator sample to this far either
-	// side of the carrier: 64 kHz, above the C mode
-	// (±45 kHz) and nominal T mode (±50 kHz) deviation. On the issue #1256
+	// side of the carrier: 48 kHz, just above the C mode deviation
+	// (±45 kHz), so a clean C mode sample is never clipped; a T mode one
+	// (±50 kHz) is only trimmed and keeps its sign. On the issue #1256
 	// walk (156 saved telegrams) it is what makes the soft CRC repair work:
 	// without it the bit errors were mostly the decisions with the LARGEST
-	// margin (clicks), so ranking bits by margin found nothing; with it
-	// the CRC-valid count went from 129 to 133, and to 110 from 99 for
-	// telegrams decoded without a carrier estimate from earlier ones. The
-	// gain plateaued from 51 to 77 kHz (measured at 8 samples per chip).
-	clickClipRad = 2 * math.Pi * 64_000 / procRateHz
+	// margin (clicks), so ranking bits by margin found nothing.
+	//
+	// It was 64 kHz, picked at 8 samples per chip, where the gain was flat
+	// from 51 to 77 kHz. At 4 samples per chip (#1306) the boxcar and the
+	// decision span are half as long, so a click carries twice the weight
+	// in a chip's decision and the optimum moved down: on the reporter's
+	// 25 Oct walk (945 telegrams) 64 kHz decoded 543 in sequence, fewer
+	// than v1.3.4's 570; 48 kHz decodes 582 (and 134 / 83 on the 20 / 23
+	// Oct walks, was 133 / 78), with the T mode telegrams and rtl-wmbus's
+	// sample captures unchanged. 32–44 kHz scores a few more on that walk
+	// but cuts into clean T mode samples; 56 kHz and up loses frames.
+	clickClipRad = 2 * math.Pi * 48_000 / procRateHz
 )
 
 // interpAt linearly interpolates h at fractional index x, clamped to h.

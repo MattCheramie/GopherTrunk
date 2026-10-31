@@ -308,7 +308,7 @@ func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Recei
 		o.Statusf(wmbusStatusLine(float64(st.Samples)/o.RateHz, st, d, final))
 		if d > warnedDrops {
 			warnedDrops = d
-			o.Statusf(fmt.Sprintf("wmbus: WARNING — the SDR has dropped %d IQ chunk(s): the decoder is not keeping up, and a telegram that spans a gap cannot decode. Try -rate 1200000 (the cheapest rate to decode; 1024000 costs twice as much), close other programs, or check the USB link.", d))
+			o.Statusf(fmt.Sprintf("wmbus: WARNING — the SDR has dropped %d IQ chunk(s): the decoder is not keeping up, and a telegram that spans a gap cannot decode. The decoder costs about the same at any -rate from 1024000 to 1600000, so lowering -rate does not help: close other programs, check the USB link, or record with capture and decode the file afterwards.", d))
 		}
 	}
 	for {
