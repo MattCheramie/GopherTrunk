@@ -19,12 +19,20 @@ const verboseHint = "(set diagnostics.verbose_errors: true, GOPHERTRUNK_VERBOSE_
 // offer to show it. On a non-TTY it prints a hint instead of prompting
 // so service managers and pipes never hang.
 type Reporter struct {
-	Out         io.Writer  // defaults to os.Stderr
-	In          *os.File   // defaults to os.Stdin (prompt source)
-	Collector   *Collector // banner source; lazily falls back to NewCollector()
-	Verbose     bool       // diagnostics.verbose_errors (config/env/flag resolved)
-	Prefix      string     // message prefix, e.g. "config", "import-pdf"; "" for none
-	interactive func() bool
+	Out       io.Writer  // defaults to os.Stderr
+	In        *os.File   // defaults to os.Stdin (prompt source)
+	Collector *Collector // banner source; lazily falls back to NewCollector()
+	Verbose   bool       // diagnostics.verbose_errors (config/env/flag resolved)
+	Prefix    string     // message prefix, e.g. "config", "import-pdf"; "" for none
+	// PromptAllowed, when set and returning false, suppresses the
+	// interactive [y/N] offer even on a terminal: the hint is printed
+	// instead. A command whose stdin is already being read by something
+	// else (the "type q and Enter" stop watcher of capture / power /
+	// wmbus) must not prompt: the watcher swallowed the answer, so "y"
+	// printed nothing and the process sat in the prompt until the next
+	// line reached it (#1256).
+	PromptAllowed func() bool
+	interactive   func() bool
 }
 
 // NewReporter builds a Reporter for a CLI command. prefix is prepended
@@ -64,7 +72,7 @@ func (r *Reporter) Report(err error) {
 	switch {
 	case r.Verbose:
 		fmt.Fprintln(out, VerboseTrace(err, stack))
-	case r.isInteractive():
+	case r.isInteractive() && (r.PromptAllowed == nil || r.PromptAllowed()):
 		r.prompt(out, err, stack)
 	default:
 		fmt.Fprintln(out, verboseHint)

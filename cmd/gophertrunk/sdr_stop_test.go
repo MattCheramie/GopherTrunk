@@ -114,3 +114,20 @@ func TestWatchStopInputRawCtrlCNeedsNoEnter(t *testing.T) {
 		t.Fatal("a raw Ctrl-C byte did not stop the watch")
 	}
 }
+
+// Once the stop watcher reads stdin, a CLI reporter must not prompt on it
+// (#1256: "y" to "Show full diagnostic trace?" printed nothing, because the
+// watcher took the line).
+func TestReporterDoesNotPromptOnceStopWatcherOwnsStdin(t *testing.T) {
+	prev := stdinStopWatched.Load()
+	defer stdinStopWatched.Store(prev)
+	stdinStopWatched.Store(false)
+	rep := newReporter("wmbus")
+	if rep.PromptAllowed == nil || !rep.PromptAllowed() {
+		t.Fatal("a reporter must still prompt while no watcher reads stdin")
+	}
+	startStopWatcher(strings.NewReader(""), func() {})
+	if rep.PromptAllowed() {
+		t.Error("the reporter still prompts on a stdin the stop watcher reads")
+	}
+}

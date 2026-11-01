@@ -47,7 +47,10 @@ func sharedCollector() *diag.Collector {
 // newReporter builds a diag.Reporter for a CLI command, wired to the
 // shared collector and the resolved verbose setting.
 func newReporter(prefix string) *diag.Reporter {
-	return diag.NewReporter(prefix, verboseErrors, sharedCollector())
+	rep := diag.NewReporter(prefix, verboseErrors, sharedCollector())
+	// Never prompt on a stdin the "type q and Enter" stop watcher reads.
+	rep.PromptAllowed = func() bool { return !stdinStopWatched.Load() }
+	return rep
 }
 
 // logErr logs a daemon-side error. The daemon is non-interactive, so
