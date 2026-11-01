@@ -1322,6 +1322,15 @@ confirmation before any close-as-completed.
   mid-chunk otherwise doubles the next frame's estimate (`TestReceiverReportsCarrierOffset`). Don't
   trust a spectral centroid for an FSK carrier (read −62 kHz here; the decode optimum is flat at
   −50..−60). Their gain0 capture uses ~3 bits of the u8 ADC; the gain20 one clips (0.1 % at the rails).
+- **wM-Bus walk "GopherTrunk stopped recording" (#1256, 1 Nov) was two things, neither the
+  decoder: the RTL-SDR dropped off the phone's USB bus (`usb: device disconnected`, 2 of 4 runs
+  ended; `wmbus` now reopens it, `-reconnect`), and stretches where the decoder got ~12–14 % of
+  real time. Check it with arithmetic: drops × 8192 samples (5.12 ms at 1.6 MS/s) equalled the
+  run's wall time minus its stream time, so USB delivered everything and the process was starved
+  (screen off / Termux backgrounded; the banner showed `cpus=2` on a 4-core S5). Progress lines
+  now carry the time of day and the drop WARN states the real-time share. Replay check: the 319
+  snippet WAVs give exactly the live log's 126 CRC-valid on v1.3.6, 142 on main (#1333). Also: a
+  `diag.Reporter` prompt must never read a stdin the `q` stop watcher owns (`PromptAllowed`).
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the

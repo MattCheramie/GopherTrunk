@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -39,12 +40,24 @@ func sdrStopContext(prog string, w io.Writer) (context.Context, context.CancelFu
 		return ctx, stop
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	go watchStopInput(os.Stdin, cancel)
+	startStopWatcher(os.Stdin, cancel)
 	if hint {
 		fmt.Fprintf(w, "%s: this process has no controlling terminal (started through su?), so Ctrl-C may not reach it; "+
 			"type q and Enter to stop, or kill %d\n", prog, os.Getpid())
 	}
 	return ctx, func() { cancel(); stop() }
+}
+
+// stdinStopWatched is set once a stop watcher reads stdin. From then on the
+// process must not prompt on stdin (newReporter's PromptAllowed): the watcher
+// would swallow the answer, which is how "Show full diagnostic trace? [y/N]"
+// printed nothing for a "y" after a wmbus run lost its dongle (#1256).
+var stdinStopWatched atomic.Bool
+
+// startStopWatcher runs watchStopInput on r and marks stdin as taken.
+func startStopWatcher(r io.Reader, stop func()) {
+	stdinStopWatched.Store(true)
+	go watchStopInput(r, stop)
 }
 
 // stdinStopMode decides whether a foreground SDR command also stops on a

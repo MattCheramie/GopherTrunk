@@ -106,6 +106,15 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
   `?`). GopherTrunk notices and says so at start; then type `q` and Enter to
   stop it, or stop it from a root shell with `pkill gophertrunk`, or give
   `-seconds`. The same holds for `capture` and `power`.
+- If the SDR disappears mid-run (it drops off the USB bus, or the rtl_tcp
+  server hangs up), a live run waits for it and carries on, logging
+  `wmbus: lost the SDR at …` with the reason and `wmbus: SDR back after …`
+  when it reopens. On a walk this keeps a loose OTG cable from ending the
+  recording unnoticed (issue #1256). `-reconnect=false` stops instead, with
+  the reason.
+- The run never asks "Show full diagnostic trace? [y/N]" while it is
+  reading `q` from the terminal: the two would compete for the same input.
+  Add `-verbose-errors` if you want the full trace printed.
 - `-status 30s` (the default) prints a progress line that often; `0` turns
   it off. `gophertrunk help wmbus` lists every flag.
 
@@ -113,8 +122,12 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 a live run can be quiet for a long time. The progress line shows it is alive:
 
 ```
-wmbus: listening 5m0s: 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0 dropped chunks, carrier -50.1 kHz (-58 ppm)
+wmbus: listening 5m0s (14:02:39): 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0 dropped chunks, carrier -50.1 kHz (-58 ppm)
 ```
+
+The first time is *stream time*, how much IQ the decoder has worked
+through; the time in brackets is the time of day, so the line lines up with
+the telegram timestamps. The two drift apart whenever IQ is dropped.
 
 - *Access codes* are sync words. They also appear by chance in noise, so a
   steady trickle with no frames is normal.
@@ -127,6 +140,16 @@ wmbus: listening 5m0s: 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0
   the 1.6 MS/s default. Close other programs and check the USB link, or
   record with `capture` and decode the file afterwards, which has no
   real-time limit.
+
+  When the drops come from the computer starving GopherTrunk of CPU, the
+  warning says how much of real time the decoder actually got, for example
+  `in the last 3m44s the decoder got through only 30s of IQ (13% of real
+  time)`. On a phone this is the system throttling the process, usually
+  because the screen went off or Termux went to the background: on the
+  1 Nov 2026 walk in issue #1256 about 10 of 21 minutes went unheard that
+  way. Keep the screen on (Termux's "keep screen on" option), run
+  `termux-wake-lock` before starting, and exempt Termux from battery
+  optimisation.
 
 - *Repaired* (`12 CRC-valid of which 2 repaired`) counts telegrams that
   passed only after a CRC repair; see **Weak telegrams** below.

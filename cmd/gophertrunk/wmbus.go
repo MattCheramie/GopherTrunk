@@ -44,6 +44,7 @@ func runWMBus(args []string) {
 	saveFrames := fs.String("save-frames", "", "write the IQ around each telegram to this directory (an IQ .wav plus a .metadata.json per telegram; a few hundred KB each, small enough to share), live or from -in; CRC-valid telegrams only unless -all is set")
 	status := fs.Duration("status", 30*time.Second, "live: print a progress line (frames, CRC-valid / CRC-failed, access codes, dropped chunks) this often; 0 = only at the end")
 	logPath := fs.String("log", "", "also append every telegram, progress line, warning and the reason a live run stopped to this file, written as it happens (survives Ctrl-C, a closed terminal or a killed `| tee`)")
+	reconnect := fs.Bool("reconnect", true, "live: when the SDR disappears mid-run (a USB disconnect, the rtl_tcp server hanging up), wait for it to come back and keep listening; false = stop with the reason")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk wmbus — Wireless M-Bus (EN 13757-4) meter telegram decoder, modes T1 and C1 at 868.95 MHz.
@@ -220,28 +221,44 @@ FLAGS:`)
 	// The SDR drivers report USB recovery and stream trouble through the
 	// default logger; route it through the same writer so it reaches -log.
 	slog.SetDefault(log)
+	// setup applies the run's settings to a freshly opened SDR: at start,
+	// and again each time a lost one is reopened (first is the start, which
+	// alone reports a rate the hardware rounded).
+	setup := func(dev sdr.Device, first bool) error {
+		if err := dev.SetSampleRate(uint32(*rate)); err != nil {
+			return fmt.Errorf("set sample rate: %w", err)
+		}
+		if first {
+			if hw, note := captureEffectiveRate(dev, uint32(*rate)); note != "" {
+				fmt.Fprintln(stderr, strings.Replace(note, "capture:", "wmbus:", 1))
+				*rate = uint(hw)
+			}
+		}
+		if *ppm != 0 {
+			if err := dev.SetPPM(*ppm); err != nil {
+				return fmt.Errorf("set ppm: %w", err)
+			}
+		}
+		if err := dev.SetGain(gainTenthDB); err != nil {
+			return fmt.Errorf("set gain: %w", err)
+		}
+		if err := dev.SetCenterFreq(uint32(*freq)); err != nil {
+			return fmt.Errorf("tune %d Hz: %w", *freq, err)
+		}
+		return nil
+	}
 	dev, name, err := openPowerDevice(*rtlTCP, *serial, log)
 	if err != nil {
 		rep.Fatal(1, err)
 	}
-	defer closeSDRBounded(dev, sdrCloseTimeout, stderr, "wmbus")
-	if err := dev.SetSampleRate(uint32(*rate)); err != nil {
-		rep.Fatal(1, fmt.Errorf("set sample rate: %w", err))
-	}
-	if hw, note := captureEffectiveRate(dev, uint32(*rate)); note != "" {
-		fmt.Fprintln(stderr, strings.Replace(note, "capture:", "wmbus:", 1))
-		*rate = uint(hw)
-	}
-	if *ppm != 0 {
-		if err := dev.SetPPM(*ppm); err != nil {
-			rep.Fatal(1, fmt.Errorf("set ppm: %w", err))
+	// dev changes when a lost SDR is reopened; close whichever is current.
+	defer func() {
+		if dev != nil {
+			closeSDRBounded(dev, sdrCloseTimeout, stderr, "wmbus")
 		}
-	}
-	if err := dev.SetGain(gainTenthDB); err != nil {
-		rep.Fatal(1, fmt.Errorf("set gain: %w", err))
-	}
-	if err := dev.SetCenterFreq(uint32(*freq)); err != nil {
-		rep.Fatal(1, fmt.Errorf("tune %d Hz: %w", *freq, err))
+	}()
+	if err := setup(dev, true); err != nil {
+		rep.Fatal(1, err)
 	}
 	ctx, stop := sdrStopContext("wmbus", stderr)
 	defer stop()
@@ -264,16 +281,97 @@ FLAGS:`)
 	if saver != nil && !*all {
 		fmt.Fprintln(stderr, "wmbus: -save-frames keeps CRC-valid telegrams only; add -all to keep the CRC-failed ones too")
 	}
-	ended := listenWMBus(ctx, stream, rx, saver, wmbusListenOptions{
+	opts := wmbusListenOptions{
 		RateHz: float64(*rate), Status: *status, Drops: drops.count,
-		Statusf: statusf,
-	})
+		Statusf: statusf, Clock: time.Now, Reconnect: *reconnect,
+	}
+	for {
+		if !listenWMBus(ctx, stream, rx, saver, opts) {
+			break
+		}
+		// The stream closed on its own: the SDR is gone (a USB disconnect,
+		// the rtl_tcp server hung up). It used to end the run, which on a
+		// walk meant everything after a loose OTG cable went unheard until
+		// the operator noticed and restarted it (#1256); now the run waits
+		// for the SDR to come back and carries on.
+		cause := iqStreamEnded(dev, errors.New("IQ stream ended"))
+		if !*reconnect {
+			reportSaved()
+			rep.Fatal(1, cause)
+		}
+		closeSDRBounded(dev, sdrCloseTimeout, stderr, "wmbus")
+		dev = nil
+		statusf(fmt.Sprintf("wmbus: lost the SDR at %s (%v); reopening it as soon as it is back (type q and Enter to stop)",
+			time.Now().Format("15:04:05"), cause))
+		type opened struct {
+			dev    sdr.Device
+			stream <-chan []complex64
+		}
+		back, ok := wmbusReopen(ctx, func() (opened, error) {
+			d, _, err := openPowerDevice(*rtlTCP, *serial, log)
+			if err != nil {
+				return opened{}, err
+			}
+			if err := setup(d, false); err != nil {
+				closeSDRBounded(d, sdrCloseTimeout, stderr, "wmbus")
+				return opened{}, err
+			}
+			st, err := d.StreamIQ(ctx)
+			if err != nil {
+				closeSDRBounded(d, sdrCloseTimeout, stderr, "wmbus")
+				return opened{}, fmt.Errorf("start IQ stream: %w", err)
+			}
+			return opened{d, st}, nil
+		}, wmbusReopenOptions{Retry: time.Second, Note: 30 * time.Second, Statusf: statusf})
+		if !ok {
+			// Stopped while waiting: the summary listenWMBus would have
+			// printed at a normal stop.
+			statusf(wmbusStatusLine(float64(rx.Stats().Samples)/float64(*rate), rx.Stats(), drops.count(), true))
+			break
+		}
+		dev, stream = back.dev, back.stream
+	}
 	reportSaved()
-	if ended {
-		// Only a cancel or -seconds ends a live listen normally; a stream
-		// that closes on its own is a lost source, which used to exit with
-		// no message at all (#1256).
-		rep.Fatal(1, iqStreamEnded(dev, errors.New("IQ stream ended")))
+}
+
+// wmbusReopenOptions configures wmbusReopen.
+type wmbusReopenOptions struct {
+	// Retry is the pause between open attempts.
+	Retry time.Duration
+	// Note is how often, while the SDR stays away, a "still waiting" line
+	// names the latest reason; 0 never.
+	Note time.Duration
+	// Statusf receives the progress lines.
+	Statusf func(string)
+}
+
+// wmbusReopen calls open every o.Retry until it succeeds (true) or ctx ends
+// (false), so a live wmbus run survives its SDR dropping off the bus: on the
+// #1256 phone the RTL-SDR disconnected twice in one walk ("usbdevfs:
+// SUBMITURB resubmit: usb: device disconnected") and came straight back
+// when the run was restarted by hand.
+func wmbusReopen[T any](ctx context.Context, open func() (T, error), o wmbusReopenOptions) (T, bool) {
+	start := time.Now()
+	lastNote := start
+	for {
+		// Pause first: a dongle that just dropped off the bus needs a
+		// moment to re-enumerate, and an SDR that opens but dies at once
+		// must not spin this loop.
+		select {
+		case <-ctx.Done():
+			var zero T
+			return zero, false
+		case <-time.After(o.Retry):
+		}
+		v, err := open()
+		if err == nil {
+			o.Statusf(fmt.Sprintf("wmbus: SDR back after %s; listening again", time.Since(start).Round(time.Second)))
+			return v, true
+		}
+		if o.Note > 0 && time.Since(lastNote) >= o.Note {
+			lastNote = time.Now()
+			o.Statusf(fmt.Sprintf("wmbus: still waiting for the SDR (%s): %v", time.Since(start).Round(time.Second), err))
+		}
 	}
 }
 
@@ -287,7 +385,25 @@ type wmbusListenOptions struct {
 	Drops func() uint64
 	// Statusf receives each progress line and the final summary.
 	Statusf func(string)
+	// Clock, when set, is the wall clock: progress lines then carry the
+	// time of day, and a drop warning says how much of the real time the
+	// decoder actually kept up with. Nil in tests that drive the loop
+	// faster than real time.
+	Clock func() time.Time
+	// Reconnect: a stream that closes on its own is a lost SDR the caller
+	// will reopen, so no "stopped after" summary is printed for it.
+	Reconnect bool
 }
+
+// wmbusThrottleShare is the fraction of real time below which a drop
+// warning blames the device starving the decoder of CPU rather than a
+// decoder that is simply a little too slow.
+const wmbusThrottleShare = 0.8
+
+// wmbusThrottleMinWall is the shortest wall-clock span the real-time share
+// is judged over: a final summary straight after a progress line spans too
+// little to say anything.
+const wmbusThrottleMinWall = 5 * time.Second
 
 // listenWMBus decodes a live IQ stream until ctx ends (false) or the
 // stream closes on its own (true). Every Status of stream time it reports
@@ -295,20 +411,49 @@ type wmbusListenOptions struct {
 // drops — so an operator waiting minutes for a meter's next telegram can
 // see the decoder is alive and whether anything is arriving (#1256). Stream
 // time, not wall time, paces it: live they agree, and a test can drive it.
+// It may be called again on a reopened stream with the same receiver; the
+// progress lines carry on from where they were.
 func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Receiver, saver *wmbusSnippetSaver, o wmbusListenOptions) (streamEnded bool) {
 	every := int64(o.Status.Seconds() * o.RateHz)
-	next := every
+	var next int64
+	if every > 0 {
+		next = (rx.Stats().Samples/every + 1) * every
+	}
 	var warnedDrops uint64
+	if o.Drops != nil {
+		// On a reopened stream, warn only about drops that are new.
+		warnedDrops = o.Drops()
+	}
+	// The wall clock and stream position at the previous line: their two
+	// spans tell how much of real time the decoder kept up with.
+	var lastWall time.Time
+	lastSamples := rx.Stats().Samples
+	if o.Clock != nil {
+		lastWall = o.Clock()
+	}
 	line := func(final bool) {
 		st := rx.Stats()
 		var d uint64
 		if o.Drops != nil {
 			d = o.Drops()
 		}
-		o.Statusf(wmbusStatusLine(float64(st.Samples)/o.RateHz, st, d, final))
+		s := wmbusStatusLine(float64(st.Samples)/o.RateHz, st, d, final)
+		var wall, stream time.Duration
+		if o.Clock != nil {
+			now := o.Clock()
+			wall = now.Sub(lastWall)
+			stream = time.Duration(float64(st.Samples-lastSamples) / o.RateHz * float64(time.Second))
+			lastWall, lastSamples = now, st.Samples
+			// The time of day, so a progress line lines up with the
+			// telegram lines (wall clock) in the log: stream time alone
+			// drifts away from it whenever IQ is dropped.
+			s = wmbusStatusClock(s, now)
+		}
+		o.Statusf(s)
 		if d > warnedDrops {
+			newDrops := d - warnedDrops
 			warnedDrops = d
-			o.Statusf(fmt.Sprintf("wmbus: WARNING — the SDR has dropped %d IQ chunk(s): the decoder is not keeping up, and a telegram that spans a gap cannot decode. The decoder costs about the same at any -rate from 1024000 to 1600000, so lowering -rate does not help: close other programs, check the USB link, or record with capture and decode the file afterwards.", d))
+			o.Statusf(wmbusDropWarning(d, newDrops, wall, stream))
 		}
 	}
 	for {
@@ -318,7 +463,9 @@ func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Recei
 			return false
 		case iq, ok := <-stream:
 			if !ok {
-				line(true)
+				if !o.Reconnect {
+					line(true)
+				}
 				return true
 			}
 			if saver != nil {
@@ -336,6 +483,40 @@ func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Recei
 			}
 		}
 	}
+}
+
+// wmbusStatusClock puts the time of day after a status line's stream time:
+// "wmbus: listening 30s (13:24:01): 14 frames …".
+func wmbusStatusClock(line string, now time.Time) string {
+	const prefix = "wmbus: "
+	if !strings.HasPrefix(line, prefix) {
+		return line
+	}
+	i := strings.Index(line[len(prefix):], ": ")
+	if i < 0 {
+		return line
+	}
+	k := len(prefix) + i
+	return line[:k] + " (" + now.Format("15:04:05") + ")" + line[k:]
+}
+
+// wmbusDropWarning explains new IQ drops. With the wall-clock span (wall)
+// and the stream time the decoder got through in it (stream), it says how
+// much of real time the decoder kept up with: the #1256 phone's walk logs
+// had stretches where it decoded 30 s of IQ in 3–4 minutes (12–14 % of real
+// time) while the USB side delivered every chunk, so ~10 of 21 minutes went
+// unheard — the phone starving the process (screen off, Termux in the
+// background), not a decoder a little too slow for -rate.
+func wmbusDropWarning(total, fresh uint64, wall, stream time.Duration) string {
+	s := fmt.Sprintf("wmbus: WARNING — the SDR has dropped %d IQ chunk(s)", total)
+	if wall >= wmbusThrottleMinWall && float64(stream) < wmbusThrottleShare*float64(wall) {
+		share := float64(stream) / float64(wall)
+		return s + fmt.Sprintf(" (%d since the last line): in the last %s the decoder got through only %s of IQ (%.0f%% of real time), so about %s of air went unheard. "+
+			"Something is starving GopherTrunk of CPU; on a phone that is usually the screen turning off or Termux going to the background. "+
+			"Keep the screen on, run termux-wake-lock before starting, and exempt Termux from battery optimisation.",
+			fresh, wall.Round(time.Second), stream.Round(time.Second), 100*share, (wall-stream).Round(time.Second))
+	}
+	return s + ": the decoder is not keeping up, and a telegram that spans a gap cannot decode. The decoder costs about the same at any -rate from 1024000 to 1600000, so lowering -rate does not help: close other programs, check the USB link, or record with capture and decode the file afterwards."
 }
 
 // wmbusStatusLine is one live progress line (or, final, the summary).
