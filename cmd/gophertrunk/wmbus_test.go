@@ -62,7 +62,7 @@ func TestWMBusDecodesCaptureFiles(t *testing.T) {
 			rx, err := wmbus.NewReceiver(wmbus.ReceiverOptions{SampleRateHz: r, OffsetHz: 25_000, OnFrame: func(fr wmbus.Frame, info wmbus.FrameInfo) {
 				tg, perr := wmbus.ParseTelegram(fr)
 				tgs = append(tgs, tg)
-				writeWMBusTelegram(&out, "t", tg, perr, fr, info, false)
+				writeWMBusTelegram(&out, "t", tg, perr, fr, info, false, false)
 			}})
 			if err != nil {
 				t.Fatal(err)
@@ -91,7 +91,7 @@ func TestWMBusJSONLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	writeWMBusTelegram(&out, "2026-10-10 12:00:00.000", tg, nil, fr, wmbus.FrameInfo{LevelDBFS: -30, CarrierOffsetHz: -50144.6}, true)
+	writeWMBusTelegram(&out, "2026-10-10 12:00:00.000", tg, nil, fr, wmbus.FrameInfo{LevelDBFS: -30, CarrierOffsetHz: -50144.6}, false, true)
 	var j wmbusJSON
 	if err := json.Unmarshal(out.Bytes(), &j); err != nil {
 		t.Fatalf("not one JSON object: %v\n%s", err, out.String())
@@ -115,8 +115,8 @@ func TestWMBusRepairedTelegramIsMarked(t *testing.T) {
 			t.Fatal(err)
 		}
 		var text, js bytes.Buffer
-		writeWMBusTelegram(&text, "", tg, nil, fr, wmbus.FrameInfo{}, false)
-		writeWMBusTelegram(&js, "", tg, nil, fr, wmbus.FrameInfo{}, true)
+		writeWMBusTelegram(&text, "", tg, nil, fr, wmbus.FrameInfo{}, false, false)
+		writeWMBusTelegram(&js, "", tg, nil, fr, wmbus.FrameInfo{}, false, true)
 		var j wmbusJSON
 		if err := json.Unmarshal(js.Bytes(), &j); err != nil {
 			t.Fatal(err)
@@ -189,12 +189,12 @@ func TestWMBusCRCFailedLineNamesBlock(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		writeWMBusTelegram(&out, "", tg, nil, fr, wmbus.FrameInfo{}, false)
+		writeWMBusTelegram(&out, "", tg, nil, fr, wmbus.FrameInfo{}, false, false)
 		if !strings.Contains(out.String(), tc.want) {
 			t.Errorf("failed %v: got %q, want it to contain %q", tc.failed, out.String(), tc.want)
 		}
 		out.Reset()
-		writeWMBusTelegram(&out, "", tg, nil, fr, wmbus.FrameInfo{}, true)
+		writeWMBusTelegram(&out, "", tg, nil, fr, wmbus.FrameInfo{}, false, true)
 		var j wmbusJSON
 		if err := json.Unmarshal(out.Bytes(), &j); err != nil {
 			t.Fatal(err)

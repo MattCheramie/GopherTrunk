@@ -54,7 +54,7 @@ func TestWMBusSaveFramesWritesReplayableSnippets(t *testing.T) {
 		}
 		rx, err := wmbus.NewReceiver(wmbus.ReceiverOptions{SampleRateHz: rr, OffsetHz: offset, OnFrame: func(f wmbus.Frame, info wmbus.FrameInfo) {
 			tg, _ := wmbus.ParseTelegram(f)
-			saver.onFrame("t", f, tg, info)
+			saver.onFrame("t", f, tg, info, false)
 		}})
 		if err != nil {
 			t.Fatal(err)

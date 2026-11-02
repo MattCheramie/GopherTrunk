@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`wmbus`: a telegram cut by dropped IQ now says so (#1256).** On the
+  reporter's 1 Nov walk the phone dropped 626 s of IQ in a 21.6-minute run,
+  and a CRC-failed warm-water meter (`header OK`, blocks 3-5 failed, at
+  -27.7 dBFS) read exactly like one too weak to decode; its snippet holds
+  3.3 ms of a 6.7 ms telegram, then noise. A live run now notes where each
+  run of dropped chunks fell. A CRC-failed telegram that one overlapped is
+  marked `cut by dropped IQ` (`iq_gap` in `-json` and in the snippet's
+  metadata), and the progress lines count them.
 - **Airspy / HydraSDR: "dropping live IQ chunks" on short consumer pauses
   (#1321).** Each USB transfer carries only 16 KiB (~1.4 ms of IQ at 3 MS/s),
   and the driver's output buffer held 8 of them, so any downstream pause over

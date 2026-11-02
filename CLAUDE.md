@@ -1341,6 +1341,12 @@ confirmation before any close-as-completed.
   now carry the time of day and the drop WARN states the real-time share. Replay check: the 319
   snippet WAVs give exactly the live log's 126 CRC-valid on v1.3.6, 142 on main (#1333). Also: a
   `diag.Reporter` prompt must never read a stdin the `q` stop watcher owns (`PromptAllowed`).
+  Their "undecoded water meters" in wm.3.log are mostly HOLES, not RF: that run dropped 122 298 chunks
+  (626 s of IQ in 21.6 min), and a −27.7 dBFS failed meter's snippet holds 3.3 ms of a 6.7 ms telegram
+  then noise. A live run now marks a CRC-failed telegram that a run of dropped chunks overlapped
+  (`wmbusGapLog`, `cut by dropped IQ`, `iq_gap`). The RTL/Airspy drivers drop the NEWEST chunk into a full
+  queue, so a drop seen on a read lies after the chunks still queued (±1 chunk). A burst-length check on
+  weak snippets is unreliable (it read 0 ms on CRC-valid frames), so don't classify old snippets that way.
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the
