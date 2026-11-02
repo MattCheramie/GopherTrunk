@@ -1232,6 +1232,16 @@ confirmation before any close-as-completed.
   class AGAIN, in the Airspy driver: `out` held 8 URBs of 16 KiB = ~11 ms at 3 MS/s; both stream channels are now
   time-sized (400 ms, `streamDepthFor`, pinned by `stream_depth_test.go`). HackRF and AirspyHF still have a fixed
   8-deep `out` AND a BLOCKING send in onPacket (the shape the Airspy reaper-freeze fix removed, `airspy_overrun_test.go`) — not changed, separate fix.
+  The reporter's 1 Nov "still dropping on v1.3.6" (40–97/10 min, spread evenly, 0 cells locked, 57 % idle) tested a
+  build WITHOUT that fix: v1.3.6 was cut 29 Oct, #1335 merged 31 Oct. Before reading a field result as "the fix didn't
+  work", run `git merge-base --is-ancestor <fix> <tag>` on the build they ran. `TestEngineTETRAPumpStalls`
+  (`GT_WB_STALL_SECONDS`) is the instrument: it times `bank.Process` per Airspy URB and queues the timings at USB cadence.
+  On a 2.8 GHz Xeon with 4 hunting cells at 3 MS/s, p50 is 0.34 ms and p99 is 4 ms per 1.37 ms chunk. The backlog passes
+  8 chunks even at 1x, so a pump that averages 0.3x real time still sheds on an 11 ms buffer. 400 ms holds up to 2.5x
+  slowdown, and at 3x the pump is at real time, which no buffer fixes. Injecting the TETRA CC capture
+  (`GT_WB_STALL_SIGNAL=1`) shows no stall at lock. Coalescing chunks (4096 → 32768) barely moves throughput (0.30 → 0.27x),
+  so the p99 is receiver block work, not worker hand-off. Its `atoiOr` read an unset env var as 0, which broke the bench
+  rate default; fixed.
 - **The NXDN "scrambler" (SACCH VCALL cipher type 1, 15-bit key) IS DECODED and capture-pinned
   (#1261, 26 Oct): the reporter's two known-key captures (Kenwood, keys 32767 / 12345 on 447.100 MHz
   NXDN96, `nxdn/testdata/scrambler_key*_frames.json`) descramble to speech (AMBE b0 pitch continuity

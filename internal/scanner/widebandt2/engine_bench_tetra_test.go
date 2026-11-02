@@ -76,7 +76,13 @@ func TestEngineDualTETRA200kThroughput(t *testing.T) {
 	t.Logf("processed %d s of %d S/s dual-TETRA IQ in %v (%.2fx real time, strategy %s)", secs, rate, el, el.Seconds()/float64(secs), e.Strategy())
 }
 
+// atoiOr parses a non-negative decimal, or returns d for an empty or
+// malformed string (an unset env var used to read as 0, so the default rate
+// never applied).
 func atoiOr(s string, d int) int {
+	if s == "" {
+		return d
+	}
 	n := 0
 	for _, c := range s {
 		if c < '0' || c > '9' {
