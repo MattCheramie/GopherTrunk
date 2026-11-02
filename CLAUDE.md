@@ -1266,6 +1266,13 @@ confirmation before any close-as-completed.
   a 0.36 continuity "partial decrypt" is a wrong schedule, not a near miss. STILL ON-AIR-GATED
   (#764/#771): the reporter's live run with the key on the scan-list channel; harness
   `TestNXDNScramblerReplay` (`GT_NXDN_SCR_IQ/_KEY/_BRUTE`).
+  Follow-up (27 Oct log, fixed 2 Nov): the reporter's "clear call after a failed descramble also fails" was
+  a CLEAR call (its 104 voice frames all counted clear, by elimination: the counters must add up to
+  `voice_frames`) whose one late VCALL misread as scrambler/key 0. The SACCH CRC is 6 bits and that call failed
+  12 of 52 blocks. The flip published call.encryption, and `skip_encrypted` deleted the recording. A VCALL
+  change now needs two agreeing superframes (`takeVCALL`, `VCALLUnconfirmed`). The first VCALL is still
+  trusted at once. Note that key id 0 is a real key slot on the reporter's trunked system, so don't treat
+  key 0 itself as invalid.
 - **Two PCM rates reach the live paths, and nothing used to convert between them (#1242, 21 Oct).**
   Decoded digital voice is ALWAYS 8 kHz (vocoder contract; the recorder already forces digital files to
   8 kHz, #356), analog FM is at `recordings.sample_rate`. The web stream's WAV header reads the player rate

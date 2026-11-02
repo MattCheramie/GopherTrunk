@@ -8,6 +8,16 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **NXDN: one misread VCALL no longer turns a clear call into an encrypted
+  one (#1261).** On the reporter's 27 Oct log, a clear call (all 104 voice
+  frames released as clear) decoded one late VCALL as "scrambler, key 0".
+  That call failed 12 of its 52 SACCH blocks, and a SACCH block's CRC is only
+  6 bits. The one VCALL published `call.encryption`, and with
+  `recordings.skip_encrypted` the recorder deleted the clear recording. The
+  first VCALL of a call still takes effect at once. A later VCALL that
+  differs now takes effect only when the next superframe agrees. The voice
+  chain's ended line gains `clear_frames`, plus `vcall_unconfirmed` when a
+  VCALL was ignored.
 - **`wmbus`: a telegram cut by dropped IQ now says so (#1256).** On the
   reporter's 1 Nov walk the phone dropped 626 s of IQ in a 21.6-minute run,
   and a CRC-failed warm-water meter (`header OK`, blocks 3-5 failed, at
