@@ -119,10 +119,11 @@ func (s *wmbusSnippetSaver) span(start, end int64) []complex64 {
 // onFrame queues the snippet for a frame that ended at info.Sample. label
 // is the frame's timestamp as printed (wall clock live, capture time for a
 // file).
-func (s *wmbusSnippetSaver) onFrame(label string, f wmbus.Frame, tg wmbus.Telegram, info wmbus.FrameInfo) {
-	frameSec := float64(len(f.Raw)*wmbusChipsPerByte+wmbusSyncChips) / wmbus.ChipRateHz
-	start := info.Sample - int64((frameSec+wmbusSnippetPreSec)*s.rateHz)
-	end := info.Sample + int64(wmbusSnippetPostSec*s.rateHz)
+// gap marks a CRC-failed frame that dropped IQ cut (wmbusGapLog).
+func (s *wmbusSnippetSaver) onFrame(label string, f wmbus.Frame, tg wmbus.Telegram, info wmbus.FrameInfo, gap bool) {
+	start, end := wmbusFrameSpan(f, info, s.rateHz)
+	start -= int64(wmbusSnippetPreSec * s.rateHz)
+	end += int64(wmbusSnippetPostSec * s.rateHz)
 	mfr, id := tg.Manufacturer, tg.ID
 	if mfr == "" {
 		mfr = "unknown"
@@ -157,6 +158,11 @@ func (s *wmbusSnippetSaver) onFrame(label string, f wmbus.Frame, tg wmbus.Telegr
 	}
 	if f.CorrectedBits > 0 {
 		meta.System["corrected_bits"] = strconv.Itoa(f.CorrectedBits)
+	}
+	if gap {
+		// The snippet itself holds the splice: replaying it cannot
+		// recover what the SDR never delivered.
+		meta.System["iq_gap"] = "true"
 	}
 	s.pending = append(s.pending, wmbusSnippet{start: start, end: end, base: base, meta: meta})
 }

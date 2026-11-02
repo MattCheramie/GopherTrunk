@@ -85,6 +85,16 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
   `-json`, a failed frame carries `crc_blocks`, `crc_failed_blocks`,
   `header_crc_ok` and `raw` (the frame as received, CRC bytes included), so
   it can be checked offline.
+
+  On a live run, a failed frame that the SDR dropped IQ in the middle of says
+  so: `CRC FAILED (blocks 4,5 of 5; header OK) — cut by dropped IQ (the SDR
+  dropped chunks during it), not a weak meter`. That failure says nothing
+  about the meter's signal: the device never delivered the rest of the
+  telegram. With `-json` such a frame has `"iq_gap": true`, its saved snippet
+  has `iq_gap` in its `.metadata.json`, and the progress lines count them
+  (`; 3 of the CRC failures were cut by dropped IQ`). Replaying that snippet
+  cannot recover it. A failed frame without the mark failed on the air: a
+  weak or interfered signal.
 - `-seconds N` stops after N seconds.
 - `-save-frames DIR` keeps the radio signal (IQ) around each telegram; see
   [Saving telegrams to share](#saving-telegrams-to-share).

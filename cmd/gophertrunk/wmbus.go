@@ -166,6 +166,9 @@ FLAGS:`)
 		}
 		statusf(fmt.Sprintf("wmbus: saved %d telegram snippet(s) to %s", saver.saved, *saveFrames))
 	}
+	// gaps, on a live run, locates the IQ the SDR dropped, so a telegram a
+	// hole cut is told apart from one too weak to decode (#1256).
+	var gaps *wmbusGapLog
 	newRx := func(rateHz float64) *wmbus.Receiver {
 		rx, err := wmbus.NewReceiver(wmbus.ReceiverOptions{
 			SampleRateHz: rateHz,
@@ -176,10 +179,11 @@ FLAGS:`)
 				}
 				tg, err := wmbus.ParseTelegram(f)
 				ts := stamp(info.Sample)
-				writeWMBusTelegram(out, ts, tg, err, f, info, *asJSON)
+				gap := gaps.cutByGap(f, info, rateHz)
+				writeWMBusTelegram(out, ts, tg, err, f, info, gap, *asJSON)
 				_ = out.Flush()
 				if saver != nil {
-					saver.onFrame(ts, f, tg, info)
+					saver.onFrame(ts, f, tg, info, gap)
 				}
 			},
 		})
@@ -273,6 +277,7 @@ FLAGS:`)
 	}
 	stamp = func(int64) string { return time.Now().Format("2006-01-02 15:04:05.000") }
 	newSaver(float64(*rate), uint32(*freq))
+	gaps = &wmbusGapLog{}
 	rx := newRx(float64(*rate))
 	drops := &captureDropCounter{serial: dev.Info().Serial}
 	sdr.SetIQDropObserver(drops.observe)
@@ -283,7 +288,7 @@ FLAGS:`)
 	}
 	opts := wmbusListenOptions{
 		RateHz: float64(*rate), Status: *status, Drops: drops.count,
-		Statusf: statusf, Clock: time.Now, Reconnect: *reconnect,
+		Statusf: statusf, Clock: time.Now, Reconnect: *reconnect, Gaps: gaps,
 	}
 	for {
 		if !listenWMBus(ctx, stream, rx, saver, opts) {
@@ -393,6 +398,9 @@ type wmbusListenOptions struct {
 	// Reconnect: a stream that closes on its own is a lost SDR the caller
 	// will reopen, so no "stopped after" summary is printed for it.
 	Reconnect bool
+	// Gaps, when set, is told where each run of dropped chunks fell, and
+	// the progress lines say how many CRC-failed telegrams one cut.
+	Gaps *wmbusGapLog
 }
 
 // wmbusThrottleShare is the fraction of real time below which a drop
@@ -424,6 +432,7 @@ func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Recei
 		// On a reopened stream, warn only about drops that are new.
 		warnedDrops = o.Drops()
 	}
+	seenDrops := warnedDrops // the drop count as of the previous chunk
 	// The wall clock and stream position at the previous line: their two
 	// spans tell how much of real time the decoder kept up with.
 	var lastWall time.Time
@@ -449,6 +458,9 @@ func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Recei
 			// drifts away from it whenever IQ is dropped.
 			s = wmbusStatusClock(s, now)
 		}
+		if o.Gaps != nil && o.Gaps.failed > 0 {
+			s += fmt.Sprintf("; %d of the CRC failures were cut by dropped IQ", o.Gaps.failed)
+		}
 		o.Statusf(s)
 		if d > warnedDrops {
 			newDrops := d - warnedDrops
@@ -467,6 +479,12 @@ func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Recei
 					line(true)
 				}
 				return true
+			}
+			if o.Gaps != nil && o.Drops != nil {
+				if d := o.Drops(); d > seenDrops {
+					seenDrops = d
+					o.Gaps.mark(wmbusGapPosition(rx.Stats().Samples, len(iq), len(stream)), len(iq))
+				}
 			}
 			if saver != nil {
 				saver.feed(iq)
@@ -768,6 +786,9 @@ type wmbusJSON struct {
 	// CorrectedBits is how many bits a soft-decision repair flipped to make
 	// the frame's CRC blocks pass (omitted when none).
 	CorrectedBits int `json:"corrected_bits,omitempty"`
+	// IQGap: the SDR dropped IQ while this CRC-failed frame was on air,
+	// so the failure is the receiving device's, not the meter's (#1256).
+	IQGap bool `json:"iq_gap,omitempty"`
 }
 
 type wmbusRecord struct {
@@ -806,7 +827,10 @@ func wmbusCRCDetail(f wmbus.Frame) string {
 
 // writeWMBusTelegram prints one telegram: a summary line plus one indented
 // line per data record, or a JSON object.
-func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f wmbus.Frame, info wmbus.FrameInfo, asJSON bool) {
+//
+// gap marks a CRC-failed frame that IQ the SDR dropped overlapped (see
+// wmbusGapLog): the failure says nothing about the meter's signal.
+func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f wmbus.Frame, info wmbus.FrameInfo, gap, asJSON bool) {
 	if asJSON {
 		j := wmbusJSON{
 			Time: ts, Mode: tg.Mode.String(), Format: tg.Format.String(), CRCOK: tg.CRCOK,
@@ -814,7 +838,7 @@ func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f
 			Version: int(tg.Version), DeviceType: int(tg.DeviceType), Device: tg.DeviceTypeName(),
 			CI: int(tg.AppCI), Encrypted: tg.Encrypted, Frame: hex.EncodeToString(f.Data),
 			CRCBlocks: f.Blocks, CRCFailedBlocks: f.FailedBlocks, HeaderCRCOK: f.HeaderCRCOK(),
-			CorrectedBits: f.CorrectedBits,
+			CorrectedBits: f.CorrectedBits, IQGap: gap,
 		}
 		if !f.CRCOK {
 			j.Raw = hex.EncodeToString(f.Raw)
@@ -855,6 +879,9 @@ func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f
 		fmt.Fprintf(&b, "  error: %v", perr)
 	case !tg.CRCOK:
 		b.WriteString("  CRC FAILED " + wmbusCRCDetail(f))
+		if gap {
+			b.WriteString(" — cut by dropped IQ (the SDR dropped chunks during it), not a weak meter")
+		}
 	case tg.Encrypted && tg.HasTPL:
 		fmt.Fprintf(&b, "  encrypted: %s, access %d", wmbus.SecurityModeName(tg.SecurityMode), tg.Access)
 	case tg.Encrypted:

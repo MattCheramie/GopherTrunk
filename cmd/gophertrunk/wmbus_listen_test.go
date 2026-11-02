@@ -42,7 +42,7 @@ func TestListenWMBusReportsProgressDropsAndSaves(t *testing.T) {
 	saver.onSaved = func(p string) { lines = append(lines, "wmbus: saved "+p) }
 	rx, err := wmbus.NewReceiver(wmbus.ReceiverOptions{SampleRateHz: rate, OnFrame: func(f wmbus.Frame, info wmbus.FrameInfo) {
 		tg, _ := wmbus.ParseTelegram(f)
-		saver.onFrame("t", f, tg, info)
+		saver.onFrame("t", f, tg, info, false)
 	}})
 	if err != nil {
 		t.Fatal(err)
