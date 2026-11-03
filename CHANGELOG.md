@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.3.7] — 2026-11-03
+
 ### Fixed
 - **NXDN: one misread VCALL no longer turns a clear call into an encrypted
   one (#1261).** On the reporter's 27 Oct log, a clear call (all 104 voice
