@@ -33,9 +33,16 @@ type VoiceCipherTracker struct {
 	// resolves the key sets it here, before held voice is released.
 	OnVCALL func(VCALLMessage)
 
-	// VCALL is the latest decoded VCALL; HaveVCALL whether one decoded.
+	// VCALL is the call's VCALL; HaveVCALL whether one decoded. The first
+	// VCALL takes effect at once; a later one that differs takes effect
+	// only when the next superframe repeats it (see observeSACCH).
 	VCALL     VCALLMessage
 	HaveVCALL bool
+
+	// candidate is a VCALL that differs from VCALL, waiting for the next
+	// superframe to confirm it.
+	candidate     VCALLMessage
+	haveCandidate bool
 
 	key     uint16
 	haveKey bool
@@ -63,6 +70,10 @@ type VoiceCipherTracker struct {
 	// Unknown counts voice frames released before any VCALL named the
 	// cipher (a pass-through tracker, or a hold that ran out).
 	Unknown uint64
+	// VCALLUnconfirmed counts VCALL superframes that disagreed with the
+	// call's VCALL and were not repeated by the next one, so never took
+	// effect: a corrupt SACCH block that passed its 6-bit CRC.
+	VCALLUnconfirmed uint64
 }
 
 type pendingVoice struct {
@@ -198,9 +209,43 @@ func (t *VoiceCipherTracker) observeSACCH(f TrafficFrame) {
 		return
 	}
 	t.VCALLs++
-	changed := !t.HaveVCALL || v != t.VCALL
-	t.VCALL, t.HaveVCALL = v, true
-	if changed && t.OnVCALL != nil {
+	t.takeVCALL(v)
+}
+
+// takeVCALL applies a decoded VCALL superframe. The first of a call is
+// trusted at once, so a scrambled call starts descrambling as soon as it
+// can. After that, a VCALL that differs takes effect only when the next
+// superframe agrees with it. A VCALL does not change inside one
+// transmission (each transmission gets a fresh chain), but a SACCH block's
+// CRC is only 6 bits: on a weak call one corrupt block in 64 passes. Issue
+// #1261, 27 Oct: a clear call that failed 12 of 52 SACCH blocks decoded one
+// late VCALL as "scrambler, key 0"; that flipped the call to encrypted and,
+// with recordings.skip_encrypted, deleted its clear recording.
+func (t *VoiceCipherTracker) takeVCALL(v VCALLMessage) {
+	if !t.HaveVCALL {
+		t.VCALL, t.HaveVCALL = v, true
+		if t.OnVCALL != nil {
+			t.OnVCALL(v)
+		}
+		return
+	}
+	if v == t.VCALL {
+		if t.haveCandidate {
+			t.haveCandidate = false
+			t.VCALLUnconfirmed++
+		}
+		return
+	}
+	if !t.haveCandidate || v != t.candidate {
+		if t.haveCandidate {
+			t.VCALLUnconfirmed++
+		}
+		t.candidate, t.haveCandidate = v, true
+		return
+	}
+	t.haveCandidate = false
+	t.VCALL = v
+	if t.OnVCALL != nil {
 		t.OnVCALL(v)
 	}
 }

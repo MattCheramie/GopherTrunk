@@ -136,9 +136,17 @@ func (s *nxdnCipherState) logFields() []any {
 	}
 	out = append(out, "src", t.VCALL.Source, "dst", t.VCALL.Destination, "cipher", t.VCALL.Cipher.String())
 	if t.VCALL.Encrypted() {
+		// clear_frames too: frames released while the call's VCALL still
+		// said clear (#1261: a clear call whose one late VCALL misread as
+		// scrambled could only be told apart by elimination without it).
 		out = append(out, "key_id", t.VCALL.KeyID, "key_configured", s.keyConfigured,
 			"descrambled_frames", t.Descrambled, "ciphertext_frames", t.Ciphertext, "unaligned_frames", t.Unaligned,
-			"pre_vcall_frames", t.Unknown)
+			"clear_frames", t.Clear, "pre_vcall_frames", t.Unknown)
+	}
+	if t.VCALLUnconfirmed > 0 {
+		// A VCALL that disagreed with the call's and was not repeated: a
+		// corrupt SACCH block that passed its CRC, ignored.
+		out = append(out, "vcall_unconfirmed", t.VCALLUnconfirmed)
 	}
 	return out
 }
