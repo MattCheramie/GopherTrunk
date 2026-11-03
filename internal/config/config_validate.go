@@ -223,6 +223,25 @@ func (c Config) validateSDR() []error {
 		}
 		seenSerials[k.Serial] = i
 	}
+	// Validate iiod (Pluto) boards. Addr is required, the decode rate has
+	// to fit the AD9361 without a FIR, and serials follow the same
+	// collision rule as every other source.
+	for i, b := range c.SDR.IIO {
+		if err := validateIIOFields(i, b, c.SDR.SampleRate); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if b.Serial == "" {
+			continue
+		}
+		if prev, dup := seenSerials[b.Serial]; dup {
+			errs = append(errs, fmt.Errorf(
+				"sdr.iio[%d]: serial %q collides with sdr.devices[%d]",
+				i, b.Serial, prev))
+			continue
+		}
+		seenSerials[b.Serial] = i
+	}
 	// Validate sidecar endpoints. Same serial-collision rule; the transport
 	// and format must be ones the driver implements, and the sample rate is
 	// required because nothing can probe an opaque external producer for it.
@@ -308,6 +327,32 @@ func validateKa9qFields(i int, k Ka9qRadioConfig) error {
 	}
 	if k.Channels != 0 && k.Channels != 1 && k.Channels != 2 {
 		return fmt.Errorf("sdr.ka9q_radio[%d]: channels must be 1 or 2", i)
+	}
+	return nil
+}
+
+// iioMinSampleRate is the AD9361's lowest RX rate without a FIR filter
+// loaded: 25 MHz/96 (the PHY at 8x through the RX core's decimator), as in
+// internal/sdr/iio.SampleRatePlan.
+const iioMinSampleRate = 25_000_000 / 96
+
+func validateIIOFields(i int, b IIOConfig, sampleRate uint32) error {
+	if b.Addr == "" {
+		return fmt.Errorf("sdr.iio[%d]: addr is required (the board's address, e.g. 192.168.2.1)", i)
+	}
+	switch b.Role {
+	case "", "control", "voice", "auto", "dedicated":
+	default:
+		return fmt.Errorf("sdr.iio[%d]: role must be control|voice|auto|dedicated", i)
+	}
+	if sampleRate != 0 && sampleRate < iioMinSampleRate {
+		return fmt.Errorf("sdr.iio[%d]: sdr.sample_rate %d is below the AD9361's %d Hz floor without a FIR filter", i, sampleRate, iioMinSampleRate)
+	}
+	if b.RFBandwidthHz != 0 && (b.RFBandwidthHz < 200_000 || b.RFBandwidthHz > 56_000_000) {
+		return fmt.Errorf("sdr.iio[%d]: rf_bandwidth_hz must be 200000-56000000 (or 0 to follow sample_rate)", i)
+	}
+	if b.ConnectTimeoutMs < 0 {
+		return fmt.Errorf("sdr.iio[%d]: connect_timeout_ms must not be negative", i)
 	}
 	return nil
 }

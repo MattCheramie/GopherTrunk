@@ -514,6 +514,14 @@ func TestValidate(t *testing.T) {
 		{"ka9q bad role", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Role: "nope"}}}}, true},
 		{"ka9q bad encoding", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Encoding: "opus"}}}}, true},
 		{"ka9q bad channels", Config{SDR: SDRConfig{Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Channels: 3}}}}, true},
+		// iio (Pluto over iiod): addr required; rate floor; bandwidth range; serial collisions.
+		{"iio ok", Config{SDR: SDRConfig{IIO: []IIOConfig{{Addr: "192.168.2.1"}}}}, false},
+		{"iio ok full", Config{SDR: SDRConfig{SampleRate: 2_400_000, IIO: []IIOConfig{{Addr: "ip:192.168.2.1", Serial: "plutosky", Role: "control", Gain: "400", RFBandwidthHz: 2_000_000, RFPort: "A_BALANCED"}}}}, false},
+		{"iio missing addr", Config{SDR: SDRConfig{IIO: []IIOConfig{{Serial: "p"}}}}, true},
+		{"iio bad role", Config{SDR: SDRConfig{IIO: []IIOConfig{{Addr: "192.168.2.1", Role: "wideband-ish"}}}}, true},
+		{"iio rate below AD9361 floor", Config{SDR: SDRConfig{SampleRate: 250_000, IIO: []IIOConfig{{Addr: "192.168.2.1"}}}}, true},
+		{"iio bad bandwidth", Config{SDR: SDRConfig{IIO: []IIOConfig{{Addr: "192.168.2.1", RFBandwidthHz: 100_000}}}}, true},
+		{"iio serial collides", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Serial: "x"}}, IIO: []IIOConfig{{Addr: "192.168.2.1", Serial: "x"}}}}, true},
 		{"ka9q serial collides", Config{SDR: SDRConfig{Devices: []DeviceConfig{{Serial: "x"}}, Ka9qRadio: []Ka9qRadioConfig{{Addr: "hf.local", SSRC: 1, Serial: "x"}}}}, true},
 		// baseband.auto_record: event-triggered raw-IQ capture.
 		{"auto_record disabled ignores fields", Config{Baseband: BasebandConfig{AutoRecord: BasebandAutoRecordConfig{Format: "bogus"}}}, false},

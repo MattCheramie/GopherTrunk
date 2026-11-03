@@ -837,6 +837,13 @@ type SDRConfig struct {
 	// group, and resolves `.local` instance names via mDNS. Plaintext
 	// multicast like rtl_tcp / soapy_remote — use on trusted LANs (issue #765).
 	Ka9qRadio []Ka9qRadioConfig `yaml:"ka9q_radio"`
+	// IIO lists Pluto-firmware AD936x boards (ADALM-Pluto, PlutoSky and
+	// compatibles) reached through iiod, the libiio daemon running on the
+	// board itself, over TCP port 30431. GopherTrunk speaks iiod's protocol
+	// directly, so the host needs no SoapySDR, SoapyPlutoSDR or libiio
+	// (issue #1329). Each entry becomes one pool device. Plaintext like
+	// rtl_tcp — use on trusted networks only.
+	IIO []IIOConfig `yaml:"iio"`
 	// Sidecar lists external IQ producers to mount as virtual tuners. A
 	// sidecar is any process that owns a radio and writes raw IQ to a pipe or
 	// socket — a UHD/RFNoC program, a GNU Radio flowgraph, a hardware-specific
@@ -1202,6 +1209,33 @@ type Ka9qRadioConfig struct {
 	Channels int `yaml:"channels"`
 	// ConnectTimeoutMs caps mDNS resolution and the status poll in
 	// milliseconds. Zero picks the driver default (3000).
+	ConnectTimeoutMs int `yaml:"connect_timeout_ms"`
+}
+
+// IIOConfig describes one Pluto-style AD936x board reached through its iiod
+// daemon. Addr is required; Serial / Role / Gain follow the local devices
+// block.
+type IIOConfig struct {
+	// Addr is the board's address: "192.168.2.1" (the USB-network default),
+	// "pluto.local", "host:port", or a libiio URI "ip:192.168.2.1". The port
+	// defaults to 30431. Required.
+	Addr string `yaml:"addr"`
+	// Serial is the virtual device serial reported by the pool. Empty
+	// generates one from Addr.
+	Serial string `yaml:"serial"`
+	// Role hints the pool's role assignment: control|voice|auto|dedicated.
+	Role string `yaml:"role"`
+	// Gain is "auto" / "" for the AD9361 AGC (slow_attack), otherwise
+	// tenths of a dB ("400" = 40 dB; the RX range is about 0-73 dB).
+	Gain string `yaml:"gain"`
+	// RFBandwidthHz pins the AD9361 RX analog bandwidth. Zero follows
+	// sdr.sample_rate (clamped to 200 kHz..56 MHz).
+	RFBandwidthHz uint32 `yaml:"rf_bandwidth_hz"`
+	// RFPort selects the RX input (the AD9361 rf_port_select attribute,
+	// e.g. "A_BALANCED"). Empty leaves the board's setting.
+	RFPort string `yaml:"rf_port"`
+	// ConnectTimeoutMs caps the TCP dial and each control command in
+	// milliseconds. Zero picks the driver default (5000).
 	ConnectTimeoutMs int `yaml:"connect_timeout_ms"`
 }
 
