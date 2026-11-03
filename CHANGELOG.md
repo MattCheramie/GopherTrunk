@@ -16,6 +16,8 @@ for tagged releases.
   12-bit samples at full scale 2048. Config: `sdr.iio: [{addr: "192.168.2.1",
   serial, role, gain}]`; see `docs/hardware.md`. Not yet confirmed on air.
 
+## [v1.3.7] — 2026-11-03
+
 ### Fixed
 - **NXDN: one misread VCALL no longer turns a clear call into an encrypted
   one (#1261).** On the reporter's 27 Oct log, a clear call (all 104 voice
