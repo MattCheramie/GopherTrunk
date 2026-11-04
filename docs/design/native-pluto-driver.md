@@ -196,6 +196,10 @@ is "reference-pinned, not verified".
 
 ## What the reporter can check now
 
+`gophertrunk iio probe -addr 192.168.2.1 -out board.xml` (after #1342) does
+both checks below in one read-only step and saves the `PRINT` XML that should
+replace `testdata/pluto_context_reconstructed.xml`.
+
 Two checks need only the board, not SoapyPlutoSDR, and they settle open points
 above:
 

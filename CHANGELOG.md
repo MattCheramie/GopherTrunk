@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`gophertrunk iio probe` checks a Pluto / PlutoSky without changing it
+  (#1329).** It connects to the board's iiod and reports what `sdr.iio`
+  would see: iiod version, board model and firmware, the IIO devices and
+  sample formats, whether the board is usable (and if not, why), the current
+  RX LO / sample rate / bandwidth / gain, and the level of one buffer of
+  samples. `-out board.xml` saves the board's device list for a bug report.
+  No libiio, SoapySDR or netcat needed.
 - **Native ADALM-Pluto / PlutoSky driver, `sdr.iio` (#1329).** Pluto-firmware
   AD936x boards are reached through iiod, the libiio daemon running on the
   board (TCP 30431), so the host no longer needs SoapySDR, SoapyPlutoSDR or

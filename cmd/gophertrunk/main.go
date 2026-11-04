@@ -88,6 +88,8 @@ func main() {
 		runPower(os.Args[2:])
 	case "wmbus":
 		runWMBus(os.Args[2:])
+	case "iio":
+		runIIO(os.Args[2:])
 	case "ekc":
 		runEKC(os.Args[2:])
 	case "test":
@@ -162,6 +164,7 @@ USAGE:
   gophertrunk gen [flags]             synthesize a test IQ capture + metadata for a protocol
   gophertrunk capture [flags]         record raw IQ off a live SDR to a .cfile + metadata sidecar
   gophertrunk power [flags]           rtl_power-style sweep logger (CSV) for a local or rtl_tcp SDR
+  gophertrunk iio probe [flags]       check a Pluto / PlutoSky (iiod) board read-only and save its device list
   gophertrunk wmbus [flags]           Wireless M-Bus (868 MHz utility meter) telegram decoder, live or from a capture
   gophertrunk ekc <cmd> [flags]       KFDtool key containers (.ekc): list|create|add|remove|passwd|import (no key material printed)
   gophertrunk bundle <cmd> [flags]    build/inspect a GopherTrunk Bundle (.gtb.tar.gz): pack|info|verify|extract|add|commit
