@@ -158,6 +158,16 @@ export interface Ka9qRadioConfig {
   ConnectTimeoutMs: number;
 }
 
+export interface IIOConfig {
+  Addr: string;
+  Serial: string;
+  Role: string;
+  Gain: string;
+  RFBandwidthHz: number;
+  RFPort: string;
+  ConnectTimeoutMs: number;
+}
+
 export interface SDRConfig {
   SampleRate: number;
   Devices: DeviceConfig[];
@@ -165,6 +175,7 @@ export interface SDRConfig {
   SoapyRemote?: SoapyRemoteConfig[] | null;
   Sidecar?: SidecarConfig[] | null;
   Ka9qRadio?: Ka9qRadioConfig[] | null;
+  IIO?: IIOConfig[] | null;
   [k: string]: unknown;
 }
 

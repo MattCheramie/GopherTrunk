@@ -1372,6 +1372,14 @@ confirmation before any close-as-completed.
   drift. `applyAntennas` now validates against `LIST_ANTENNAS` (500) and reads back with
   `GET_ANTENNA` (502) — port names are device-specific (B210: `TX/RX`, `RX2`; TwinRX: `RX1`,
   `RX2`) so a config moved between rigs must fail loudly.
+- **Pluto / PlutoSky now has a native driver: `sdr.iio` → `internal/sdr/iio` speaks iiod's ASCII
+  protocol (TCP 30431) to the board itself, no SoapySDR/libiio on the host (#1329, the reporter
+  could not build SoapyPlutoSDR against their libiio).** Facts pinned to libiio v0.25 source: the
+  READBUF mask rides the first chunk of EVERY READBUF (server `rw_buffer` sets `new_client` per
+  call); a written value goes out with its NUL (`strlen+1`); the mask bit is libiio's channel
+  NUMBER after `reorder_channels`, not the raw scan index. AD9361 attributes and the ×8 decimation
+  below 25 MHz/12 follow SoapyPlutoSDR. `testdata/pluto_context_reconstructed.xml` is
+  RECONSTRUCTED, not captured — replace it with the reporter's real `PRINT` output. On-air-gated.
 - **SoapyRemote CS16 is NOT always 16-bit full scale (#1329).** `GET_NATIVE_STREAM_FORMAT`
   replies with the format AND a double full scale, and the reference client divides by it whenever
   the wire format is the native one (`client/Streaming.cpp` setupStream, `ClientStreamData.cpp`). A

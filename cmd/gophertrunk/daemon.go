@@ -54,6 +54,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/baseband"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/decimate"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/iio"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/ka9qradio"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtltcp"
@@ -1157,7 +1158,8 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	// logs nothing, and finds no SDR.
 	if len(cfg.SDR.Devices) > 0 || len(cfg.Baseband.Replay) > 0 ||
 		len(cfg.SDR.RTLTCP) > 0 || len(cfg.SDR.SoapyRemote) > 0 ||
-		len(cfg.SDR.Ka9qRadio) > 0 || len(cfg.SDR.Sidecar) > 0 {
+		len(cfg.SDR.Ka9qRadio) > 0 || len(cfg.SDR.Sidecar) > 0 ||
+		len(cfg.SDR.IIO) > 0 {
 		d.pool = sdr.NewPool(log)
 		d.pool.SetBus(d.bus)
 		var hints []sdr.Hint
@@ -1354,6 +1356,44 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			if len(kspecs) > 0 {
 				sdr.Register(ka9qradio.New(kspecs, log))
 				log.Info("ka9q_radio channels mounted", "count", len(kspecs))
+			}
+		}
+		// Mount Pluto-style AD936x boards over their own iiod daemon (#1329).
+		// Same lazy pattern: the driver dials inside Pool.Open, so an
+		// unreachable board is a warning, not a stalled startup. The AD9361
+		// has no ppm trim here, so the Hint carries role and gain only.
+		if len(cfg.SDR.IIO) > 0 {
+			ispecs := make([]iio.Spec, 0, len(cfg.SDR.IIO))
+			for _, b := range cfg.SDR.IIO {
+				if b.Addr == "" {
+					log.Warn("daemon: iio entry missing addr; skipping")
+					continue
+				}
+				ispecs = append(ispecs, iio.Spec{
+					Addr:           b.Addr,
+					Serial:         b.Serial,
+					Role:           b.Role,
+					RFBandwidthHz:  b.RFBandwidthHz,
+					RFPort:         b.RFPort,
+					ConnectTimeout: time.Duration(b.ConnectTimeoutMs) * time.Millisecond,
+				})
+				if b.Serial != "" {
+					h := sdr.Hint{Serial: b.Serial, Role: sdr.ParseRole(b.Role)}
+					gain, ok := parseGain(b.Gain)
+					if !ok {
+						log.Warn("daemon: ignoring unparseable iio gain",
+							"serial", b.Serial, "gain", b.Gain)
+					} else {
+						warnGainUnits(log, b.Serial, b.Gain, gain)
+						warnLowGain(log, b.Serial, h.Role, b.Gain, gain)
+						h = h.WithGain(gain)
+					}
+					hints = append(hints, h)
+				}
+			}
+			if len(ispecs) > 0 {
+				sdr.Register(iio.New(ispecs, log))
+				log.Info("iio (Pluto) boards mounted", "count", len(ispecs))
 			}
 		}
 		if len(cfg.SDR.Sidecar) > 0 {

@@ -860,6 +860,23 @@ sdr:
   #     channels: 0                 # pin output channels (2 for raw IQ)
   #     connect_timeout_ms: 3000
 
+  # ADALM-Pluto / PlutoSky / other Pluto-firmware AD936x boards, reached
+  # through iiod, the libiio daemon running ON the board (TCP 30431, over
+  # Ethernet or the USB-network link). GopherTrunk speaks iiod's protocol
+  # itself, so the host needs no SoapySDR, SoapyPlutoSDR or libiio (#1329).
+  # Samples are 12-bit (full scale 2048). Without a FIR filter loaded the
+  # AD9361 RX rate must be 260417 Hz - 61.44 MHz; sdr.sample_rate applies.
+  # The AD9361 has no ppm trim here. Plaintext — trusted networks only.
+  #
+  # iio:
+  #   - addr: "192.168.2.1"         # board address, host:port, or "ip:..." URI
+  #     serial: "plutosky"
+  #     role: control               # control | voice | auto | dedicated
+  #     gain: "400"                 # tenths of a dB (40 dB), or "auto" (AGC)
+  #     rf_bandwidth_hz: 0          # 0 = follow sdr.sample_rate
+  #     rf_port: ""                 # e.g. "A_BALANCED"; empty = board default
+  #     connect_timeout_ms: 5000
+
 # Paging decoders. The pocsag / flex lists each dedicate one SDR to a
 # single paging frequency: the SDR is tuned directly to FrequencyHz
 # (full sample-rate IQ, no DDC). The wideband list groups several

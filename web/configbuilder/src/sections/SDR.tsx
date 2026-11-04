@@ -16,6 +16,7 @@ import type {
   DeviceChannelConfig,
   DeviceConfig,
   EncryptionKey,
+  IIOConfig,
   RTLTCPConfig,
   SDRConfig,
   SidecarConfig,
@@ -115,6 +116,28 @@ export function SDRSection() {
               <NumberField label="PPM" value={r.PPM} onChange={(v) => set({ ...r, PPM: v })} />
               <NumberField label="Connect timeout (ms)" value={r.ConnectTimeoutMs} onChange={(v) => set({ ...r, ConnectTimeoutMs: v })} />
               <BoolField label="Bias-tee" value={r.BiasTee} onChange={(v) => set({ ...r, BiasTee: v })} />
+            </div>
+          )}
+        />
+      </Fieldset>
+
+      <Fieldset legend="Pluto / AD936x boards (iiod)">
+        <ListEditor<IIOConfig>
+          label="iio boards"
+          items={cfg.IIO}
+          onChange={(x) => set({ ...cfg, IIO: x })}
+          makeNew={() => ({ Addr: "192.168.2.1", Serial: "", Role: "", Gain: "auto", RFBandwidthHz: 0, RFPort: "", ConnectTimeoutMs: 0 })}
+          itemTitle={(b) => b.Addr || "iio"}
+          emptyHint="ADALM-Pluto / PlutoSky over the board's own iiod (no SoapySDR needed)."
+          renderItem={(b, set) => (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextField label="Address" value={b.Addr} onChange={(v) => set({ ...b, Addr: v })} placeholder="192.168.2.1" />
+              <SelectField label="Role" value={b.Role} onChange={(v) => set({ ...b, Role: v })} options={REMOTE_ROLES} />
+              <TextField label="Serial" value={b.Serial} onChange={(v) => set({ ...b, Serial: v })} />
+              <TextField label="Gain" value={b.Gain} onChange={(v) => set({ ...b, Gain: v })} placeholder="auto or tenths-dB (400 = 40 dB)" />
+              <NumberField label="RF bandwidth (Hz)" value={b.RFBandwidthHz} onChange={(v) => set({ ...b, RFBandwidthHz: v })} placeholder="0 = follow sample rate" />
+              <TextField label="RF port" value={b.RFPort} onChange={(v) => set({ ...b, RFPort: v })} placeholder="A_BALANCED" />
+              <NumberField label="Connect timeout (ms)" value={b.ConnectTimeoutMs} onChange={(v) => set({ ...b, ConnectTimeoutMs: v })} />
             </div>
           )}
         />

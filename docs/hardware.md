@@ -22,6 +22,7 @@ transport (USBDEVFS on Linux, IOKit on macOS, WinUSB on Windows).
 | **HydraSDR RFOne** | `hydrasdr` | `0x38af:0x0001` · `0x1d50:0x60a1` (older units, told apart from an Airspy by the USB Product string) | Wire-protocol-complete against the vendor's `hydrasdr-host` library (#1325); shares the Airspy driver's stream path and real-to-IQ converter. Not yet run against attached hardware. |
 | **Airspy HF+ Discovery / HF+ Dual Port / legacy HF+** | `airspyhf` | `0x03eb:0x800c` | Wire-protocol-complete; HF (9 kHz – 31 MHz) + VHF (60 – 260 MHz). A hardware-gated harness now exists (`internal/sdr/airspyhf/airspyhf_real_test.go`, `GOPHERTRUNK_AIRSPYHF_REAL`); on-air validation against attached hardware is still pending. |
 | **rtl_tcp remote** (any librtlsdr-shipped server) | `rtltcp` | TCP | Remote RTL-SDR mounted over the network. See [Remote rtl_tcp SDRs](#remote-rtl_tcp-sdrs). |
+| **ADALM-Pluto / PlutoSky** (Pluto-firmware AD936x boards) | `iio` | TCP | Talks to iiod, the libiio daemon on the board itself (port 30431); no SoapySDR or libiio on the host. 12-bit RX, 260.4 kS/s–61.44 MS/s. Not yet confirmed on air. See [ADALM-Pluto, PlutoSky and other AD936x boards](#adalm-pluto-plutosky-and-other-ad936x-boards). |
 | **SoapySDRServer remote** (USRP / LimeSDR / bladeRF / ADALM-Pluto & PlutoSky / HackRF / Airspy / RTL-SDR / SDRplay …) | `soapyremote` | TCP | Any SoapySDR-supported radio mounted over the network with 16/32-bit IQ + control. Field-tested on air against USRP X310 and B210 rigs (single-branch; MRC diversity combining is still experimental). See [Remote SoapySDRServer SDRs](#remote-soapysdrserver-sdrs). |
 
 The HackRF and Airspy / Airspy HF+ drivers speak the documented
@@ -1133,10 +1134,65 @@ opens but never streams, or when the server crashes on a client connect.
 
 PlutoSDR-class radios (Analog Devices' ADALM-Pluto, and Zynq + AD9361/AD9363
 boards running Pluto-compatible firmware, such as OpenSourceSDRLab's PlutoSky,
-issue #1329) are reached through libiio, which the **SoapyPlutoSDR** module
-wraps. There is no native GopherTrunk driver for them: run `SoapySDRServer`
-with that module on a host that can see the board, and point `soapy_remote`
-at the server.
+issue #1329) can be reached two ways.
+
+#### Native: `sdr.iio` (no SoapySDR, no libiio)
+
+The board runs **iiod**, libiio's network daemon, on TCP port 30431, over
+Ethernet or its USB-network link (`192.168.2.1` by default). GopherTrunk
+speaks iiod's text protocol directly, so nothing has to be installed or built
+on the host:
+
+```yaml
+sdr:
+  sample_rate: 2_400_000
+  iio:
+    - addr: "192.168.2.1"     # or a hostname, host:port, or "ip:192.168.2.1"
+      serial: "plutosky"
+      role: control
+      gain: "400"             # 40 dB (RX range about 0-73 dB); "auto" = AD9361 AGC (slow_attack)
+      # rf_bandwidth_hz: 0    # 0 = follow sample_rate
+      # rf_port: "A_BALANCED"
+```
+
+Check the board answers before starting GopherTrunk: `nc 192.168.2.1 30431`,
+then type `VERSION` and Enter. It should print a line like `0.25.b6028fd`
+(type `EXIT` to leave).
+
+What the driver does, all pinned to libiio v0.25 and SoapyPlutoSDR's source:
+
+- **Devices.** It reads the board's context (`PRINT`) and needs the standard
+  `ad9361-phy` and `cf-ad9361-lpc` IIO devices. A board without them, or whose
+  RX sample format is not 16-bit little-endian signed (`le:S12/16>>0` on a
+  Pluto), is refused at open with the reason.
+- **Tuning** writes the RX LO (`altvoltage0` `frequency`); the range comes
+  from the board's own `frequency_available`.
+- **Sample rate** writes `ad9361-phy` and `cf-ad9361-lpc` `sampling_frequency`.
+  Below 25 MHz/12 (≈2.083 MS/s) the PHY runs at 8× and the RX core decimates,
+  as SoapyPlutoSDR does. Without a FIR filter the floor is 25 MHz/96
+  (≈260.4 kS/s); config validation rejects a lower `sdr.sample_rate`. The RX
+  analog bandwidth (`rf_bandwidth`) follows the sample rate unless
+  `rf_bandwidth_hz` pins it.
+- **Gain**: `auto` selects `slow_attack`; otherwise `manual` plus
+  `hardwaregain` in whole dB.
+- **12-bit samples**, full scale 2048. Levels in dBFS, `squelch_dbfs` and the
+  overload checks read like any other SDR.
+- **No ppm trim.** A `ppm` hint is logged and ignored; the decoder's measured
+  carrier offset is the correction to read.
+- Samples stream on a second TCP connection, so a retune never waits behind
+  sample data. Cancelling the stream closes that socket at once.
+
+The `iio: connected` log line prints the iiod version, `hw_model`,
+`fw_version`, the RX device, its sample format and the full scale.
+
+Not yet confirmed on air with a Pluto or PlutoSky (#764/#771); reports are
+welcome on #1329. Design notes: `docs/design/native-pluto-driver.md`.
+
+#### Through SoapySDR: `sdr.soapy_remote`
+
+If you already run SoapySDR, the **SoapyPlutoSDR** module wraps libiio: run
+`SoapySDRServer` with that module on a host that can see the board, and point
+`soapy_remote` at the server.
 
 ```sh
 # On the host the board is plugged into (or that can reach it on the network):

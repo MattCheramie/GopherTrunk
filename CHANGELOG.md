@@ -7,6 +7,17 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **Native ADALM-Pluto / PlutoSky driver, `sdr.iio` (#1329).** Pluto-firmware
+  AD936x boards are reached through iiod, the libiio daemon running on the
+  board (TCP 30431), so the host no longer needs SoapySDR, SoapyPlutoSDR or
+  libiio. Tuning, sample rate (260.4 kS/s to 61.44 MS/s, with the x8
+  decimation path below 2.083 MS/s), RX bandwidth, AGC or manual gain, and
+  12-bit samples at full scale 2048. Config: `sdr.iio: [{addr: "192.168.2.1",
+  serial, role, gain}]`; see `docs/hardware.md`. Not yet confirmed on air.
+
+## [v1.3.7] — 2026-11-03
+
 ### Fixed
 - **NXDN: one misread VCALL no longer turns a clear call into an encrypted
   one (#1261).** On the reporter's 27 Oct log, a clear call (all 104 voice

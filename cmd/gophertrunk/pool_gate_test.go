@@ -33,6 +33,9 @@ func TestRemoteOnlySDRConfigsRegisterTheirDriver(t *testing.T) {
 				Addr: "239.1.2.3:5006", SSRC: 162550, Serial: "gate-ka9q",
 			}}
 		}},
+		{"iio only", "iio", func(c *config.Config) {
+			c.SDR.IIO = []config.IIOConfig{{Addr: "127.0.0.1:1", Serial: "gate-iio"}}
+		}},
 		{"rtl_tcp only", "rtltcp", func(c *config.Config) {
 			c.SDR.RTLTCP = []config.RTLTCPConfig{{Addr: "127.0.0.1:1", Serial: "gate-rtltcp"}}
 		}},
