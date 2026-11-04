@@ -231,6 +231,7 @@ GET /api/v1/recordings?after=<id>&limit=<n>      (limit default 100, max 1000)
       "started_at": "2026-10-25T14:02:11.204Z",
       "ended_at": "2026-10-25T14:02:15.880Z",
       "format": "wav",
+      "partial": false,
       "audio_url": "/api/v1/recordings/4182/audio",
       "call": { "id": 90311, "system": "scanner", "protocol": "fm-conv", "frequency_hz": 460100000,
                 "device_serial": "wb:00000008:conv:460100000", "talkgroup_alpha": "Fire Dispatch",
@@ -242,7 +243,7 @@ GET /api/v1/recordings?after=<id>&limit=<n>      (limit default 100, max 1000)
 ```
 
 - An entry appears only once the recorder has **finished** its file, so a
-  partial recording is never listed. `id` is assigned at that moment, so the
+  file still being written is never listed. `id` is assigned at that moment, so the
   feed is in completion order: a long call that started first but finished
   last is listed after the shorter calls, not skipped. (A cursor on the call
   row's `id` would skip it, because that id is assigned at call start.)
@@ -254,6 +255,14 @@ GET /api/v1/recordings?after=<id>&limit=<n>      (limit default 100, max 1000)
 - `audio_url` serves the **original file** as recorded (WAV, FLAC or MP3,
   with range support); `/api/v1/calls/{id}/audio` instead joins a call's
   segments into one WAV for playback.
+- `partial: true` means IQ was lost while the call was recorded (dropped to a
+  lagging voice tap, or by the SDR's driver), so the audio has gaps;
+  `iq_lost_chunks` says how many IQ chunks were lost. The file is finished and
+  playable, but it is not a complete capture: an archive or a transcription
+  pipeline should keep that distinction. The same count is on the
+  `call.complete` event (`IQLostChunks`) and in the recording's `.json` sidecar
+  (`iq_lost_chunks`, omitted when nothing was lost). It covers the whole call
+  and is reported on the call's final file.
 - Retention deletes old recordings; an entry whose call row was removed
   comes back without `call`, and its audio returns 404.
 

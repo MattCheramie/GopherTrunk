@@ -1744,6 +1744,27 @@ func (r *Recorder) NotifyDrainCompleteForCall(deviceSerial string, callID uint64
 	r.finalizeCall(ce)
 }
 
+// NotifyIQLoss records that the named call's IQ stream lost lostChunks
+// chunks (dropped to a lagging consumer, or by the SDR driver). The composer
+// sends it once the call's chain has drained and before the drain signal, so
+// the count reaches the finished recording: its call.complete event and
+// sidecar carry it and the file is logged as partial instead of passing as
+// complete (issue #1288). A count for a call this device no longer records
+// (callID differs — the serial was re-keyed) is ignored. callID 0 matches
+// anything.
+func (r *Recorder) NotifyIQLoss(deviceSerial string, callID uint64, lostChunks uint64) {
+	if lostChunks == 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.sessions[deviceSerial]
+	if !ok || callIDsDiffer(s.callID, callID) {
+		return
+	}
+	s.iqLostChunks += lostChunks
+}
+
 // finalizeOnDrainTimeout is the safety backstop: it finalizes a deferred call
 // whose drain signal never arrived within drainFinalizeTimeout.
 func (r *Recorder) finalizeOnDrainTimeout(deviceSerial string) {
@@ -1873,6 +1894,13 @@ func (r *Recorder) finalizeCall(ce trunking.CallEnd) {
 	// upload it. Skip (and delete) calls that captured no PCM.
 	finalizeStart := time.Now()
 	cc, meta := r.finalizeLocked(s, ce.DeviceSerial, ce.EndedAt, ce.Reason)
+	lost := s.iqLostChunks
+	if cc != nil && lost > 0 {
+		cc.IQLostChunks = lost
+		if meta != nil {
+			meta.IQLostChunks = lost
+		}
+	}
 	// The call is over — drop its talker history now that finalizeLocked has read
 	// it for the closing sidecar (still under r.mu, before the unlock below).
 	delete(r.callTalkers, ce.DeviceSerial)
@@ -1893,6 +1921,11 @@ func (r *Recorder) finalizeCall(ce trunking.CallEnd) {
 			"reason", ce.Reason)
 	}
 	if cc != nil {
+		if lost > 0 {
+			r.log.Warn("recorder: recording is partial — IQ was lost during the call, so the audio has gaps",
+				"device", ce.DeviceSerial, "wav", cc.AudioPath, "iq_lost_chunks", lost)
+			r.observePartial()
+		}
 		r.normalizeIfEnabled(cc.AudioPath)
 		r.writeCallMetaFor(cc.AudioPath, meta)
 		r.observeCompleted(time.Since(finalizeStart))
@@ -2141,7 +2174,10 @@ type recordingSession struct {
 	// MuteEncrypted) — surfaced in the call-ended log so a silent recording
 	// of an encrypted call reads as intended, not as a vocoder fault.
 	mutedFrames int
-	startedAt   time.Time
+	// iqLostChunks counts IQ chunks the call's stream lost (NotifyIQLoss):
+	// non-zero marks the finished recording partial (issue #1288).
+	iqLostChunks uint64
+	startedAt    time.Time
 	// segment is this file's 0-based index within the call: 0 for the first
 	// (or only) recording, incremented on each per-transmission segment roll
 	// (handleSegment parks the dormant successor with segment+1). Carried on
@@ -2244,6 +2280,19 @@ type RecorderObserver interface {
 	// RecordingTruncated: a call was finalized on the drain timeout, so its
 	// file may lack the last frames.
 	RecordingTruncated()
+}
+
+// partialObserver is an optional RecorderObserver extension: a finished
+// recording whose call lost IQ (issue #1288). Optional so existing observers
+// keep compiling.
+type partialObserver interface {
+	RecordingPartial()
+}
+
+func (r *Recorder) observePartial() {
+	if po, ok := r.obs.(partialObserver); ok {
+		po.RecordingPartial()
+	}
 }
 
 func (r *Recorder) observeCompleted(d time.Duration) {

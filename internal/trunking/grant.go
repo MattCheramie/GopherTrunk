@@ -388,7 +388,15 @@ type CallComplete struct {
 	// only/first file, 1 for the second over, …).
 	Segment    int
 	SampleRate uint32
+	// IQLostChunks is how many IQ chunks the call's stream lost (dropped to
+	// a lagging consumer, or by the SDR driver). Non-zero means the recording
+	// is partial: its audio has gaps (issue #1288). It is counted over the
+	// whole call and reported on the call's final recording.
+	IQLostChunks uint64
 }
+
+// Partial reports whether the recording lost IQ during the call.
+func (c CallComplete) Partial() bool { return c.IQLostChunks > 0 }
 
 // CallStart returns the originating call's start time: CallStartedAt when a
 // segment roll set it, else StartedAt (a single-file recording).
