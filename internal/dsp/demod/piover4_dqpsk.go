@@ -45,6 +45,13 @@ func NewPiOver4DQPSK(sps, span int, alpha, rotation float64) *PiOver4DQPSK {
 	}
 }
 
+// FoldMatchedFilter switches the RRC matched filter to the folded
+// symmetric-tap dot product (filter.FIR.EnableFolded), halving its
+// multiplies. The RRC taps are bit-exactly symmetric, so it reports true;
+// only the float32 rounding of the sum changes. Opt-in per receiver (the
+// TETRA receiver uses it, #1321); the default path is unchanged.
+func (p *PiOver4DQPSK) FoldMatchedFilter() bool { return p.rrc.EnableFolded() }
+
 // MatchedFilter applies the RRC filter to the complex IQ stream. State
 // carries across calls so chunk boundaries don't corrupt the output.
 func (p *PiOver4DQPSK) MatchedFilter(dst, src []complex64) []complex64 {

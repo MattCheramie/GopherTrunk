@@ -166,12 +166,32 @@ func coarseOmega(block []complex64, sps int) float64 {
 // derotate multiplies each sample of block by e^{-jωk/sps}, k counting from 0
 // at the block start — a per-block absolute derotation by ω rad/symbol.
 func (a *carrierAFC) derotate(block []complex64, omega float64) {
-	perSample := omega / float64(a.sps)
-	theta := 0.0
+	derotateBlock(block, omega/float64(a.sps))
+}
+
+// derotateReanchor is how many samples the phasor recurrence runs before it
+// is re-anchored on an exact sincos, bounding the recurrence's rounding
+// drift to ~derotateReanchor·1e-16 rad (far below float32 resolution).
+const derotateReanchor = 64
+
+// derotateBlock multiplies block[i] by exp(-j·i·perSample). It used to call
+// math.Cos and math.Sin per sample, ~7% of a 5-cell wideband TETRA pump on
+// its own (#1321); a complex128 phasor recurrence re-anchored every
+// derotateReanchor samples gives the same rotation to float32 precision.
+func derotateBlock(block []complex64, perSample float64) {
+	ss, cs := math.Sincos(-perSample)
+	step := complex(cs, ss)
+	var rot complex128
 	for i := range block {
-		rot := complex(float32(math.Cos(-theta)), float32(math.Sin(-theta)))
-		block[i] *= rot
-		theta += perSample
+		if i%derotateReanchor == 0 {
+			s, c := math.Sincos(-float64(i) * perSample)
+			rot = complex(c, s)
+		}
+		x := block[i]
+		xr, xi := float64(real(x)), float64(imag(x))
+		rr, ri := real(rot), imag(rot)
+		block[i] = complex(float32(xr*rr-xi*ri), float32(xr*ri+xi*rr))
+		rot *= step
 	}
 }
 
@@ -181,10 +201,20 @@ func (a *carrierAFC) derotate(block []complex64, omega float64) {
 func estimateOmega(block []complex64, sps int) float64 {
 	var sr, si float64
 	for k := sps; k < len(block); k += sps {
+		// cos/sin of 4·arg(d) without atan2 + cos + sin per symbol: the
+		// unit phasor d/|d| raised to the 4th power (#1321). A zero product
+		// has arg 0 by anglef's convention, i.e. contributes (1, 0).
 		d := block[k] * conjf(block[k-sps])
-		p := 4 * float64(anglef(d))
-		sr += math.Cos(p)
-		si += math.Sin(p)
+		dr, di := float64(real(d)), float64(imag(d))
+		m2 := dr*dr + di*di
+		if m2 == 0 {
+			sr++
+			continue
+		}
+		u2r := (dr*dr - di*di) / m2
+		u2i := 2 * dr * di / m2
+		sr += u2r*u2r - u2i*u2i
+		si += 2 * u2r * u2i
 	}
 	if sr == 0 && si == 0 {
 		return 0

@@ -1242,6 +1242,15 @@ confirmation before any close-as-completed.
   (`GT_WB_STALL_SIGNAL=1`) shows no stall at lock. Coalescing chunks (4096 → 32768) barely moves throughput (0.30 → 0.27x),
   so the p99 is receiver block work, not worker hand-off. Its `atoiOr` read an unset env var as 0, which broke the bench
   rate default; fixed.
+  #1335 then CONFIRMED on the reporter's Pi 4 (3 Nov, 4 cells: 46 → 0 drops/10 min), but their Pi 4 runs the stall
+  bench at 0.51x real time, so the margin is thin. The next round (4 Nov) took the 5-cell pump 0.51x → 0.43x and halved
+  p99/p99.9 per chunk (6.9 → 3.1 ms, 10.1 → 4.9 ms): `tetra.SyncDetector` packs its window 2 bits/dibit and counts
+  mismatches with XOR+popcount (it compared bytes through a `%` per dibit — 12 % of the pump, ~10x faster now, exact
+  same matches vs a verbatim copy of the old loop, `sync_packed_test.go`); `carrierAFC.derotate` / `estimateOmega` lost
+  their per-sample cos/sin and per-symbol atan2 (phasor recurrence re-anchored every 64 samples; `(d/|d|)^4`); and the
+  receiver's channel + matched filters run `filter.FIR.EnableFolded` (symmetric taps, opt-in so the shared FIR stays
+  bit-exact). Folding is worth only ~1.2x in scalar Go: a float32 multiply costs what an add does, so a tap PAIR is 10
+  ops vs 12 — don't expect 2x from it. What remains: the folded channel FIR (~33 %) and the DDC resamplers (~37 %).
 - **The NXDN "scrambler" (SACCH VCALL cipher type 1, 15-bit key) IS DECODED and capture-pinned
   (#1261, 26 Oct): the reporter's two known-key captures (Kenwood, keys 32767 / 12345 on 447.100 MHz
   NXDN96, `nxdn/testdata/scrambler_key*_frames.json`) descramble to speech (AMBE b0 pitch continuity

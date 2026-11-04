@@ -261,6 +261,10 @@ func New(opts Options) *Receiver {
 		symbolSink: opts.SymbolSink,
 		clockMode:  opts.ClockMode,
 	}
+	// The matched and channel filters are the largest per-sample cost of a
+	// wideband TETRA tap (#1321: ~29% of a 5-cell Airspy pump). Both are
+	// linear-phase, so each tap pair shares one multiply.
+	r.dq.FoldMatchedFilter()
 	if r.clockMode == ClockGardner {
 		gain := opts.GardnerGain
 		if gain <= 0 {
@@ -278,6 +282,7 @@ func New(opts Options) *Receiver {
 		fc := ChannelCutoffHz / opts.SampleRateHz
 		taps := 2*channelFilterSpanSymbols*r.sps + 1 // delay = span*sps = whole symbols
 		r.chanFilt = filter.NewFIR(filter.LowpassKaiser(taps, fc, channelFilterBeta))
+		r.chanFilt.EnableFolded()
 	}
 	if opts.EnableEqualizer {
 		taps := opts.EqualizerTaps
