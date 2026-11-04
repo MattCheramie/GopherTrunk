@@ -1056,6 +1056,20 @@ confirmation before any close-as-completed.
   `Streaming` is now a session COUNT, not a flag (an old session ending no longer reports a
   new one stopped). The Spectrum panel gained a typed MHz tune entry (an untuned SDR sits at
   0 Hz, out of click-to-tune reach) and a hint when an open stream delivers nothing.
+- **A recording made across an IQ hole is announced PARTIAL (#1288), not complete.** Voice sources
+  implement `StreamIQWithLoss` (wideband channel fan-out, `wbvoice` taps, the sequential scanner's broker
+  subscription): their own subscriber drops + the PHYSICAL serial's driver drops (`sdr.IQDropCount`,
+  counted inside `NotifyIQDrop`) since the call began; a plain source falls back to its own serial's
+  driver count. The composer hands the recorder that live reader at call start (`TrackIQLoss`, keyed
+  serial + call id) and the recorder takes the delta at EVERY file boundary — each per-over segment roll
+  and the call's end — so each file carries its own loss (`CallComplete.IQLostChunks`, the sidecar's
+  `iq_lost_chunks`, `call_recordings.iq_lost_chunks` → `GET /api/v1/recordings` `partial`,
+  `recordings_partial_total`). The first version reported one total at call end; with `transmission`
+  grouping that left every earlier over marked complete and overcharged the last
+  (`TestRecorderMarksEachSegmentWithItsOwnIQLoss`: old [0 0 5], fixed [2 0 3]). A sink without
+  `TrackIQLoss` still gets the end-of-call `NotifyIQLoss` total; one WITH it never does (double count).
+  `fanoutSink` MUST forward both (`TestFanoutSinkForwardsIQLoss*`). Gap: same-carrier demuxes (TETRA,
+  ccdecoder) report nothing — their calls share one stream.
 - **`soapyremote: SDR overruns … host_drops` is a DOWNSTREAM signal, not a driver bug.**
   `sendOrDrop` (`internal/sdr/soapyremote/driver.go`) only sheds when the consumer stops draining
   a ~400 ms / ~1084-chunk channel, and it drops the OLDEST queued chunk, so each event is an IQ

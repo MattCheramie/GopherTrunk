@@ -173,6 +173,7 @@ Series exposed:
 | `gophertrunk_recordings_discarded_total{reason}`                | counter | Recordings dropped instead of announced: `empty` (no audio), `no_speech` (idle frames only), `too_short` (under `recordings.min_duration_ms`), `encrypted` (`recordings.skip_encrypted`) |
 | `gophertrunk_recording_errors_total{stage}`                     | counter | Recording file operations that failed: `open`, `write`, `close`, `normalize`, `sidecar`                     |
 | `gophertrunk_recordings_truncated_total`                        | counter | Calls finalized on the drain timeout because the voice chain never signalled it had flushed (the file may lack its last frames) |
+| `gophertrunk_recordings_partial_total`                          | counter | Recordings announced whose call lost IQ (dropped to a lagging voice tap, or by the SDR driver): the audio has gaps. The `call.complete` event, the `.json` sidecar and `GET /api/v1/recordings` carry the count (`iq_lost_chunks`, `partial`) |
 | `gophertrunk_recording_finalize_seconds`                        | histogram | Time to finalize a recording (close, loudness normalize, sidecar) before it is announced — a slow disk shows here |
 | `gophertrunk_delivery_sent_total{backend}`                      | counter | Items delivered to an outbound feed: completed calls to the `broadcast:` backends, grants to each grant webhook (`grant_webhook:<name>`) |
 | `gophertrunk_delivery_failures_total{backend}`                  | counter | Items a feed gave up on after its retries                                                                  |
@@ -191,7 +192,7 @@ mistaking a quiet channel for a broken one:
 | 2. IQ capture | `gophertrunk_sdr_iq_underruns_total`; a wideband conventional channel's `health` / `last_iq_at` / `iq_drops` in `GET /api/v1/scanner` and `gophertrunk_conventional_channels_stalled` | underruns flat, `health: ok`, stalled = 0 |
 | 3. Channel processing | `gophertrunk_decode_errors_total`, `control_channel_locked`; per-call `decode quality` log lines | locked, errors growing slowly if at all |
 | 4. RF activity | `gophertrunk_conventional_channels_active`, `calls_active` | anything — zero is a quiet air, not a fault |
-| 5. Recording | `gophertrunk_recording_errors_total`, `recordings_truncated_total`, `recording_finalize_seconds`, `recordings_discarded_total` | errors and truncations flat; finalize p99 well under a second |
+| 5. Recording | `gophertrunk_recording_errors_total`, `recordings_truncated_total`, `recordings_partial_total`, `recording_finalize_seconds`, `recordings_discarded_total`; `partial` per file in `GET /api/v1/recordings` | errors, truncations and partials flat; finalize p99 well under a second |
 | 6. External delivery | `gophertrunk_delivery_failures_total`, `_dropped_total`, `_queue_depth`; consumers catch up from `GET /api/v1/recordings` | failures and drops flat, queue near 0 |
 
 A wideband conventional channel's `health` never looks at the air: the

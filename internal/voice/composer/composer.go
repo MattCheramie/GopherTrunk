@@ -40,6 +40,7 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	gtlog "github.com/MattCheramie/GopherTrunk/internal/log"
 	p25p2 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase2"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 	"github.com/MattCheramie/GopherTrunk/internal/voice/cryptocap"
 )
@@ -77,6 +78,45 @@ type EqualizerConfig struct {
 type IQSource interface {
 	StreamIQ(ctx context.Context) (<-chan []complex64, error)
 	SampleRateHz() uint32
+}
+
+// iqLossSource is an optional capability: a source that can say how many IQ
+// chunks a call's stream lost (dropped to a lagging consumer, or by the SDR
+// driver upstream). The returned func reports the count so far. A source
+// without it falls back to the driver-drop counter of its own serial, which
+// covers a physical voice SDR.
+type iqLossSource interface {
+	StreamIQWithLoss(ctx context.Context) (<-chan []complex64, func() uint64, error)
+}
+
+// iqLossSink is the recorder side: told, before the drain signal, how many
+// IQ chunks the named call's stream lost, so the finalized recording can be
+// marked partial instead of passing as complete (issue #1288).
+type iqLossSink interface {
+	NotifyIQLoss(deviceSerial string, callID uint64, lostChunks uint64)
+}
+
+// iqLossTrackerSink is the preferred recorder side: handed the call's live
+// loss reader when the stream opens, it charges each file of the call (every
+// per-over segment as well as the last) with the loss since the previous file
+// (issue #1288). A sink with it is never also sent the end-of-call
+// NotifyIQLoss total, which would count the loss twice.
+type iqLossTrackerSink interface {
+	TrackIQLoss(deviceSerial string, callID uint64, read func() uint64)
+}
+
+// streamWithLoss opens src's IQ stream for a call and returns a loss reader
+// for it (see iqLossSource).
+func streamWithLoss(ctx context.Context, src IQSource, serial string) (<-chan []complex64, func() uint64, error) {
+	if ls, ok := src.(iqLossSource); ok {
+		return ls.StreamIQWithLoss(ctx)
+	}
+	base := sdr.IQDropCount(serial)
+	ch, err := src.StreamIQ(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ch, func() uint64 { return sdr.IQDropCount(serial) - base }, nil
 }
 
 // exactRateSource is an optional capability an IQSource may implement to
@@ -383,6 +423,10 @@ type sameCarrierSource interface {
 type chain struct {
 	cancel context.CancelFunc
 	done   chan struct{}
+	// lost reports the IQ chunks this call's stream has lost so far (nil
+	// when the source cannot say). Read once the chain has drained, so a
+	// recording made across a hole is announced as partial (issue #1288).
+	lost func() uint64
 	// iqDebug is the call's voice_iq_debug capture (nil when off), so
 	// publishCallSource can carry decoded radio IDs into its sidecar.
 	iqDebug *voiceIQDebugWriter
@@ -673,7 +717,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	}
 
 	chainCtx, cancel := context.WithCancel(parent)
-	iqCh, err := src.StreamIQ(chainCtx)
+	iqCh, lost, err := streamWithLoss(chainCtx, src, cs.DeviceSerial)
 	if err != nil {
 		cancel()
 		c.log.Warn("composer: StreamIQ failed", "serial", cs.DeviceSerial, "err", err)
@@ -708,7 +752,10 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 	if c.voiceIQDebug.Enabled {
 		iqCh, iqDebug = c.teeVoiceIQ(chainCtx, iqCh, cs, rateHzF)
 	}
-	ch := &chain{cancel: cancel, done: make(chan struct{}), iqDebug: iqDebug}
+	ch := &chain{cancel: cancel, done: make(chan struct{}), iqDebug: iqDebug, lost: lost}
+	if lt, ok := c.sink.(iqLossTrackerSink); ok && lost != nil {
+		lt.TrackIQLoss(cs.DeviceSerial, cs.Grant.CallID, lost)
+	}
 	c.mu.Lock()
 	c.chains[cs.DeviceSerial] = ch
 	c.mu.Unlock()
@@ -777,6 +824,17 @@ func (c *Composer) handleEnd(ce trunking.CallEnd) {
 		// the in-line teardown for DMR/P25/FM). Only after this returns are all
 		// of the call's frames guaranteed written to the recorder.
 		<-ch.done
+		// Report the call's IQ loss BEFORE the drain signal, which is what
+		// lets the recorder finalize: the count has to be on the session by
+		// then to reach the call.complete event and the sidecar.
+		// A tracking sink reads the loss itself at each file boundary.
+		if _, tracks := c.sink.(iqLossTrackerSink); !tracks && ch.lost != nil {
+			if n := ch.lost(); n > 0 {
+				if ls, ok := c.sink.(iqLossSink); ok {
+					ls.NotifyIQLoss(ce.DeviceSerial, ce.Grant.CallID, n)
+				}
+			}
+		}
 	}
 	// Tell the recorder the drain is complete so it can finalize the recording.
 	// Fired for EVERY CallEnd — including calls with no chain — so a

@@ -191,6 +191,7 @@ func (s *storageHistory) RecordingFeed(ctx context.Context, afterID int64, limit
 		out[i] = FinalizedRecording{
 			ID: r.ID, CallID: r.CallID, Segment: r.Seq,
 			StartedAt: r.StartedAt, EndedAt: r.EndedAt, path: r.Path,
+			Partial: r.IQLostChunks > 0, IQLostChunks: r.IQLostChunks,
 		}
 		if c, ok := byID[r.CallID]; ok {
 			c := c

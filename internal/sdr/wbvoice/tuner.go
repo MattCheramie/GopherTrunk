@@ -37,6 +37,7 @@ import (
 	"sync"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/tuner"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/iqtap"
 )
 
@@ -253,11 +254,21 @@ func (v *VirtualTuner) SetCenterFreq(hz uint32) error {
 // retune helper; rebuilds at call-start are cheap (the Kaiser FIR
 // prototype is a few thousand floats).
 func (v *VirtualTuner) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
+	out, _, err := v.StreamIQWithLoss(ctx)
+	return out, err
+}
+
+// StreamIQWithLoss is StreamIQ plus a func reporting the IQ chunks this
+// call's stream has lost so far: chunks the broker dropped to this tap's
+// subscription, plus chunks the wideband SDR's driver dropped upstream since
+// the call began. The composer reads it at call end to mark the recording
+// partial (issue #1288).
+func (v *VirtualTuner) StreamIQWithLoss(ctx context.Context) (<-chan []complex64, func() uint64, error) {
 	v.tunerMu.Lock()
 	target := v.targetHz
 	v.tunerMu.Unlock()
 	if target == 0 {
-		return nil, errors.New("wbvoice: StreamIQ called before SetCenterFreq")
+		return nil, nil, errors.New("wbvoice: StreamIQ called before SetCenterFreq")
 	}
 	offset := float64(target) - float64(v.widebandHz)
 
@@ -281,9 +292,11 @@ func (v *VirtualTuner) StreamIQ(ctx context.Context) (<-chan []complex64, error)
 		}
 	}); err != nil {
 		close(out)
-		return nil, fmt.Errorf("wbvoice: AddTap offset=%.0f Hz: %w", offset, err)
+		return nil, nil, fmt.Errorf("wbvoice: AddTap offset=%.0f Hz: %w", offset, err)
 	}
 
+	physical := v.broker.Info().Serial
+	base := sdr.IQDropCount(physical)
 	sub := v.broker.Subscribe()
 	go func() {
 		defer close(out)
@@ -311,5 +324,5 @@ func (v *VirtualTuner) StreamIQ(ctx context.Context) (<-chan []complex64, error)
 			}
 		}
 	}()
-	return out, nil
+	return out, func() uint64 { return sub.Dropped() + (sdr.IQDropCount(physical) - base) }, nil
 }

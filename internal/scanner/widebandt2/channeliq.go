@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
 // Per-channel IQ fan-out + same-carrier voice source for wideband-hosted
@@ -190,6 +192,14 @@ func (f *channelFanout) subscribe() (<-chan []complex64, func() uint64) {
 // so no sample is both in it and in a later broadcast, and none is lost
 // between them.
 func (f *channelFanout) register(preroll bool) (<-chan []complex64, uint64, func() uint64) {
+	ch, start, unsub, _ := f.registerWithDrops(preroll)
+	return ch, start, unsub
+}
+
+// registerWithDrops is register plus a live read of the subscriber's
+// dropped-chunk count, for a consumer that must report the loss while the
+// subscription is still open (a recording's partial marker, issue #1288).
+func (f *channelFanout) registerWithDrops(preroll bool) (<-chan []complex64, uint64, func() uint64, func() uint64) {
 	sub := &channelSub{ch: make(chan []complex64, channelTapBudget(f.rateHz))}
 	f.mu.Lock()
 	start := f.total
@@ -206,7 +216,7 @@ func (f *channelFanout) register(preroll bool) (<-chan []complex64, uint64, func
 	f.subs[id] = sub
 	f.mu.Unlock()
 	var once sync.Once
-	return sub.ch, start, func() uint64 {
+	unsub := func() uint64 {
 		once.Do(func() {
 			f.mu.Lock()
 			if s, ok := f.subs[id]; ok {
@@ -221,6 +231,7 @@ func (f *channelFanout) register(preroll bool) (<-chan []complex64, uint64, func
 		})
 		return sub.drops.Load()
 	}
+	return sub.ch, start, unsub, sub.drops.Load
 }
 
 // broadcast copies chunk to every subscriber. The bank's slice is reused
@@ -296,6 +307,17 @@ func (e *Engine) SubscribeChannelIQWithPreroll(freqHz uint32) (ch <-chan []compl
 	}
 	ch, _, unsub = c.fan.register(true)
 	return ch, unsub, true
+}
+
+// SubscribeChannelIQWithPrerollLoss is SubscribeChannelIQWithPreroll plus a
+// live read of the chunks this subscription has dropped so far.
+func (e *Engine) SubscribeChannelIQWithPrerollLoss(freqHz uint32) (ch <-chan []complex64, unsub func() uint64, dropped func() uint64, ok bool) {
+	c := e.channel(freqHz)
+	if c == nil || c.fan == nil {
+		return nil, nil, nil, false
+	}
+	ch, _, unsub, dropped = c.fan.registerWithDrops(true)
+	return ch, unsub, dropped, true
 }
 
 // MarkChannelOnset records stream position onset (as counted from a
@@ -439,6 +461,30 @@ func (s *ChannelVoiceSource) StreamIQ(ctx context.Context) (<-chan []complex64, 
 		unsub() // closes ch, ending the composer's read loop
 	}()
 	return ch, nil
+}
+
+// StreamIQWithLoss is StreamIQ plus a func reporting the IQ chunks this
+// call's stream has lost so far: chunks the channel fan-out dropped to it,
+// plus chunks the physical SDR's driver dropped upstream of the whole
+// wideband stream since the call began (those hole every channel at once).
+// The composer reads it when the call ends to mark a recording partial
+// (issue #1288).
+func (s *ChannelVoiceSource) StreamIQWithLoss(ctx context.Context) (<-chan []complex64, func() uint64, error) {
+	eng := s.get()
+	if eng == nil {
+		return nil, nil, ErrNoWidebandEngine
+	}
+	physical := eng.Serial()
+	base := sdr.IQDropCount(physical)
+	ch, unsub, dropped, ok := eng.SubscribeChannelIQWithPrerollLoss(s.freqHz)
+	if !ok {
+		return nil, nil, fmt.Errorf("widebandt2: no channel tuned to %d Hz", s.freqHz)
+	}
+	go func() {
+		<-ctx.Done()
+		unsub()
+	}()
+	return ch, func() uint64 { return dropped() + (sdr.IQDropCount(physical) - base) }, nil
 }
 
 // StreamIQCounted is StreamIQ for the conventional scanner watching the
