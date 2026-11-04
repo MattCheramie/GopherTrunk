@@ -1155,9 +1155,20 @@ sdr:
       # rf_port: "A_BALANCED"
 ```
 
-Check the board answers before starting GopherTrunk: `nc 192.168.2.1 30431`,
-then type `VERSION` and Enter. It should print a line like `0.25.b6028fd`
-(type `EXIT` to leave).
+Check the board before starting the daemon. This changes no setting on it:
+
+```sh
+gophertrunk iio probe -addr 192.168.2.1 -out board.xml
+```
+
+It prints the iiod version, board model and firmware, the IIO devices with
+their sample formats, whether `sdr.iio` can use the board (and if not, why),
+the current RX LO, sample rate, bandwidth and gain, and the level of one
+buffer of samples (RMS, peak, and the share at the ADC rail). `-out` saves the
+board's device list (iiod's `PRINT` XML), which is what to attach to a bug
+report. `-samples 0` skips the sample read. It exits non-zero when the board
+can't be reached or `sdr.iio` would refuse it. Without GopherTrunk at hand,
+`nc 192.168.2.1 30431` and typing `VERSION` also shows whether iiod answers.
 
 What the driver does, all pinned to libiio v0.25 and SoapyPlutoSDR's source:
 
