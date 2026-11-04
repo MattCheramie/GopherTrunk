@@ -261,8 +261,9 @@ GET /api/v1/recordings?after=<id>&limit=<n>      (limit default 100, max 1000)
   playable, but it is not a complete capture: an archive or a transcription
   pipeline should keep that distinction. The same count is on the
   `call.complete` event (`IQLostChunks`) and in the recording's `.json` sidecar
-  (`iq_lost_chunks`, omitted when nothing was lost). It covers the whole call
-  and is reported on the call's final file.
+  (`iq_lost_chunks`, omitted when nothing was lost). It counts the IQ lost
+  while that file was being written, so with `transmission` grouping each
+  over of a call is marked on its own.
 - Retention deletes old recordings; an entry whose call row was removed
   comes back without `call`, and its audio returns 404.
 

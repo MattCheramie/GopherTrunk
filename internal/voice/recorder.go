@@ -154,6 +154,12 @@ type Recorder struct {
 
 	mu       sync.Mutex
 	sessions map[string]*recordingSession // by device serial
+	// lossTrack holds each live call's IQ-loss reader (TrackIQLoss), keyed by
+	// device serial + call id so a re-keyed serial's next call never reads
+	// the previous call's count. Each file boundary takes the loss since the
+	// previous one, so every per-over segment says whether ITS audio has
+	// gaps, not just the call's last file (issue #1288).
+	lossTrack map[iqLossKey]*iqLossTracker
 	// callTalkers accumulates every distinct talker heard during a call, keyed by
 	// device serial and spanning the call's whole life — unlike a recordingSession's
 	// srcs, which resets on each per-transmission segment roll. In transmission
@@ -555,6 +561,7 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 		dedup:              opts.Dedup,
 		dedupSeen:          make(map[dedupKey]dedupEntry),
 		sessions:           make(map[string]*recordingSession),
+		lossTrack:          make(map[iqLossKey]*iqLossTracker),
 		callTalkers:        make(map[string][]srcEvent),
 		pendingFinalize:    make(map[string]*pendingFinalize),
 		runDone:            make(chan struct{}),
@@ -1357,13 +1364,16 @@ func (r *Recorder) handleSegment(seg trunking.CallSegment) {
 		return // no active file to roll (already dormant or unknown)
 	}
 	finalizeStart := time.Now()
+	lost := r.takeIQLossLocked(seg.DeviceSerial, s)
 	cc, meta := r.finalizeLocked(s, seg.DeviceSerial, seg.At, trunking.EndReasonNormal)
+	stampIQLoss(cc, meta, lost)
 	// Park a dormant session: keeps the call's identity so the next write
 	// opens the next segment file, without creating an empty trailing
 	// file if no further audio arrives before the call ends.
 	r.sessions[seg.DeviceSerial] = &recordingSession{cs: s.cs, callID: s.callID, segment: s.segment + 1}
 	r.mu.Unlock()
 	if cc != nil {
+		r.reportPartial(seg.DeviceSerial, cc)
 		r.normalizeIfEnabled(cc.AudioPath)
 		r.writeCallMetaFor(cc.AudioPath, meta)
 		r.observeCompleted(time.Since(finalizeStart))
@@ -1765,6 +1775,71 @@ func (r *Recorder) NotifyIQLoss(deviceSerial string, callID uint64, lostChunks u
 	s.iqLostChunks += lostChunks
 }
 
+type iqLossKey struct {
+	serial string
+	callID uint64
+}
+
+// iqLossTracker reads a call's cumulative IQ loss; taken is how much of it
+// earlier files of the call have already been charged with.
+type iqLossTracker struct {
+	read  func() uint64
+	taken uint64
+}
+
+// TrackIQLoss hands the recorder a live reader of the named call's
+// cumulative IQ loss (chunks its stream dropped, to a lagging consumer or in
+// the SDR driver). The composer registers it when the call's stream opens.
+// The recorder reads it at every file boundary — each per-over segment roll
+// and the call's end — and charges each file with the loss since the
+// previous boundary, so a multi-over call's earlier files are marked partial
+// too, not only its last (issue #1288). read must be safe to call from any
+// goroutine without blocking: the recorder calls it under its lock.
+func (r *Recorder) TrackIQLoss(deviceSerial string, callID uint64, read func() uint64) {
+	if read == nil {
+		return
+	}
+	r.mu.Lock()
+	r.lossTrack[iqLossKey{deviceSerial, callID}] = &iqLossTracker{read: read}
+	r.mu.Unlock()
+}
+
+// takeIQLossLocked adds the call's loss since the previous file boundary to
+// s and returns the file's total. Caller holds r.mu.
+func (r *Recorder) takeIQLossLocked(serial string, s *recordingSession) uint64 {
+	if t := r.lossTrack[iqLossKey{serial, s.callID}]; t != nil {
+		now := t.read()
+		if now > t.taken {
+			s.iqLostChunks += now - t.taken
+			t.taken = now
+		}
+	}
+	return s.iqLostChunks
+}
+
+// stampIQLoss marks a finished file partial: its call.complete event and its
+// sidecar carry the loss.
+func stampIQLoss(cc *trunking.CallComplete, meta *callMeta, lost uint64) {
+	if cc == nil || lost == 0 {
+		return
+	}
+	cc.IQLostChunks = lost
+	if meta != nil {
+		meta.IQLostChunks = lost
+	}
+}
+
+// reportPartial logs and counts a finished file that lost IQ. Called off the
+// lock, for each file, segment or final.
+func (r *Recorder) reportPartial(serial string, cc *trunking.CallComplete) {
+	if cc == nil || cc.IQLostChunks == 0 {
+		return
+	}
+	r.log.Warn("recorder: recording is partial — IQ was lost during it, so the audio has gaps",
+		"device", serial, "wav", cc.AudioPath, "segment", cc.Segment, "iq_lost_chunks", cc.IQLostChunks)
+	r.observePartial()
+}
+
 // finalizeOnDrainTimeout is the safety backstop: it finalizes a deferred call
 // whose drain signal never arrived within drainFinalizeTimeout.
 func (r *Recorder) finalizeOnDrainTimeout(deviceSerial string) {
@@ -1871,9 +1946,18 @@ func (r *Recorder) finalizeCall(ce trunking.CallEnd) {
 			"device", ce.DeviceSerial, "call_id", ce.Grant.CallID, "session_call_id", s.callID)
 		return
 	}
+	// The call is over: whatever happens below, its loss reader goes. A
+	// re-key (handled above) leaves the newer call's reader alone.
+	lossKey := iqLossKey{ce.DeviceSerial, ce.Grant.CallID}
 	if ok {
+		lossKey.callID = s.callID
 		delete(r.sessions, ce.DeviceSerial)
 	}
+	defer func(k iqLossKey) {
+		r.mu.Lock()
+		delete(r.lossTrack, k)
+		r.mu.Unlock()
+	}(lossKey)
 	if !ok {
 		r.mu.Unlock()
 		return
@@ -1893,14 +1977,9 @@ func (r *Recorder) finalizeCall(ce trunking.CallEnd) {
 	// Announce the finished WAV so the outbound-streaming subsystem can
 	// upload it. Skip (and delete) calls that captured no PCM.
 	finalizeStart := time.Now()
+	lost := r.takeIQLossLocked(ce.DeviceSerial, s)
 	cc, meta := r.finalizeLocked(s, ce.DeviceSerial, ce.EndedAt, ce.Reason)
-	lost := s.iqLostChunks
-	if cc != nil && lost > 0 {
-		cc.IQLostChunks = lost
-		if meta != nil {
-			meta.IQLostChunks = lost
-		}
-	}
+	stampIQLoss(cc, meta, lost)
 	// The call is over — drop its talker history now that finalizeLocked has read
 	// it for the closing sidecar (still under r.mu, before the unlock below).
 	delete(r.callTalkers, ce.DeviceSerial)
@@ -1921,11 +2000,7 @@ func (r *Recorder) finalizeCall(ce trunking.CallEnd) {
 			"reason", ce.Reason)
 	}
 	if cc != nil {
-		if lost > 0 {
-			r.log.Warn("recorder: recording is partial — IQ was lost during the call, so the audio has gaps",
-				"device", ce.DeviceSerial, "wav", cc.AudioPath, "iq_lost_chunks", lost)
-			r.observePartial()
-		}
+		r.reportPartial(ce.DeviceSerial, cc)
 		r.normalizeIfEnabled(cc.AudioPath)
 		r.writeCallMetaFor(cc.AudioPath, meta)
 		r.observeCompleted(time.Since(finalizeStart))

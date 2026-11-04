@@ -283,3 +283,27 @@ func TestFanoutSinkForwardsIQLoss(t *testing.T) {
 		t.Fatalf("forwarded (%q, %d, %d), want (WB-1, 9, 4)", rec.serial, rec.callID, rec.lost)
 	}
 }
+
+type iqLossTrackRecorder struct {
+	pcmOnlySink
+	serial string
+	callID uint64
+	read   func() uint64
+}
+
+func (r *iqLossTrackRecorder) TrackIQLoss(serial string, callID uint64, read func() uint64) {
+	r.serial, r.callID, r.read = serial, callID, read
+}
+
+// TestFanoutSinkForwardsIQLossTracker: with the fanoutSink exposing
+// TrackIQLoss the composer stops sending the end-of-call total, so the reader
+// MUST reach the recorder through the fanout or every recording passes as
+// complete.
+func TestFanoutSinkForwardsIQLossTracker(t *testing.T) {
+	rec := &iqLossTrackRecorder{}
+	f := fanoutSink{&pcmOnlySink{}, rec}
+	f.TrackIQLoss("WB-1", 9, func() uint64 { return 3 })
+	if rec.serial != "WB-1" || rec.callID != 9 || rec.read == nil || rec.read() != 3 {
+		t.Fatalf("forwarded (%q, %d), want (WB-1, 9) with a working reader", rec.serial, rec.callID)
+	}
+}

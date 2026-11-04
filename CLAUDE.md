@@ -1060,12 +1060,16 @@ confirmation before any close-as-completed.
   implement `StreamIQWithLoss` (wideband channel fan-out, `wbvoice` taps, the sequential scanner's broker
   subscription): their own subscriber drops + the PHYSICAL serial's driver drops (`sdr.IQDropCount`,
   counted inside `NotifyIQDrop`) since the call began; a plain source falls back to its own serial's
-  driver count. The composer reads it after the chain drains and calls `NotifyIQLoss` BEFORE the drain
-  signal (the recorder finalizes on the drain), so it lands on `CallComplete.IQLostChunks`, the sidecar's
-  `iq_lost_chunks`, `call_recordings.iq_lost_chunks` → `GET /api/v1/recordings` `partial`, and
-  `recordings_partial_total`. `fanoutSink` MUST forward `NotifyIQLoss` (`TestFanoutSinkForwardsIQLoss`).
-  Gaps: same-carrier demuxes (TETRA, ccdecoder) report nothing, and the count rides the call's FINAL
-  file only, so an earlier per-over segment of a multi-over call is not marked.
+  driver count. The composer hands the recorder that live reader at call start (`TrackIQLoss`, keyed
+  serial + call id) and the recorder takes the delta at EVERY file boundary — each per-over segment roll
+  and the call's end — so each file carries its own loss (`CallComplete.IQLostChunks`, the sidecar's
+  `iq_lost_chunks`, `call_recordings.iq_lost_chunks` → `GET /api/v1/recordings` `partial`,
+  `recordings_partial_total`). The first version reported one total at call end; with `transmission`
+  grouping that left every earlier over marked complete and overcharged the last
+  (`TestRecorderMarksEachSegmentWithItsOwnIQLoss`: old [0 0 5], fixed [2 0 3]). A sink without
+  `TrackIQLoss` still gets the end-of-call `NotifyIQLoss` total; one WITH it never does (double count).
+  `fanoutSink` MUST forward both (`TestFanoutSinkForwardsIQLoss*`). Gap: same-carrier demuxes (TETRA,
+  ccdecoder) report nothing — their calls share one stream.
 - **`soapyremote: SDR overruns … host_drops` is a DOWNSTREAM signal, not a driver bug.**
   `sendOrDrop` (`internal/sdr/soapyremote/driver.go`) only sheds when the consumer stops draining
   a ~400 ms / ~1084-chunk channel, and it drops the OLDEST queued chunk, so each event is an IQ

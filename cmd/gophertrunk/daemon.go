@@ -5344,6 +5344,22 @@ func (f fanoutSink) NotifyIQLoss(serial string, callID uint64, lostChunks uint64
 	}
 }
 
+// TrackIQLoss forwards a call's live IQ-loss reader (issue #1288) to the sinks
+// that charge each recording file with its own loss (the recorder). It must be
+// forwarded for the same reason as NotifyIQLoss: the composer asserts on this
+// fanoutSink, and because the fanoutSink has the method the composer no longer
+// sends the end-of-call total either, so an unforwarded reader would leave
+// every recording marked complete.
+func (f fanoutSink) TrackIQLoss(serial string, callID uint64, read func() uint64) {
+	for _, s := range f {
+		if lt, ok := s.(interface {
+			TrackIQLoss(string, uint64, func() uint64)
+		}); ok {
+			lt.TrackIQLoss(serial, callID, read)
+		}
+	}
+}
+
 // toneProfilesFromConfig converts the YAML config shape into the
 // internal toneout.Profile shape, parsing duration strings.
 func toneProfilesFromConfig(in []config.ToneProfileConfig) ([]toneout.Profile, error) {

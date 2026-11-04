@@ -96,6 +96,15 @@ type iqLossSink interface {
 	NotifyIQLoss(deviceSerial string, callID uint64, lostChunks uint64)
 }
 
+// iqLossTrackerSink is the preferred recorder side: handed the call's live
+// loss reader when the stream opens, it charges each file of the call (every
+// per-over segment as well as the last) with the loss since the previous file
+// (issue #1288). A sink with it is never also sent the end-of-call
+// NotifyIQLoss total, which would count the loss twice.
+type iqLossTrackerSink interface {
+	TrackIQLoss(deviceSerial string, callID uint64, read func() uint64)
+}
+
 // streamWithLoss opens src's IQ stream for a call and returns a loss reader
 // for it (see iqLossSource).
 func streamWithLoss(ctx context.Context, src IQSource, serial string) (<-chan []complex64, func() uint64, error) {
@@ -744,6 +753,9 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 		iqCh, iqDebug = c.teeVoiceIQ(chainCtx, iqCh, cs, rateHzF)
 	}
 	ch := &chain{cancel: cancel, done: make(chan struct{}), iqDebug: iqDebug, lost: lost}
+	if lt, ok := c.sink.(iqLossTrackerSink); ok && lost != nil {
+		lt.TrackIQLoss(cs.DeviceSerial, cs.Grant.CallID, lost)
+	}
 	c.mu.Lock()
 	c.chains[cs.DeviceSerial] = ch
 	c.mu.Unlock()
@@ -815,7 +827,8 @@ func (c *Composer) handleEnd(ce trunking.CallEnd) {
 		// Report the call's IQ loss BEFORE the drain signal, which is what
 		// lets the recorder finalize: the count has to be on the session by
 		// then to reach the call.complete event and the sidecar.
-		if ch.lost != nil {
+		// A tracking sink reads the loss itself at each file boundary.
+		if _, tracks := c.sink.(iqLossTrackerSink); !tracks && ch.lost != nil {
 			if n := ch.lost(); n > 0 {
 				if ls, ok := c.sink.(iqLossSink); ok {
 					ls.NotifyIQLoss(ce.DeviceSerial, ce.Grant.CallID, n)

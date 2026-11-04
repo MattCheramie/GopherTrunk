@@ -129,3 +129,58 @@ func TestComposerCountsPhysicalSDRDropsForPlainSource(t *testing.T) {
 		t.Fatalf("loss reported = %d, want 2 (drops during the call only)", sink.lost)
 	}
 }
+
+// trackingSink is a lossSink that also takes the live loss reader.
+type trackingSink struct {
+	lossSink
+	trackedSerial string
+	trackedCall   uint64
+	read          func() uint64
+}
+
+func (s *trackingSink) TrackIQLoss(serial string, callID uint64, read func() uint64) {
+	s.mu.Lock()
+	s.trackedSerial, s.trackedCall, s.read = serial, callID, read
+	s.events = append(s.events, "track")
+	s.mu.Unlock()
+}
+
+// TestComposerHandsTrackingSinkTheLossReader: a sink that tracks loss per file
+// gets the stream's live reader at call start, and is NOT also sent the
+// end-of-call total (that would charge the loss twice).
+func TestComposerHandsTrackingSinkTheLossReader(t *testing.T) {
+	src := &lossySource{fakeSource: newFakeSource()}
+	bus := events.NewBus(16)
+	t.Cleanup(bus.Close)
+	sink := &trackingSink{}
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{"WB-CH-1": src}},
+		Sink:          sink,
+		Engine:        &fakeEngine{},
+		IQSampleRate:  2_400_000,
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, ce := fmCall("WB-CH-1")
+	c.handleStart(context.Background(), cs)
+	src.lost.Store(4)
+	c.handleEnd(ce)
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if sink.trackedSerial != "WB-CH-1" || sink.trackedCall != 42 || sink.read == nil {
+		t.Fatalf("tracked (%q, %d, reader %v), want (WB-CH-1, 42, set)", sink.trackedSerial, sink.trackedCall, sink.read != nil)
+	}
+	if got := sink.read(); got != 4 {
+		t.Fatalf("reader reports %d, want the stream's 4", got)
+	}
+	for _, e := range sink.events {
+		if e == "loss" {
+			t.Fatalf("signals = %v: a tracking sink was also sent the end-of-call total", sink.events)
+		}
+	}
+}

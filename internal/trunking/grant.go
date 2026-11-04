@@ -390,8 +390,8 @@ type CallComplete struct {
 	SampleRate uint32
 	// IQLostChunks is how many IQ chunks the call's stream lost (dropped to
 	// a lagging consumer, or by the SDR driver). Non-zero means the recording
-	// is partial: its audio has gaps (issue #1288). It is counted over the
-	// whole call and reported on the call's final recording.
+	// is partial: its audio has gaps (issue #1288). It counts the loss while
+	// THIS file was written, so each per-over segment carries its own.
 	IQLostChunks uint64
 }
 
