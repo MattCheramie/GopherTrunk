@@ -26,7 +26,31 @@ type FIR struct {
 	// codebook), so the inner loop matters.
 	hist    []complex64
 	histPos int
+	// folded selects the symmetric-tap path (EnableFolded).
+	folded bool
 }
+
+// EnableFolded switches the filter to a folded dot product for symmetric
+// (linear-phase) taps: y = Σ_{j<N/2} h[j]·(w[j] + w[N-1-j]) (+ h[mid]·w[mid]
+// for odd N), which halves the multiplies. It reports false and leaves the
+// filter unchanged when the taps are not bit-exactly symmetric, so it can
+// never alter the response, only the float32 rounding of the sum. The
+// default path stays bit-exact with the original ring-buffer loop
+// (TestFIRMirroredWindowIsBitExact); callers opt in where the speed matters
+// (the TETRA receiver's channel and matched filters, #1321).
+func (f *FIR) EnableFolded() bool {
+	n := len(f.taps)
+	for k := 0; k < n/2; k++ {
+		if f.taps[k] != f.taps[n-1-k] {
+			return false
+		}
+	}
+	f.folded = true
+	return true
+}
+
+// Folded reports whether the folded symmetric path is active.
+func (f *FIR) Folded() bool { return f.folded }
 
 func NewFIR(taps []float32) *FIR {
 	if len(taps) == 0 {
@@ -59,6 +83,10 @@ func (f *FIR) Process(dst, src []complex64) []complex64 {
 	}
 	N := len(f.taps)
 	rt := f.rtaps[:N]
+	if f.folded {
+		f.processFolded(dst, src)
+		return dst
+	}
 	for i, x := range src {
 		f.hist[f.histPos] = x
 		f.hist[f.histPos+N] = x
@@ -82,6 +110,63 @@ func (f *FIR) Process(dst, src []complex64) []complex64 {
 		dst[i] = complex(accI, accQ)
 	}
 	return dst
+}
+
+// processFolded is Process for symmetric taps: each tap pair shares one
+// multiply. The window and history handling are Process's.
+func (f *FIR) processFolded(dst, src []complex64) {
+	N := len(f.taps)
+	half := N / 2
+	h := f.rtaps[:half]
+	var hMid float32
+	odd := N%2 == 1
+	if odd {
+		hMid = f.rtaps[half]
+	}
+	for i, x := range src {
+		f.hist[f.histPos] = x
+		f.hist[f.histPos+N] = x
+		f.histPos++
+		if f.histPos == N {
+			f.histPos = 0
+		}
+		w := f.hist[f.histPos : f.histPos+N]
+		lo := w[:half]
+		hi := w[N-half:]
+		// Four independent accumulator pairs: a single running sum is one
+		// dependent chain of float adds, so the loop would be bound by add
+		// latency rather than by the (already halved) multiply count.
+		var i0, i1, i2, i3, q0, q1, q2, q3 float32
+		if odd {
+			m := w[half]
+			i0 = hMid * real(m)
+			q0 = hMid * imag(m)
+		}
+		j := 0
+		for ; j+4 <= half; j += 4 {
+			// One bounds check per group of four, not one per element.
+			cv := (*[4]float32)(h[j : j+4])
+			av := (*[4]complex64)(lo[j : j+4])
+			bv := (*[4]complex64)(hi[half-4-j : half-j])
+			c0, c1, c2, c3 := cv[0], cv[1], cv[2], cv[3]
+			a0, a1, a2, a3 := av[0], av[1], av[2], av[3]
+			b0, b1, b2, b3 := bv[3], bv[2], bv[1], bv[0]
+			i0 += c0 * (real(a0) + real(b0))
+			q0 += c0 * (imag(a0) + imag(b0))
+			i1 += c1 * (real(a1) + real(b1))
+			q1 += c1 * (imag(a1) + imag(b1))
+			i2 += c2 * (real(a2) + real(b2))
+			q2 += c2 * (imag(a2) + imag(b2))
+			i3 += c3 * (real(a3) + real(b3))
+			q3 += c3 * (imag(a3) + imag(b3))
+		}
+		for ; j < half; j++ {
+			c, a, b := h[j], lo[j], hi[half-1-j]
+			i0 += c * (real(a) + real(b))
+			q0 += c * (imag(a) + imag(b))
+		}
+		dst[i] = complex((i0+i1)+(i2+i3), (q0+q1)+(q2+q3))
+	}
 }
 
 // LowpassKaiser designs a length-N (odd) lowpass FIR with cutoff fc

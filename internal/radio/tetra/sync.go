@@ -1,5 +1,7 @@
 package tetra
 
+import "math/bits"
+
 // DibitSink consumes the raw stream of dibits a TETRA receiver
 // decodes from IQ. baseIdx is the absolute dibit index of dibits[0]
 // across the stream lifetime — monotonically non-decreasing across
@@ -107,6 +109,20 @@ type SyncDetector struct {
 	hist      []uint8
 	primed    int
 	pos       int
+
+	// Packed fast path (#1321): the last n dibits as 2-bit fields, oldest
+	// in the most significant field, compared with the packed pattern by
+	// one XOR + popcount instead of n byte compares through a modulo. It
+	// gives exactly the matches of the byte compare: it is used only for
+	// n <= 32 with every pattern value in 0..3, and a window holding a
+	// value above 3 (which the 2-bit field cannot represent) is compared
+	// the old way.
+	fast    bool
+	reg     uint64
+	packed  uint64
+	mask    uint64
+	seen    int // dibits consumed since construction
+	lastBad int // seen-count just after the latest dibit above 3 (0 = none)
 }
 
 // NewSyncDetector accepts a 38-dibit pattern (typically
@@ -118,38 +134,87 @@ func NewSyncDetector(pattern []uint8, tolerance int) *SyncDetector {
 	}
 	cp := make([]uint8, len(pattern))
 	copy(cp, pattern)
-	return &SyncDetector{
+	s := &SyncDetector{
 		pattern:   cp,
 		tolerance: tolerance,
 		hist:      make([]uint8, len(cp)),
 	}
+	n := len(cp)
+	s.fast = n > 0 && n <= 32
+	for _, p := range cp {
+		if p > 3 {
+			s.fast = false
+		}
+		s.packed = s.packed<<2 | uint64(p&3)
+	}
+	if n == 32 {
+		s.mask = ^uint64(0)
+	} else {
+		s.mask = uint64(1)<<(2*uint(n)) - 1
+	}
+	return s
 }
+
+// dibitLowBits keeps one bit per 2-bit field.
+const dibitLowBits = 0x5555555555555555
 
 // Process scans src and appends to dst the absolute dibit indices
 // where the sync pattern ends within tolerance.
 func (s *SyncDetector) Process(dst []int, src []uint8, baseIndex int) ([]int, int) {
 	n := len(s.pattern)
+	if n == 0 {
+		return dst, baseIndex + len(src)
+	}
 	for i, d := range src {
 		s.hist[s.pos] = d
-		s.pos = (s.pos + 1) % n
+		s.pos++
+		if s.pos == n {
+			s.pos = 0
+		}
+		s.seen++
+		if d > 3 {
+			s.lastBad = s.seen
+		}
+		if s.fast {
+			s.reg = (s.reg<<2 | uint64(d&3)) & s.mask
+		}
 		if s.primed < n {
 			s.primed++
 			continue
 		}
-		mismatch := 0
-		idx := s.pos
-		for k := 0; k < n; k++ {
-			if s.hist[idx] != s.pattern[k] {
-				mismatch++
-				if mismatch > s.tolerance {
-					break
-				}
-			}
-			idx = (idx + 1) % n
+		var mismatch int
+		// The window is the last n dibits; it holds the bad one while
+		// fewer than n dibits have arrived since it.
+		if s.fast && (s.lastBad == 0 || s.seen-s.lastBad >= n) {
+			x := s.reg ^ s.packed
+			mismatch = bits.OnesCount64((x | x>>1) & dibitLowBits)
+		} else {
+			mismatch = s.compareRing()
 		}
 		if mismatch <= s.tolerance {
 			dst = append(dst, baseIndex+i)
 		}
 	}
 	return dst, baseIndex + len(src)
+}
+
+// compareRing is the byte-for-byte compare of the window against the
+// pattern, stopping once the tolerance is exceeded.
+func (s *SyncDetector) compareRing() int {
+	n := len(s.pattern)
+	mismatch := 0
+	idx := s.pos
+	for k := 0; k < n; k++ {
+		if s.hist[idx] != s.pattern[k] {
+			mismatch++
+			if mismatch > s.tolerance {
+				break
+			}
+		}
+		idx++
+		if idx == n {
+			idx = 0
+		}
+	}
+	return mismatch
 }
