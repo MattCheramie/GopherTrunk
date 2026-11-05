@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -304,9 +305,22 @@ func runDaemon(args []string) {
 	if *logFormat != "" {
 		cfg.Log.Format = *logFormat
 	}
-	logger, logSwap := gtlog.NewWithSwap(cfg.Log.Level, cfg.Log.Format)
+	diagFile, diagFileErr := openDiagLogFile(cfg.Log.File)
+	var diagTee io.Writer
+	if diagFile != nil {
+		diagTee = diagFile
+		defer diagFile.Close()
+	}
+	logger, logSwap := gtlog.NewWithSwapTee(cfg.Log.Level, cfg.Log.Format, diagTee)
 
 	logger.Info("gophertrunk starting", "version", version.String())
+	switch {
+	case diagFileErr != nil:
+		logger.Warn("log: cannot open log.file; diagnostic log goes to stderr only",
+			"path", cfg.Log.File.Path, "err", diagFileErr)
+	case diagFile != nil:
+		logger.Info("log: diagnostic log copied to file", "path", diagFile.Path())
+	}
 
 	// Record which config file actually backs this run, in the structured
 	// log (the stderr note above lands before the logger exists, so it never

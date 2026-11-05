@@ -23,12 +23,19 @@ export interface EventLogConfig {
   MaxSizeMB: number;
 }
 
+export interface LogFileConfig {
+  Enabled: boolean;
+  Path: string;
+  MaxSizeMB: number;
+}
+
 export interface LogConfig {
   Level: string;
   Format: string;
   MessageLog: MessageLogConfig;
   PowerLog: PowerLogConfig;
   EventLog: EventLogConfig;
+  File: LogFileConfig;
 }
 
 export interface DiagnosticsConfig {

@@ -68,7 +68,20 @@ func New(level, format string) *slog.Logger {
 // Logger and the SwappableWriter behind its handler, so the launcher
 // can redirect stderr while the TUI runs.
 func NewWithSwap(level, format string) (*slog.Logger, *SwappableWriter) {
+	return NewWithSwapTee(level, format, nil)
+}
+
+// NewWithSwapTee is NewWithSwap plus an optional second sink (log.file).
+// Every record goes to the swappable stderr writer AND to tee. The tee
+// sits outside the swap on purpose: when the in-process TUI redirects
+// stderr to its tempfile, the configured log file keeps receiving every
+// line, so an operator has one stable place to find them (#1242).
+func NewWithSwapTee(level, format string, tee io.Writer) (*slog.Logger, *SwappableWriter) {
 	sw := NewSwappableWriter(os.Stderr)
+	var sink io.Writer = sw
+	if tee != nil {
+		sink = teeWriter{primary: sw, tee: tee}
+	}
 	var lvl slog.Level
 	switch strings.ToLower(level) {
 	case "debug":
@@ -83,9 +96,24 @@ func NewWithSwap(level, format string) (*slog.Logger, *SwappableWriter) {
 	opts := &slog.HandlerOptions{Level: lvl}
 	var h slog.Handler
 	if strings.EqualFold(format, "json") {
-		h = slog.NewJSONHandler(sw, opts)
+		h = slog.NewJSONHandler(sink, opts)
 	} else {
-		h = slog.NewTextHandler(sw, opts)
+		h = slog.NewTextHandler(sink, opts)
 	}
 	return slog.New(h), sw
+}
+
+// teeWriter writes every record to both sinks. Unlike io.MultiWriter it
+// does not stop at the first error: a closed or broken stderr (a detached
+// Windows console, a closed pipe) must not silence the log file, which is
+// exactly when the file matters.
+type teeWriter struct {
+	primary io.Writer
+	tee     io.Writer
+}
+
+func (t teeWriter) Write(p []byte) (int, error) {
+	_, _ = t.primary.Write(p)
+	_, _ = t.tee.Write(p)
+	return len(p), nil
 }
