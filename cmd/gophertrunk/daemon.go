@@ -4261,6 +4261,10 @@ func (d *Daemon) installIQDropObserver(log *slog.Logger) {
 	type dropState struct {
 		lastLogNanos atomic.Int64
 		sinceLog     atomic.Uint64
+		// rt is the runtime snapshot taken at this SDR's previous drop
+		// WARN; only the goroutine that wins the log slot touches it.
+		rtMu sync.Mutex
+		rt   iqDropRuntime
 	}
 	var states sync.Map // serial -> *dropState
 	sdr.SetIQDropObserver(func(info sdr.Info) {
@@ -4278,9 +4282,26 @@ func (d *Daemon) installIQDropObserver(log *slog.Logger) {
 		if !st.lastLogNanos.CompareAndSwap(prev, now) {
 			return // another drop won this second's log slot
 		}
+		cur := readIQDropRuntime()
+		st.rtMu.Lock()
+		rt := cur.since(st.rt)
+		st.rt = cur
+		st.rtMu.Unlock()
+		// The runtime fields cover the window since this SDR's previous drop
+		// WARN (none on the first one). cpu_busy_pct near 100 or a large
+		// sched_wait_p99_ms means the process was short of CPU; a large
+		// gc_cpu_pct or gc_pause_max_ms means the GC stalled the stream;
+		// neither means the decode work itself is too slow (#1321).
 		log.Warn("sdr: dropping live IQ chunks; consumer can't keep up",
 			"driver", info.Driver, "serial", info.Serial,
-			"dropped_since_last", st.sinceLog.Swap(0))
+			"dropped_since_last", st.sinceLog.Swap(0),
+			"window_s", round1(rt.WindowSeconds),
+			"cpu_busy_pct", round1(rt.CPUBusyPct),
+			"gc_cpu_pct", round1(rt.GCCPUPct),
+			"gc_cycles", rt.GCCycles,
+			"gc_pause_max_ms", round1(rt.GCPauseMaxMs),
+			"sched_wait_p99_ms", round1(rt.SchedP99Ms),
+			"sched_wait_max_ms", round1(rt.SchedMaxMs))
 	})
 }
 
