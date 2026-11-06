@@ -56,7 +56,7 @@ func Probe(addr string, timeout time.Duration, streamSamples int) (*ProbeReport,
 	rep := &ProbeReport{Addr: addr}
 	c, err := dial(addr, timeout)
 	if err != nil {
-		return rep, fmt.Errorf("iio: dial %s: %w (is the board reachable, and is iiod running on it?)", addr, err)
+		return rep, explainDialError(addr, err)
 	}
 	defer c.Close()
 	if rep.Version, err = c.Version(); err != nil {

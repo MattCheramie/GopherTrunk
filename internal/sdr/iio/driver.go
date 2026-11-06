@@ -143,7 +143,7 @@ func (d *Driver) Open(idx int) (sdr.Device, error) {
 	addr := NormalizeAddr(spec.Addr)
 	c, err := dial(addr, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("iio: dial %s: %w (is the board reachable, and is iiod running on it?)", addr, err)
+		return nil, explainDialError(addr, err)
 	}
 	dev, err := openOn(c, addr, spec, idx, d.log)
 	if err != nil {
