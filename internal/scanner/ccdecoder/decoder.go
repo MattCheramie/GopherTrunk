@@ -1252,8 +1252,14 @@ func (d *Decoder) checkCarrierOffsetLocked() {
 // points a suffering operator straight at that switch instead of leaving it to
 // be rediscovered. Advisory only — it never changes tuning, and it stays silent
 // once dc_avoid is in effect (loOffsetHz != 0). Caller holds d.mu.
+//
+// With an LO offset already applied, the same high failure rate gets the
+// general impaired-control-channel WARN instead (#1242): before it, a CC
+// failing most of its TSBKs with dc_avoid on — or on any front end that is
+// not at zero-IF — logged nothing, and the operator had to infer "weak
+// signal" from event_log percentages and a dBFS figure.
 func (d *Decoder) checkZeroIFHealthLocked() {
-	if d.zeroIFWarned || d.loOffsetHz != 0 || !d.locked.Load() {
+	if d.zeroIFWarned || !d.locked.Load() {
 		return
 	}
 	rep, ok := d.active.(ccHealthReporter)
@@ -1284,6 +1290,10 @@ func (d *Decoder) checkZeroIFHealthLocked() {
 		return
 	}
 	d.zeroIFWarned = true
+	if d.loOffsetHz != 0 {
+		d.warnImpairedControlChannelLocked(dDecoded, dFailed)
+		return
+	}
 	d.log.Warn("ccdecoder: control channel locked but TSBK blocks are failing at a high rate "+
 		"while tuned at zero-IF — the issue #402 signature (front-end DC spur / I/Q image "+
 		"degrading the on-DC channel). Set dc_avoid: true on this device to tune the LO "+
@@ -1292,6 +1302,40 @@ func (d *Decoder) checkZeroIFHealthLocked() {
 		"tsbk_attempts", attempts,
 		"freq_hz", d.activeFreqHz,
 		"system", d.activeAt)
+}
+
+// warnImpairedControlChannelLocked is the general form of the zero-IF nudge
+// above: a locked control channel losing more than zeroIFHealthErrPct of its
+// TSBKs over a window, when the front-end DC spur is already ruled out. The
+// usual causes are on the receive side (too little gain, too much gain
+// overloading the front end, the antenna, IQ lost before the decoder), and
+// every grant on a CC this impaired is at risk, so calls go missing and
+// voice decodes badly. Once per lock session, like the zero-IF nudge. The
+// level and clip figures are context for the report, never a gate: an
+// absolute dBFS threshold is a gain-staging trap (CLAUDE.md). Caller holds
+// d.mu.
+func (d *Decoder) warnImpairedControlChannelLocked(dDecoded, dFailed int64) {
+	attempts := dDecoded + dFailed
+	args := []any{
+		"tsbk_err_pct", int(dFailed * 100 / attempts),
+		"tsbk_attempts", attempts,
+		"freq_hz", d.activeFreqHz,
+		"system", d.activeAt,
+	}
+	d.healthMu.Lock()
+	if d.lastHealthSystem == d.activeAt && !d.lastHealthAt.IsZero() {
+		args = append(args,
+			"iq_dbfs", math.Round(d.lastDbfs*10)/10,
+			"clip_pct", math.Round(d.lastClipRatio*1000)/10)
+	}
+	d.healthMu.Unlock()
+	d.log.Warn("ccdecoder: control channel locked but TSBK blocks are failing at a high rate — "+
+		"the signal reaching the decoder is impaired, so grants will be missed and voice will "+
+		"decode badly. Check, one at a time while watching tsbk_err_pct: gain in both "+
+		"directions (too little buries the channel in noise, too much overloads the front end — "+
+		"look for a clipping/overload WARN), the antenna, and IQ loss (\"dropping live IQ\" or "+
+		"host_drops lines). A clean control channel fails a few percent or less.",
+		args...)
 }
 
 // observeIQPower folds one raw IQ chunk into the per-second power / DC /

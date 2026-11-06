@@ -438,6 +438,17 @@ type engineChannel struct {
 	// control channel. See maybeLogDiagnostics.
 	lowPowerWarned bool
 
+	// tsbkCounts, set on a P25 Phase 1 control channel, returns the CC's
+	// cumulative TSBK decoded / failed counts. checkTSBKHealth diffs them
+	// over tsbkHealthWindow and WARNs when the control channel is losing a
+	// large share of its TSBKs (#1242); tsbkWin* hold the window baseline
+	// and tsbkWarnAt throttles the WARN.
+	tsbkCounts  func() (decoded, failed int64)
+	tsbkWinAt   time.Time
+	tsbkWinDec  int64
+	tsbkWinFail int64
+	tsbkWarnAt  time.Time
+
 	// deafWindows counts consecutive diagnostics windows in which a Tier II
 	// channel that HAS synced before saw no sync at all while its power stayed
 	// within tier2DeafHealMarginDb of the level it last decoded at — the
@@ -926,7 +937,11 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			rateHz: outRateHz, window: p25Phase1ResyncWindow,
 		}
 		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase1", processor: cc, receiver: rcv,
-			decoded: func() uint64 { return uint64(cc.Stats().TSBKDecoded) }}, nil
+			decoded: func() uint64 { return uint64(cc.Stats().TSBKDecoded) },
+			tsbkCounts: func() (int64, int64) {
+				st := cc.Stats()
+				return st.TSBKDecoded, st.TSBKTrellisFailed + st.TSBKCRCFailed
+			}}, nil
 
 	case trunking.ProtocolP25Phase2:
 		if err := requireControlChannel(sys, freqHz, "p25-phase2 / Phase 2"); err != nil {
@@ -1283,6 +1298,57 @@ func (e *Engine) Run(ctx context.Context) error {
 // of every window. Matches the ccdecoder cadence (decoder.go).
 const lowPowerWarnInterval = 5 * time.Second
 
+// TSBK-health check on a wideband P25 Phase 1 control channel (#1242): over
+// each tsbkHealthWindow, a channel that attempted at least
+// tsbkHealthMinAttempts TSBKs and failed more than tsbkHealthErrPct of them
+// gets a WARN, repeated at most every tsbkHealthWarnInterval while it lasts.
+// The thresholds match ccdecoder's zero-IF / impaired-CC check.
+const (
+	tsbkHealthWindow       = 30 * time.Second
+	tsbkHealthMinAttempts  = 100
+	tsbkHealthErrPct       = 20
+	tsbkHealthWarnInterval = 10 * time.Minute
+)
+
+// checkTSBKHealth WARNs when a P25 Phase 1 control channel on this engine
+// is locked onto its carrier yet losing a large share of its TSBKs. Before
+// #1242 nothing said so: the operator saw ~59 % TSBK errors only as a
+// percentage in event_log and had to infer "weak signal" from a dBFS figure
+// in power_log. The level is reported for context and never gates the WARN
+// (an absolute dBFS threshold is a gain-staging trap); decode evidence is
+// the verdict.
+func (e *Engine) checkTSBKHealth(ec *engineChannel, now time.Time, dbfs float64, wbOverloaded bool) {
+	if ec.tsbkCounts == nil {
+		return
+	}
+	dec, fail := ec.tsbkCounts()
+	if ec.tsbkWinAt.IsZero() {
+		ec.tsbkWinAt, ec.tsbkWinDec, ec.tsbkWinFail = now, dec, fail
+		return
+	}
+	if now.Sub(ec.tsbkWinAt) < tsbkHealthWindow {
+		return
+	}
+	dDec, dFail := dec-ec.tsbkWinDec, fail-ec.tsbkWinFail
+	ec.tsbkWinAt, ec.tsbkWinDec, ec.tsbkWinFail = now, dec, fail
+	attempts := dDec + dFail
+	if attempts < tsbkHealthMinAttempts || dFail*100 <= int64(tsbkHealthErrPct)*attempts {
+		return
+	}
+	if !ec.tsbkWarnAt.IsZero() && now.Sub(ec.tsbkWarnAt) < tsbkHealthWarnInterval {
+		return
+	}
+	ec.tsbkWarnAt = now
+	hint := "check, one at a time while watching tsbk_err_pct: gain in both directions (too little buries the channel in noise, too much overloads the front end), the antenna, and IQ loss (\"dropping live IQ\" or host_drops lines)"
+	if wbOverloaded {
+		hint = "the wideband front end is clipping in this window — reduce gain or add attenuation first, do NOT raise gain"
+	}
+	e.log.Warn("widebandt2: P25 control channel is failing a large share of its TSBKs — the signal reaching the decoder is impaired, so grants will be missed and voice will decode badly; "+hint+". A clean control channel fails a few percent or less.",
+		"freq_hz", ec.freqHz, "system", ec.sysName,
+		"tsbk_err_pct", int(dFail*100/attempts), "tsbk_attempts", attempts,
+		"dbfs", math.Round(dbfs*10)/10)
+}
+
 // noSyncHintDbFS is the per-channel IQ power (dBFS) at or above which a
 // channel is treated as carrying a real signal for the "strong signal but
 // no sync" diagnostic. Sits ~10 dB above the low-power floor
@@ -1458,6 +1524,8 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 				})
 			}
 		}
+		e.checkTSBKHealth(ec, now, dbfs, wbOverloaded)
+
 		// A channel with recent protocol decodes is healthy whatever its
 		// absolute dBFS says — never warn "outside the passband / mistuned"
 		// against live decode evidence (the Tier III CC field report: WARN

@@ -2636,3 +2636,58 @@ func TestLockEventMatchesActiveFiltersForeignSystem(t *testing.T) {
 		t.Error("idle decoder should accept any lock edge")
 	}
 }
+
+const impairedCCMsg = "the signal reaching the decoder is impaired"
+
+// TestDecoderWarnsImpairedControlChannelWithLOOffset pins #1242: a locked
+// control channel failing most of its TSBKs while an LO offset is applied
+// (dc_avoid on, so the zero-IF nudge does not apply) used to log nothing.
+// It must now get the general impaired-CC WARN — once per lock session, not
+// the dc_avoid nudge, and still nothing on a clean channel.
+func TestDecoderWarnsImpairedControlChannelWithLOOffset(t *testing.T) {
+	cases := []struct {
+		name            string
+		decoded, failed int64
+		loOffsetHz      float64
+		wantImpaired    bool
+		wantDCAvoid     bool
+	}{
+		// The reporter's control channel: ~59 % TSBK errors, dc_avoid applied.
+		{"59pct with LO offset", 410, 590, 240_000, true, false},
+		{"clean with LO offset", 1000, 5, 240_000, false, false},
+		{"too few attempts with LO offset", 30, 30, 240_000, false, false},
+		// Zero-IF keeps its own, more specific nudge.
+		{"high rate at zero-IF", 200, 200, 0, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			d := newOffsetTestDecoder(t, &buf)
+			d.zeroIFHealthWindow = 0
+			d.loOffsetHz = tc.loOffsetHz
+			d.locked.Store(true)
+			fake := &fakeCCHealthPipeline{}
+			d.active = fake
+
+			d.checkZeroIFHealthLocked() // baseline
+			for i := int64(1); i <= 3; i++ {
+				fake.decoded, fake.failed = tc.decoded*i, tc.failed*i
+				d.checkZeroIFHealthLocked()
+			}
+			log := buf.String()
+			wantN := 0
+			if tc.wantImpaired {
+				wantN = 1
+			}
+			if n := strings.Count(log, impairedCCMsg); n != wantN {
+				t.Fatalf("impaired-CC WARN emitted %d times, want %d (log: %q)", n, wantN, log)
+			}
+			if got := strings.Contains(log, dcAvoidNudgeMsg); got != tc.wantDCAvoid {
+				t.Fatalf("dc_avoid nudge = %v, want %v (log: %q)", got, tc.wantDCAvoid, log)
+			}
+			if tc.wantImpaired && !strings.Contains(log, "tsbk_err_pct=59") {
+				t.Errorf("WARN missing tsbk_err_pct=59; log: %q", log)
+			}
+		})
+	}
+}
