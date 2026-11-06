@@ -725,6 +725,22 @@ type LogConfig struct {
 	// SSE/WS streams emit. Unlike MessageLog it captures all event kinds,
 	// so a session can be recorded and replayed/inspected offline.
 	EventLog EventLogConfig `yaml:"event_log"`
+	// File copies the daemon's own diagnostic log (the slog lines that go
+	// to stderr: composer/recorder/decoder quality and WARN lines) to a
+	// rotating file as well. Those lines never reach message_log or
+	// event_log, and on Windows or under the TUI stderr is easy to lose,
+	// so this is the one place a support request can point to (#1242).
+	File LogFileConfig `yaml:"file"`
+}
+
+// LogFileConfig copies the daemon's diagnostic log to a file. Empty Path
+// (or Enabled false) disables it. The file receives exactly what stderr
+// receives, at the same level and format, and keeps receiving it while
+// the in-process TUI owns the terminal.
+type LogFileConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Path      string `yaml:"path"`
+	MaxSizeMB int    `yaml:"max_size_mb"` // default 16
 }
 
 // MessageLogConfig configures the decoded-message log. Empty Path (or
@@ -2747,6 +2763,7 @@ func (c *Config) resolvePaths(base string) {
 	c.Log.MessageLog.Path = resolve(c.Log.MessageLog.Path)
 	c.Log.PowerLog.Path = resolve(c.Log.PowerLog.Path)
 	c.Log.EventLog.Path = resolve(c.Log.EventLog.Path)
+	c.Log.File.Path = resolve(c.Log.File.Path)
 	c.API.Auth.TokenFile = resolve(c.API.Auth.TokenFile)
 	if c.Baseband.AutoRecord.Dir != "" {
 		c.Baseband.AutoRecord.Dir = resolve(c.Baseband.AutoRecord.Dir)

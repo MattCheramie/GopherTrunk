@@ -65,6 +65,26 @@ export function LogSection() {
           { value: "json", label: "json" },
         ]}
       />
+      <Fieldset legend="Diagnostic log file">
+        <BoolField
+          label="Enabled"
+          value={!!cfg.File?.Enabled}
+          onChange={(x) => set({ ...cfg, File: { ...cfg.File, Enabled: x } })}
+          help="Copy the daemon's diagnostic log (what it prints to stderr: decode-quality, recorder and WARN lines) to a file. Attach this file to bug reports."
+        />
+        <TextField
+          label="Path"
+          value={cfg.File?.Path ?? ""}
+          onChange={(x) => set({ ...cfg, File: { ...cfg.File, Path: x } })}
+          placeholder="/var/log/gophertrunk/debug.log"
+        />
+        <NumberField
+          label="Max size (MB)"
+          value={cfg.File?.MaxSizeMB ?? 0}
+          onChange={(x) => set({ ...cfg, File: { ...cfg.File, MaxSizeMB: x } })}
+          placeholder="16"
+        />
+      </Fieldset>
       <Fieldset legend="Decoded-message log">
         <BoolField
           label="Enabled"

@@ -22,6 +22,14 @@ log:
   # clip%) for diagnosing robotic/over-driven audio. Output clipping is
   # surfaced as a WARN even at `info`.
   format: text      # text | json
+  # Diagnostic log file: a copy of what the daemon prints to stderr (the
+  # composer/recorder decode-quality lines and every WARN). These never
+  # reach message_log or event_log, and stderr is easy to lose on Windows
+  # or under the TUI, so this is the file to attach to a bug report.
+  # file:
+  #   enabled: true
+  #   path: "../logs/debug.log"
+  #   max_size_mb: 16          # rotates to debug.log.1 past this
   # Decoded-message log: a human-readable text log of every trunking
   # event (grants, CC lock/loss, affiliations, patches, locations).
   # message_log:

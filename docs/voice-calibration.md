@@ -193,6 +193,22 @@ composer: p25p1 transmission quality serial=… tx=3 src=1234567 ldus=26
   your side: gain, antenna, interference, or IQ holes (`short_ldus`, and
   the `voice IQ has holes` WARN).
 
+**Where these lines are.** The `composer:` and `recorder:` lines, and
+every WARN, are the daemon's diagnostic log. It goes to stderr, not to
+`message_log` or `event_log`, so it is easy to miss on Windows or under the
+in-process TUI. Turn on `log.file` to get a copy in a rotating file:
+
+```yaml
+log:
+  file:
+    enabled: true
+    path: "../logs/debug.log"   # relative to the config file
+    max_size_mb: 16             # old file kept as debug.log.1
+```
+
+The file gets the same lines as stderr, at the same `log.level`, and keeps
+getting them while the TUI owns the terminal.
+
 ## Knox / call-alert tones
 
 If your captured call contains AMBE+2 knox tones (b1 ∈ [144, 163]),

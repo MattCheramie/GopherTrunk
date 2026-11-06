@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.3.8] — 2026-11-04
+
 ### Added
 - **Recordings are marked partial when IQ was lost during them (#1288).**
   A recording made while its voice tap dropped IQ to a lagging consumer, or
