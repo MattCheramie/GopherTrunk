@@ -105,14 +105,17 @@ func ParseSysInfoExtended(bits []byte) (SysInfoExt, bool) {
 }
 
 // sameCellParams reports whether two extended SYSINFO decodes carry the same
-// cell parameters, ignoring the hyperframe counter (it increments every
-// multiframe cycle) AND the 2-bit-flag-selected optional field (the BS rotates
-// which of the four 20-bit definitions each broadcast carries) — including
-// either would defeat the change-gated logging.
+// cell parameters, ignoring the shared 16-bit hyperframe-number-or-CCK-id field
+// (and its selector flag) AND the 2-bit-flag-selected optional field. Both are
+// rotated by the BS: the hyperframe counter advances every multiframe cycle, a
+// cell with air-interface encryption ALTERNATES the 16-bit field between the
+// hyperframe number and the CCK id (#1350), and the optional field cycles
+// through its four 20-bit definitions — including any of them would defeat the
+// change-gated logging. A CCK id change is detected separately, against the
+// last CCK id the cell broadcast (ControlChannel.learnSysInfoExt).
 func (e SysInfoExt) sameCellParams(o SysInfoExt) bool {
-	if !e.CCKValid && !o.CCKValid {
-		e.CounterOrCCK, o.CounterOrCCK = 0, 0
-	}
+	e.CCKValid, o.CCKValid = false, false
+	e.CounterOrCCK, o.CounterOrCCK = 0, 0
 	e.OptionalFieldFlag, o.OptionalFieldFlag = 0, 0
 	e.OptionalField, o.OptionalField = 0, 0
 	return e == o
