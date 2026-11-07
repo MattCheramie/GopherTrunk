@@ -133,6 +133,12 @@ type ControlChannel struct {
 	// (hyperframe counter excluded — it advances every cycle).
 	sysInfoExt    SysInfoExt
 	sysInfoExtSet bool
+	// cckID is the last common cipher key identifier the cell broadcast in
+	// SYSINFO (cckKnown once one has decoded). It is remembered across the
+	// hyperframe-number broadcasts an encrypted cell interleaves with it, so
+	// the change gate compares CCK id against CCK id (#1350).
+	cckID    uint16
+	cckKnown bool
 
 	// individuals is the set of SSIs observed acting as a CMCE calling /
 	// transmitting party (msg.PartySSI). A party is always an individual radio, so
@@ -932,14 +938,23 @@ func (c *ControlChannel) learnSysInfo(si SysInfo) {
 }
 
 // learnSysInfoExt records the cell's extended SYSINFO parameters and logs them
-// when they first decode or change — the hyperframe counter is excluded from
-// the change detection (it advances every multiframe cycle and would turn the
-// INFO line into per-minute spam). The SCCH count is the operator-visible
-// answer to "does this cell run secondary control channels": n common SCCH
-// occupy timeslots 2..(n+1) of the main carrier per §21.4.4.1.
+// when they first decode or change. The 16-bit hyperframe-number-or-CCK-id
+// field is excluded from the parameter comparison: the hyperframe counter
+// advances every multiframe cycle, and a cell with air-interface encryption
+// alternates the field between the hyperframe number and the CCK id, which
+// logged this INFO line on EVERY SYSINFO (#1350: 1.18 M lines in 8.7 h on a
+// 4-cell group). A CCK id is compared against the last CCK id the cell sent,
+// so a real re-key still logs. The SCCH count is the operator-visible answer
+// to "does this cell run secondary control channels": n common SCCH occupy
+// timeslots 2..(n+1) of the main carrier per §21.4.4.1.
 func (c *ControlChannel) learnSysInfoExt(ext SysInfoExt) {
 	c.mu.Lock()
 	changed := !c.sysInfoExtSet || !c.sysInfoExt.sameCellParams(ext)
+	if ext.CCKValid && (!c.cckKnown || c.cckID != ext.CounterOrCCK) {
+		c.cckID, c.cckKnown = ext.CounterOrCCK, true
+		changed = true
+	}
+	cckID, cckKnown := c.cckID, c.cckKnown
 	c.sysInfoExt = ext
 	c.sysInfoExtSet = true
 	c.mu.Unlock()
@@ -965,8 +980,8 @@ func (c *ControlChannel) learnSysInfoExt(ext SysInfoExt) {
 	if s := BSServiceDetailsString(ext.BSServiceDetails); s != "" {
 		args = append(args, "bs_services", s)
 	}
-	if ext.CCKValid {
-		args = append(args, "cck_id", fmt.Sprintf("0x%04x", ext.CounterOrCCK))
+	if cckKnown {
+		args = append(args, "cck_id", fmt.Sprintf("0x%04x", cckID))
 	}
 	// The rotating 20-bit optional field is deliberately not logged here — the
 	// BS cycles which definition each broadcast carries, and it is excluded
