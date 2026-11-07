@@ -85,10 +85,12 @@ func TestSysInfoExtChangeGating(t *testing.T) {
 	if a.sameCellParams(b) {
 		t.Error("an SCCH change did not count as a cell-parameter change")
 	}
-	c := SysInfoExt{CCKValid: true, CounterOrCCK: 100}
+	// An encrypted cell alternates the 16-bit field between the CCK id and
+	// the hyperframe counter (#1350); that alternation is not a change.
+	c := SysInfoExt{SCCHInUse: 1, CCKValid: true, CounterOrCCK: 0x1234}
 	d := c
-	d.CounterOrCCK = 101
-	if c.sameCellParams(d) {
-		t.Error("a CCK id change did not count as a cell-parameter change")
+	d.CCKValid, d.CounterOrCCK = false, 4242
+	if !c.sameCellParams(d) {
+		t.Error("the CCK id / hyperframe alternation counted as a cell-parameter change")
 	}
 }
