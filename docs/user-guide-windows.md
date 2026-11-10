@@ -1291,6 +1291,13 @@ WASAPI; failure to initialise (no sound device, exclusive-mode
 contention) falls back to a silent player automatically so the
 daemon stays running.
 
+Two things that list is **not**: on Windows it only ever shows
+`default` (this computer's speakers, the one real choice) and `null`
+(plays nothing; the headless-server setting, so do not pick it when
+audio is silent), and it has nothing to do with the web console's
+player, which streams through your browser. Host playback, the web
+player and recordings all carry sound only once a call is decoded.
+
 Recordings always land on disk per § 11 (`recordings.dir`). The
 `.raw` sidecar (per-call vocoder frames) makes it easy to re-decode
 post hoc through DSD-FME / OP25 or `gophertrunk decode` (§ 18).
@@ -1648,6 +1655,7 @@ nssm remove GopherTrunk confirm
 | `WinUsb_Initialize` fails | The dongle is bound to the wrong driver — re-run Zadig and pick **WinUSB**. |
 | SmartScreen blocks the installer | Right-click → Properties → Unblock, or **More info → Run anyway**. |
 | Audio plays as silence | `audio.enabled: false` by default — set `true` in config. Confirm the device name in `gophertrunk audio list`. |
+| No audio in the web player **and** no recordings | Nothing is being decoded, so there is nothing to play or write. The web player's status reads `no decoded audio yet` and `GET /api/v1/audio` reports `stream_samples_total: 0`. Check the Dashboard for a control-channel lock and an attached voice SDR, and the log for `call started` lines. Also check the player's **REC** button: red means recording is on; grey means it is off and no files are written. |
 | `daemon unreachable` in the TUI | Daemon isn't running, or the `-server` URL points at the wrong host / port. Run `curl.exe http://127.0.0.1:8080/api/v1/health` to confirm. |
 | Web console connect screen shows "Failed to fetch" | Daemon not reachable. Confirm `gophertrunk run` is up and the URL is right. |
 | Browser console shows "CORS preflight rejected" | Daemon hasn't allow-listed your SPA's origin. Add it under `api.cors.allowed_origins` and restart. |

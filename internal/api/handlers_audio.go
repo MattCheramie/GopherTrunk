@@ -50,6 +50,17 @@ type AudioStatusDTO struct {
 	// publisher currently has call context for. PCM still streams
 	// without a tracked grant (issue #598); this is a diagnostic.
 	StreamTrackedGrants int `json:"stream_tracked_grants"`
+	// StreamSamplesTotal is the number of decoded PCM samples the live
+	// path has received since the daemon started, counted whether or
+	// not a stream subscriber or the host player was listening. Zero
+	// means the daemon has decoded NO voice at all — the one fact that
+	// separates "nothing to play" from a playback problem (#1351: a
+	// silent web player and an empty recordings folder both follow from
+	// no call being decoded, and nothing used to say so).
+	StreamSamplesTotal uint64 `json:"stream_samples_total"`
+	// LastAudioAt is the RFC 3339 time the most recent decoded PCM
+	// arrived; omitted until the first sample.
+	LastAudioAt string `json:"last_audio_at,omitempty"`
 }
 
 // audioPatchRequest is the body of PATCH /api/v1/audio. Every field
@@ -80,6 +91,10 @@ func (s *Server) handleAudioStatus(w http.ResponseWriter, _ *http.Request) {
 		dto.StreamSubscribers = st.Subscribers
 		dto.StreamDropsTotal = st.DroppedTotal
 		dto.StreamTrackedGrants = st.TrackedGrants
+		dto.StreamSamplesTotal = st.SamplesTotal
+		if !st.LastPCMAt.IsZero() {
+			dto.LastAudioAt = st.LastPCMAt.Format(time.RFC3339)
+		}
 	}
 	writeJSON(w, http.StatusOK, dto)
 }

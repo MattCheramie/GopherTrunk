@@ -1690,6 +1690,16 @@ confirmation before any close-as-completed.
   no driver at all and the daemon started quietly with no radio. Adding a new source type means
   adding it to that condition; `TestRemoteOnlySDRConfigsRegisterTheirDriver` pins it, asserting on
   REGISTRATION rather than on `d.pool` because the pool is set to nil whenever it fails to open.
+- **A nullable UI state must not render as one of its real values (#1351).** The web
+  AudioPlayer read the daemon's audio state from the shared store, but nothing ever loaded
+  it, so `recording` stayed `null` for the life of the tab; `null` rendered as "Recording
+  off" and the first click sent `recording_enabled: false` — switching recordings OFF while
+  looking like it turned them on. Same silent-mismatch family as the `r.rows` lesson below:
+  a store slot nothing writes is indistinguishable from "off". The player now polls
+  `GET /api/v1/audio`, keeps the store current from PATCH replies + `audio.state` events,
+  disables REC until the state is known, and `stream_samples_total` (decoded PCM the live
+  path received, counted with no subscriber) lets it say "no decoded audio yet" — read that
+  before chasing playback on a "no audio and no recordings" report: it means no call was decoded.
 - **The SPA client's response-envelope keys are unchecked and fail silently.** The call-history
   client read `r.rows` where the daemon sends `{"calls":[…]}`, with a `?? []` fallback — so the
   History panel rendered "No calls in the daemon's call log for this filter" for every query

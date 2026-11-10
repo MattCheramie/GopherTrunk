@@ -7,6 +7,25 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **The web player's REC button switched recordings off on its first click
+  (#1351).** Nothing in the web console loaded the daemon's audio state, so
+  the button always rendered as "off" and its first click sent
+  `recording_enabled: false`, which looked like turning recording on while
+  turning it off. The player now loads `GET /api/v1/audio`, follows
+  `audio.state` events and PATCH replies, shows the real state (red = on),
+  and is disabled until that state is known.
+
+### Added
+- **The web player says why nothing plays.** Its status reads the call being
+  played, `waiting for a call`, or `no decoded audio yet` when the daemon has
+  decoded no voice since it started. `GET /api/v1/audio` gains
+  `stream_samples_total` (decoded PCM received by the live path, counted
+  whether or not anything was listening) and `last_audio_at` for that.
+  `gophertrunk audio list` now says what its entries are: host outputs for
+  `audio.enabled`, with `null` playing nothing, and none of them used by the
+  web player.
+
 ## [v1.3.8] — 2026-11-04
 
 ### Added

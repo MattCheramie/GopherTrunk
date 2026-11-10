@@ -280,7 +280,15 @@ The audio cockpit lives at the top of the Dashboard:
   scan-list channel at the source (recordings included), set that
   channel's `audio_gain_db`.
 - **Mute toggle** → `PATCH /api/v1/audio { muted }`
-- **Record toggle** → `PATCH /api/v1/audio { recording_enabled }`
+- **Record toggle** → `PATCH /api/v1/audio { recording_enabled }`.
+  The button shows the daemon's state (red = recording on, grey =
+  off, no files written) and is disabled until that state has loaded,
+  so a click can never guess.
+- **Status** → the call being played (`TG …`), `waiting for a call`,
+  or `no decoded audio yet` when the daemon reports it has decoded no
+  voice since it started (`stream_samples_total: 0` on
+  `GET /api/v1/audio`): nothing to play and nothing to record, so look
+  at the control-channel lock and the voice SDR, not the player.
 - **Tap to enable** → required once per session on iOS / Android
   per the autoplay rules; the SPA shows a one-shot prompt.
 
