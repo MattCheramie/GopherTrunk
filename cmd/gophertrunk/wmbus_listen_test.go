@@ -199,3 +199,53 @@ func TestWMBusReopenRetriesUntilBackOrStopped(t *testing.T) {
 		t.Error("a stopped run kept waiting for the SDR")
 	}
 }
+
+// Once the SDR has stayed away past ReplugAfter, the waiting line says so
+// and asks for a replug, and every waiting line rings the bell: on the
+// #1256 reporter's 8 Nov walk the dongle dropped off the bus for good and
+// the run polled "no SDRs found" for 19 minutes unnoticed in a pocket.
+func TestWMBusReopenAsksForReplugAfterLongAbsence(t *testing.T) {
+	var lines []string
+	bells := 0
+	clock := time.Date(2026, 11, 8, 14, 21, 53, 0, time.UTC)
+	o := wmbusReopenOptions{
+		Retry: time.Microsecond, Note: 30 * time.Second, ReplugAfter: time.Minute,
+		Statusf: func(l string) { lines = append(lines, l) },
+		Bell:    func() { bells++ },
+		Now:     func() time.Time { return clock },
+	}
+	tries := 0
+	_, ok := wmbusReopen(context.Background(), func() (int, error) {
+		tries++
+		clock = clock.Add(31 * time.Second) // each try is half a minute later
+		if tries < 5 {
+			return 0, errors.New("capture: no SDRs found")
+		}
+		return 1, nil
+	}, o)
+	if !ok {
+		t.Fatal("the SDR came back on the fifth try")
+	}
+	text := strings.Join(lines, "\n")
+	t.Log(text)
+	// Try 1 at +31 s: a plain note. Try 2 at +62 s: past the minute, so the
+	// note carries the hint. Earlier than that it must not.
+	if len(lines) < 3 {
+		t.Fatalf("got %d lines, want a note per try plus the return", len(lines))
+	}
+	if strings.Contains(lines[0], "unplug") {
+		t.Errorf("the first note (31 s) already asks for a replug:\n%s", lines[0])
+	}
+	if !strings.Contains(lines[1], "not on the USB bus") || !strings.Contains(lines[1], "unplug") {
+		t.Errorf("the note past a minute does not ask for a replug:\n%s", lines[1])
+	}
+	if !strings.Contains(text, "SDR back after") {
+		t.Errorf("no return line:\n%s", text)
+	}
+	if bells != 4 {
+		t.Errorf("bell rang %d times, want once per waiting line (4)", bells)
+	}
+	if hint := wmbusReplugHint(errors.New("rtlsdr: open: device busy")); !strings.Contains(hint, "unplug") || strings.Contains(hint, "not on the USB bus") {
+		t.Errorf("an open failure's hint should ask for a replug without claiming the bus is empty:\n%s", hint)
+	}
+}

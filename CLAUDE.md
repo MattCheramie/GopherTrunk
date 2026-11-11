@@ -1377,6 +1377,32 @@ confirmation before any close-as-completed.
   (`wmbusGapLog`, `cut by dropped IQ`, `iq_gap`). The RTL/Airspy drivers drop the NEWEST chunk into a full
   queue, so a drop seen on a read lies after the chunks still queued (±1 chunk). A burst-length check on
   weak snippets is unreliable (it read 0 ms on CRC-valid frames), so don't classify old snippets that way.
+- **wM-Bus 8 Nov walk (#1256, 417 snippets + three logs): the "stopped recording" was the dongle
+  leaving the USB bus for good, and the "undecoded water meters" were the chip clock on long NRZ
+  runs.** (1) Reconnect (#1337) WORKED once (back after 8 s), then 11 s later the dongle vanished
+  again and `capture: no SDRs found` polled for 19 minutes until a physical replug — nothing to
+  recover in software (an OTG host that cut the port stays off until the plug is pulled); the
+  wait line now says so after a minute and rings the bell (Termux vibrates). Next instrument for
+  WHY it drops: `dmesg` (root) around the disconnect time — over-current / VBUS lines name the
+  phone's OTG supply, a descriptor-read error names the dongle. (2) The CRC failures that are NOT
+  marked `cut by dropped IQ` (wm.3: 9 strong QDS telegrams, −16.8 to −37 dBFS, failing blocks
+  4-5 of 5) all came BEFORE the first drop, with clean flat bursts the same length as the valid
+  ones (no collision). Diffing them against CRC-valid telegrams of the SAME meter minutes apart
+  showed errors in the last bytes after ~20 zero bytes (107- and 74-chip runs; Mode C is NRZ, not
+  DC-balanced). The chip clock free-runs through a run on its period estimate, which needs ~0.5 %
+  accuracy over 100 chips; ±0.3-sample crossing jitter does not give that, and the telegram
+  decoded COLD but not LIVE because the loop state the run met differed (the AFC at −57 kHz from
+  a stronger meter, 3.4 kHz off this one, reproduces it: `rx.afc(-57000)` in
+  `clock_longrun_test.go`). What landed: a crossing within half a chip of the previous one (a
+  noise spike through the threshold) is ignored by the loop — it fixes that telegram, walk 239→240
+  live. What was measured and REJECTED (don't retry blind): phase pull-in scaled by run length
+  (171/239 → 149/226 cold/live), and a long-baseline period (chips counted since frame start ÷
+  elapsed samples, from 64 chips: 164/239). The loop's PI overshoot on a post-run phase step
+  (0.4 % → 1.3 % period, measured) is real and still open; a period estimator that is precise
+  over long runs without false n-rounding is the lever. Instrument: a `debugDecide`/`debugClock`
+  hook in `receiver.go` + the live-vs-cold chip diff (scratch, not committed) found it in one pass.
+  (3) Drops: both walks lose CPU ~90 s into each run (screen timeout shape); the S5 banner says
+  `cpus=2` of 4 (cores offlined) — ask whether termux-wake-lock ran.
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the

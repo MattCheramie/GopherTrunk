@@ -306,6 +306,7 @@ FLAGS:`)
 		}
 		closeSDRBounded(dev, sdrCloseTimeout, stderr, "wmbus")
 		dev = nil
+		wmbusBell()
 		statusf(fmt.Sprintf("wmbus: lost the SDR at %s (%v); reopening it as soon as it is back (type q and Enter to stop)",
 			time.Now().Format("15:04:05"), cause))
 		type opened struct {
@@ -327,7 +328,7 @@ FLAGS:`)
 				return opened{}, fmt.Errorf("start IQ stream: %w", err)
 			}
 			return opened{d, st}, nil
-		}, wmbusReopenOptions{Retry: time.Second, Note: 30 * time.Second, Statusf: statusf})
+		}, wmbusReopenOptions{Retry: time.Second, Note: 30 * time.Second, ReplugAfter: wmbusReplugAfter, Statusf: statusf, Bell: wmbusBell})
 		if !ok {
 			// Stopped while waiting: the summary listenWMBus would have
 			// printed at a normal stop.
@@ -346,9 +347,32 @@ type wmbusReopenOptions struct {
 	// Note is how often, while the SDR stays away, a "still waiting" line
 	// names the latest reason; 0 never.
 	Note time.Duration
+	// ReplugAfter is how long the SDR may stay away before the waiting
+	// line says it is probably not coming back on its own and asks for a
+	// replug; 0 never.
+	ReplugAfter time.Duration
 	// Statusf receives the progress lines.
 	Statusf func(string)
+	// Bell, when set, is called with every line so the operator notices
+	// it away from the screen; nil rings nothing.
+	Bell func()
+	// Now is the clock; nil is time.Now.
+	Now func() time.Time
 }
+
+// wmbusReplugAfter is how long a live run waits for a lost SDR before its
+// waiting line asks for a replug. On the #1256 reporter's 8 Nov walk the
+// dongle came back on its own after 8 s once and then dropped off the bus
+// for good 11 s later: the run polled "no SDRs found" for 19 minutes, in a
+// pocket, until the operator noticed in front of the meters they had come
+// for and replugged it. A phone's OTG host that cut the port stays off
+// until the plug is pulled; a minute of absence is past any re-enumeration.
+const wmbusReplugAfter = time.Minute
+
+// wmbusBell rings the terminal bell on the screen (never into -log): Termux
+// vibrates the phone on it by default, which is what a walk needs when the
+// SDR is lost and the phone is in a pocket (#1256).
+func wmbusBell() { fmt.Fprint(os.Stderr, "\a") }
 
 // wmbusReopen calls open every o.Retry until it succeeds (true) or ctx ends
 // (false), so a live wmbus run survives its SDR dropping off the bus: on the
@@ -356,7 +380,11 @@ type wmbusReopenOptions struct {
 // SUBMITURB resubmit: usb: device disconnected") and came straight back
 // when the run was restarted by hand.
 func wmbusReopen[T any](ctx context.Context, open func() (T, error), o wmbusReopenOptions) (T, bool) {
-	start := time.Now()
+	now := o.Now
+	if now == nil {
+		now = time.Now
+	}
+	start := now()
 	lastNote := start
 	for {
 		// Pause first: a dongle that just dropped off the bus needs a
@@ -370,14 +398,31 @@ func wmbusReopen[T any](ctx context.Context, open func() (T, error), o wmbusReop
 		}
 		v, err := open()
 		if err == nil {
-			o.Statusf(fmt.Sprintf("wmbus: SDR back after %s; listening again", time.Since(start).Round(time.Second)))
+			o.Statusf(fmt.Sprintf("wmbus: SDR back after %s; listening again", now().Sub(start).Round(time.Second)))
 			return v, true
 		}
-		if o.Note > 0 && time.Since(lastNote) >= o.Note {
-			lastNote = time.Now()
-			o.Statusf(fmt.Sprintf("wmbus: still waiting for the SDR (%s): %v", time.Since(start).Round(time.Second), err))
+		if o.Note > 0 && now().Sub(lastNote) >= o.Note {
+			lastNote = now()
+			away := now().Sub(start)
+			line := fmt.Sprintf("wmbus: still waiting for the SDR (%s): %v", away.Round(time.Second), err)
+			if o.ReplugAfter > 0 && away >= o.ReplugAfter {
+				line += wmbusReplugHint(err)
+			}
+			if o.Bell != nil {
+				o.Bell()
+			}
+			o.Statusf(line)
 		}
 	}
+}
+
+// wmbusReplugHint is what a waiting line adds once the SDR has stayed away
+// past wmbusReplugAfter: what the error means and what to do.
+func wmbusReplugHint(err error) string {
+	if strings.Contains(err.Error(), "no SDRs found") {
+		return " — the dongle is not on the USB bus at all, so waiting will not bring it back: unplug it and plug it in again (a phone's OTG port stays off after a disconnect until then). The run carries on from there."
+	}
+	return " — it has not come back on its own; unplug the dongle and plug it in again. The run carries on from there."
 }
 
 // wmbusListenOptions configures listenWMBus.

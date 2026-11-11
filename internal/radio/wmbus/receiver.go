@@ -424,9 +424,45 @@ func (r *Receiver) clock(v float64) {
 			// Silence before this burst: restart the loop on it.
 			r.spc = nominalSPC
 			r.tSample = tc + r.spc/2
+		} else if run := tc - r.lastCross; run < r.spc/2 {
+			// A second crossing within half a chip of the last one is a
+			// noise spike through the threshold, not a chip edge (chip
+			// edges are a chip apart): it measures nothing, so the loop
+			// ignores it and the run goes on being counted from the real
+			// transition before it. It used to feed the loop a phase
+			// error of up to half a chip that was pure noise — on a
+			// clean -16.8 dBFS #1256 telegram one such spike, right
+			// before a 107-chip run of NRZ zeros, kicked the period 0.2 %
+			// and the phase a third of a sample, and the clock drifted
+			// through the run and the 74-chip run after it: the last two
+			// CRC blocks failed (clock_longrun_test.go). Replayed alone
+			// the same telegram decoded, because the state the spike met
+			// differed; across the reporter's 417-snippet walk the skip
+			// changes the live count by +1 (239 → 240).
+			r.level = hi
+			copy(r.hist[:], r.hist[1:])
+			r.hist[len(r.hist)-1] = v
+			r.vPrev = v
+			r.decide(t)
+			return
 		} else {
 			// The transition should fall half a chip before a centre;
 			// e is how late it came, wrapped to ±half a chip.
+			//
+			// Known limit (#1256, measured on the 8 Nov walk): after a
+			// long NRZ run the error is what accumulated over the whole
+			// run, and this loop pulls it in 15 % per transition while
+			// the rate term integrates every residual, so a 0.4 % period
+			// error can become 1.3 % and the next 100-chip run drifts the
+			// sampling point most of a chip. Two remedies were measured
+			// on the walk's 417 snippets and REJECTED: a phase gain
+			// scaled by the run length (full pull-in after a long run)
+			// decoded 149 cold / 226 live against 171 / 239, and a
+			// long-baseline period (chips counted since the frame start,
+			// divided into elapsed samples, applied from 64 chips) 164 /
+			// 239. The period needs ~0.5 % accuracy before a 100-chip run,
+			// which ±0.3-sample crossing jitter does not give; a better
+			// estimator is still open.
 			e := tc - (r.tSample - r.spc/2)
 			e -= r.spc * math.Round(e/r.spc)
 			r.tSample += sampleLoopGain * e
@@ -436,7 +472,6 @@ func (r *Receiver) clock(v float64) {
 			// several percent off nominal within a preamble. Inside a
 			// frame that estimate's noise would cost more than it
 			// tracks, so only the loop runs there.
-			run := tc - r.lastCross
 			if n := math.Round(run / r.spc); n >= 1 && n <= 4 && !r.frozen {
 				r.spc += 0.1 * (run/n - r.spc)
 			}

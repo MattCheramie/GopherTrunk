@@ -121,7 +121,13 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
   `wmbus: lost the SDR at …` with the reason and `wmbus: SDR back after …`
   when it reopens. On a walk this keeps a loose OTG cable from ending the
   recording unnoticed (issue #1256). `-reconnect=false` stops instead, with
-  the reason.
+  the reason. Every waiting line rings the terminal bell (Termux vibrates
+  the phone on it by default), and once the SDR has been gone for a minute
+  the line says whether it is still on the USB bus and asks for a replug:
+  on the 8 Nov walk the dongle came back by itself after 8 s once, then
+  dropped off the bus for good, and only unplugging and replugging it
+  brought it back (a phone's OTG port stays off after a disconnect). The
+  run carries on from the replug.
 - The run never asks "Show full diagnostic trace? [y/N]" while it is
   reading `q` from the terminal: the two would compete for the same input.
   Add `-verbose-errors` if you want the full trace printed.
