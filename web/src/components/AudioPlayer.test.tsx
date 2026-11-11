@@ -22,9 +22,44 @@ vi.mock("../audio/streamPlayer", () => ({
   },
 }));
 
+// The daemon's audio cockpit state (GET /api/v1/audio) and the PATCH that
+// changes it. `audioStatus` is what the next poll resolves with; `patched`
+// records every PATCH body the player sent.
+let audioStatus: Promise<AudioStatusDTO>;
+const patched: AudioPatch[] = [];
+vi.mock("../api/client", async () => {
+  const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
+  return {
+    ...actual,
+    api: { activeCalls: vi.fn().mockResolvedValue([]), audio: vi.fn(() => audioStatus) },
+  };
+});
+vi.mock("../api/write", () => ({
+  writes: {
+    setAudio: vi.fn(async (_c: unknown, patch: AudioPatch) => {
+      patched.push(patch);
+      return { ...(await audioStatus), ...patch };
+    }),
+  },
+}));
+
 import { AudioPlayer } from "./AudioPlayer";
 import { useShared } from "../store/shared";
-import type { ActiveCallDTO } from "../api/types";
+import type { ActiveCallDTO, AudioStatusDTO } from "../api/types";
+import type { AudioPatch } from "../api/write";
+
+function status(over: Partial<AudioStatusDTO> = {}): AudioStatusDTO {
+  return {
+    backend_enabled: false,
+    sample_rate: 8000,
+    volume: 0.8,
+    muted: false,
+    recording_enabled: true,
+    drops_total: 0,
+    stream_samples_total: 0,
+    ...over,
+  };
+}
 
 function call(serial: string, startedAt: string): ActiveCallDTO {
   return {
@@ -38,10 +73,13 @@ describe("AudioPlayer live-audio follow", () => {
   beforeEach(() => {
     built.length = 0;
     opened.length = 0;
+    patched.length = 0;
+    audioStatus = Promise.resolve(status());
     useShared.setState({
       serverURL: "http://localhost:8080",
       token: null,
       activeCalls: [],
+      audio: null,
     });
   });
 
@@ -89,5 +127,113 @@ describe("AudioPlayer live-audio follow", () => {
     fireEvent.click(screen.getByLabelText("Enable audio"));
     await waitFor(() => expect(opened).toHaveLength(1));
     expect(opened[0]).not.toContain("device=");
+  });
+});
+
+// Issue #1351: nothing loaded the daemon's cockpit state into the store, so
+// the REC button rendered "off" for ever and its first click sent
+// recording_enabled: false — it switched recordings OFF while looking like
+// it turned them on. Every test here fails against that code.
+describe("AudioPlayer daemon state (#1351)", () => {
+  beforeEach(() => {
+    built.length = 0;
+    opened.length = 0;
+    patched.length = 0;
+    audioStatus = Promise.resolve(status());
+    useShared.setState({
+      serverURL: "http://localhost:8080",
+      token: null,
+      activeCalls: [],
+      audio: null,
+    });
+  });
+
+  it("shows the daemon's recording and mute state before any click", async () => {
+    audioStatus = Promise.resolve(status({ recording_enabled: true, muted: true }));
+    render(<AudioPlayer />);
+    fireEvent.click(screen.getByLabelText("Enable audio"));
+
+    const rec = await screen.findByLabelText("Recording on (click to disable)");
+    expect(rec).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Unmute")).toBeInTheDocument();
+    expect(patched).toHaveLength(0);
+  });
+
+  it("never toggles recording while the daemon's state is unknown", async () => {
+    // The GET never answers (daemon slow, or the cockpit not wired).
+    audioStatus = new Promise(() => {});
+    render(<AudioPlayer />);
+    fireEvent.click(screen.getByLabelText("Enable audio"));
+
+    const rec = screen.getByLabelText("Recording state unknown");
+    expect(rec).toBeDisabled();
+    fireEvent.click(rec);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(patched).toHaveLength(0);
+  });
+
+  it("the first REC click sends the opposite of the daemon's state and keeps the reply", async () => {
+    audioStatus = Promise.resolve(status({ recording_enabled: false }));
+    render(<AudioPlayer />);
+    fireEvent.click(screen.getByLabelText("Enable audio"));
+
+    const rec = await screen.findByLabelText("Recording off (click to enable)");
+    fireEvent.click(rec);
+    await waitFor(() => expect(patched).toEqual([{ recording_enabled: true }]));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Recording on (click to disable)")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    expect(useShared.getState().audio?.recording_enabled).toBe(true);
+  });
+
+  it("says no voice has been decoded when the daemon has received no audio", async () => {
+    audioStatus = Promise.resolve(status({ stream_samples_total: 0 }));
+    render(<AudioPlayer />);
+    fireEvent.click(screen.getByLabelText("Enable audio"));
+
+    const s = await screen.findByRole("status");
+    await waitFor(() => expect(s).toHaveTextContent("no decoded audio yet"));
+    expect(s.getAttribute("title")).toMatch(/control-channel lock/);
+  });
+
+  it("waits for a call once audio has flowed, and names the call it plays", async () => {
+    audioStatus = Promise.resolve(status({ stream_samples_total: 16_000 }));
+    render(<AudioPlayer />);
+    fireEvent.click(screen.getByLabelText("Enable audio"));
+
+    const s = await screen.findByRole("status");
+    await waitFor(() => expect(s).toHaveTextContent("waiting for a call"));
+
+    act(() => {
+      useShared.setState({
+        activeCalls: [
+          {
+            ...call("VOICE-1", "2026-01-01T00:00:00Z"),
+            talkgroup: { alpha_tag: "FIRE DISP" },
+          } as ActiveCallDTO,
+        ],
+      });
+    });
+    await waitFor(() => expect(s).toHaveTextContent("TG FIRE DISP"));
+  });
+
+  it("applies an audio.state event from another client", async () => {
+    render(<AudioPlayer />);
+    fireEvent.click(screen.getByLabelText("Enable audio"));
+    await screen.findByLabelText("Recording on (click to disable)");
+
+    act(() => {
+      useShared.getState().appendEvents([
+        {
+          kind: "audio.state",
+          timestamp: "2026-01-01T00:00:01Z",
+          payload: status({ recording_enabled: false }),
+        },
+      ]);
+    });
+    await screen.findByLabelText("Recording off (click to enable)");
   });
 });

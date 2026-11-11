@@ -324,8 +324,18 @@ func (p *Player) run() {
 // entry per /dev/snd/pcmC*D*p the kernel exposes — the latter are
 // what audio.device: "ioctl:hw:C,D" selects. On macOS / Windows the
 // list is short by design (oto routes to the OS default sink).
+//
+// The entries are labelled for an operator reading them as a picker
+// (#1351): "default" is the daemon host's own speakers and the only
+// real choice on Windows / macOS, and "null" plays NOTHING — it is the
+// headless-server setting, not a device to try when audio is silent.
+// None of them affect the web console's player, which streams through
+// the browser.
 func ListDevices() []string {
-	devs := []string{"default (system output)", "null (no-op)"}
+	devs := []string{
+		"default (system output: the daemon host's own speakers)",
+		"null (plays nothing: for headless servers)",
+	}
 	devs = append(devs, listPlatformDevices()...)
 	return devs
 }

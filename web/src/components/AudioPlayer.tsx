@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { audioStreamURL } from "../api/client";
+import { api, audioStreamURL } from "../api/client";
 import { createStreamPlayer, type StreamPlayer } from "../audio/streamPlayer";
 import { MAX_VOLUME } from "../audio/volume";
 import { writes } from "../api/write";
 import { selectClientConfig, useShared } from "../store/shared";
 import { useActiveCallsPoll } from "../hooks/useActiveCallsPoll";
+import { useDataPoll } from "../hooks/useDataPoll";
 import { pickFollowSerial } from "../audio/followSelect";
 import { prefs } from "../store/prefs";
 
@@ -24,9 +25,22 @@ import { prefs } from "../store/prefs";
 // Mobile niceties:
 //   - Media Session API lights up the OS lock-screen / control
 //     center with track-style metadata pulled from the active call.
+//
+// Issue #1351: the player used to read the daemon's cockpit state from
+// the shared store, but nothing ever loaded it there, so `recording`
+// stayed null for the life of the tab. A null rendered as "Recording
+// off", and the first click on REC sent recording_enabled: false — it
+// switched the operator's recordings OFF while looking like it turned
+// them on. The player now polls GET /api/v1/audio itself, keeps the
+// store current from every PATCH response and audio.state event, and
+// refuses to toggle a knob whose state it has not seen. It also says
+// WHY nothing plays: the daemon reports how much decoded audio has
+// reached its live path, and zero means no call has been decoded at
+// all — nothing to play and nothing to record.
 export function AudioPlayer() {
   const cfg = useShared(selectClientConfig);
   const activeCalls = useShared((s) => s.activeCalls);
+  const setAudio = useShared((s) => s.setAudio);
   // AudioPlayer is always mounted but, unlike Active/Dashboard, didn't
   // refresh activeCalls — so its Media Session metadata and (below) the
   // call it follows went stale on every other route. Poll here so the
@@ -59,6 +73,18 @@ export function AudioPlayer() {
     [activeCalls],
   );
 
+  // Load the daemon's cockpit state and keep it fresh (5 s; the poll
+  // only delivers changed snapshots). useDataPoll swallows fetch errors,
+  // so a daemon without the audio cockpit wired (503) leaves the store
+  // null and the REC button in its "unknown" state rather than guessing.
+  useDataPoll({
+    fetcher: () => api.audio(cfg),
+    onData: setAudio,
+    intervalMs: 5_000,
+    enabled: !!cfg.baseURL,
+    resetKey: cfg.baseURL,
+  });
+
   // Reflect the daemon's current audio state into the local toggles.
   const daemonAudio = useShared((s) => s.audio);
   useEffect(() => {
@@ -66,6 +92,35 @@ export function AudioPlayer() {
     setMuted(daemonAudio.muted);
     setRecording(daemonAudio.recording_enabled);
   }, [daemonAudio]);
+
+  // The call the stream is following right now, for the status line.
+  const current = useMemo(
+    () =>
+      primarySerial
+        ? activeCalls.find((c) => c.device_serial === primarySerial)
+        : undefined,
+    [activeCalls, primarySerial],
+  );
+  // What to tell the operator while enabled. A daemon that has decoded
+  // no voice since start-up (stream_samples_total === 0) is the usual
+  // reason for "no audio and no recordings": there is nothing to play.
+  // Daemons older than that field report undefined and get the neutral
+  // "waiting" text.
+  const status = current
+    ? {
+        text: `TG ${current.talkgroup?.alpha_tag || current.grant.group_id}`,
+        title: `Playing ${current.grant.system} talkgroup ${current.grant.group_id}`,
+      }
+    : daemonAudio?.stream_samples_total === 0
+      ? {
+          text: "no decoded audio yet",
+          title:
+            "The daemon has not decoded any voice since it started, so there is nothing to play or record. Check the Dashboard for a control-channel lock and an attached voice SDR.",
+        }
+      : {
+          text: "waiting for a call",
+          title: "Connected to the daemon's live stream; audio plays when a call is decoded.",
+        };
 
   // When the active call list changes, update the Media Session
   // metadata so the lock-screen shows what's playing.
@@ -171,17 +226,21 @@ export function AudioPlayer() {
     setMuted(next);
     playerRef.current?.setMuted(next);
     try {
-      await writes.setAudio(cfg, { muted: next });
+      setAudio(await writes.setAudio(cfg, { muted: next }));
     } catch {
       /* mutation may be gated; UI reflects local toggle anyway. */
     }
   };
 
   const toggleRecording = async () => {
-    const next = !(recording ?? true);
+    // Never toggle a state we have not seen: with the daemon's answer
+    // still pending (or the cockpit not wired) a guess could switch
+    // recordings off (#1351). The button is disabled in that state too.
+    if (recording === null) return;
+    const next = !recording;
     setRecording(next);
     try {
-      await writes.setAudio(cfg, { recording_enabled: next });
+      setAudio(await writes.setAudio(cfg, { recording_enabled: next }));
     } catch {
       /* mutation may be gated. */
     }
@@ -246,17 +305,36 @@ export function AudioPlayer() {
           <span className="w-10 text-right text-xs tabular-nums text-muted">
             {Math.round(volume * 100)}%
           </span>
+          <span
+            role="status"
+            title={status.title}
+            className="hidden sm:inline max-w-[9rem] truncate text-xs text-muted"
+          >
+            {status.text}
+          </span>
           <button
             type="button"
             onClick={toggleRecording}
+            disabled={recording === null}
             className={
               recording
                 ? "btn-danger text-xs"
                 : "btn-ghost text-xs"
             }
-            aria-pressed={!!recording}
+            aria-pressed={recording === null ? undefined : recording}
             aria-label={
-              recording ? "Recording on (click to disable)" : "Recording off"
+              recording === null
+                ? "Recording state unknown"
+                : recording
+                  ? "Recording on (click to disable)"
+                  : "Recording off (click to enable)"
+            }
+            title={
+              recording === null
+                ? "Waiting for the daemon's audio state"
+                : recording
+                  ? "Recording on: decoded calls are written to recordings.dir"
+                  : "Recording is OFF: no call files are being written. Click to turn it on."
             }
           >
             ● REC

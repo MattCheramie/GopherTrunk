@@ -196,11 +196,25 @@ export interface DeviceDTO {
 
 export interface AudioStatusDTO {
   backend_enabled: boolean;
+  // Why the host-speaker backend failed to open, when audio.enabled was
+  // set and it did; absent when healthy or intentionally off.
+  backend_error?: string;
   sample_rate: number;
   volume: number;
   muted: boolean;
   recording_enabled: boolean;
   drops_total: number;
+  // Live-stream publisher health (older daemons omit these).
+  stream_subscribers?: number;
+  stream_drops_total?: number;
+  stream_tracked_grants?: number;
+  // Decoded PCM samples the daemon's live path has received since it
+  // started, counted whether or not anything was listening. 0 means no
+  // voice has been decoded at all: nothing to play, nothing to record
+  // (#1351). Absent on daemons older than this field.
+  stream_samples_total?: number;
+  // RFC 3339 time of the most recent decoded PCM; absent until the first.
+  last_audio_at?: string;
 }
 
 // HuntStatus mirrors api.HuntStatus — the live system-discovery run snapshot

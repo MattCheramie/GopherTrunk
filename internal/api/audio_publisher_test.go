@@ -482,3 +482,38 @@ func TestAudioPublisher_LabelsConfiguredSampleRate(t *testing.T) {
 		t.Errorf("label %d after SetSampleRate(48000)", got)
 	}
 }
+
+// Decoded PCM must be counted even while nobody is listening: the web
+// player's "no decoded audio yet" hint (#1351) reads SamplesTotal from
+// GET /api/v1/audio, and the operator typically opens that player AFTER
+// wondering why the recordings folder stayed empty. Counting only on
+// fan-out would report 0 to a player that had just connected.
+func TestAudioPublisher_CountsReceivedPCMWithoutSubscribers(t *testing.T) {
+	pub, _ := mkPublisher(t)
+
+	if st := pub.Stats(); st.SamplesTotal != 0 || !st.LastPCMAt.IsZero() {
+		t.Fatalf("fresh publisher: samples=%d last=%v, want 0 / zero time", st.SamplesTotal, st.LastPCMAt)
+	}
+
+	before := time.Now().Add(-time.Second)
+	if err := pub.WritePCM("VOICE-1", make([]int16, 160)); err != nil {
+		t.Fatal(err)
+	}
+	if err := pub.WritePCMForCall("VOICE-1", 7, make([]int16, 80)); err != nil {
+		t.Fatal(err)
+	}
+	st := pub.Stats()
+	if st.SamplesTotal != 240 {
+		t.Errorf("SamplesTotal = %d, want 240 (counted with no subscriber attached)", st.SamplesTotal)
+	}
+	if st.LastPCMAt.Before(before) || st.LastPCMAt.After(time.Now().Add(time.Second)) {
+		t.Errorf("LastPCMAt = %v, want roughly now", st.LastPCMAt)
+	}
+	// An empty write is not audio.
+	if err := pub.WritePCM("VOICE-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := pub.Stats().SamplesTotal; got != 240 {
+		t.Errorf("SamplesTotal after empty write = %d, want 240", got)
+	}
+}

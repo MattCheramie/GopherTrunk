@@ -235,7 +235,15 @@ export const useShared = create<SharedState>((set, get) => ({
     // without its algorithm name for that window.
     let activeCalls = get().activeCalls;
     let patched = false;
+    // audio.state is pushed when any client changes a cockpit knob
+    // (PATCH /api/v1/audio); its payload is the full AudioStatusDTO, so
+    // every open tab converges without waiting for its next poll.
+    let audio = get().audio;
     for (const ev of evs) {
+      if (ev.kind === "audio.state" && ev.payload != null) {
+        audio = ev.payload as AudioStatusDTO;
+        continue;
+      }
       if (ev.kind !== "call.encryption" || ev.payload == null) continue;
       const p = ev.payload as CallEncryptionEvent;
       if (!p.device_serial) continue;
@@ -255,7 +263,11 @@ export const useShared = create<SharedState>((set, get) => ({
       };
       patched = true;
     }
-    set(patched ? { events: next, activeCalls } : { events: next });
+    set({
+      events: next,
+      ...(patched ? { activeCalls } : {}),
+      ...(audio !== get().audio ? { audio } : {}),
+    });
   },
   setError(msg) {
     // Retain lastError for any readers, and surface non-null errors as

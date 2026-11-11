@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	apiv1 "github.com/MattCheramie/GopherTrunk/internal/api/pb/v1"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -40,6 +41,17 @@ type AudioPublisher struct {
 	grants map[string]trunking.Grant // by device serial
 
 	dropped atomic.Uint64
+
+	// received counts every PCM sample handed to WritePCM /
+	// WritePCMForCall, and lastPCM (unix nanoseconds) is when the last
+	// one arrived. Both are stamped BEFORE the subscriber and stale-call
+	// checks, so they answer "has decoded audio ever reached the live
+	// path?" even while nothing is listening — the question an operator
+	// with a silent web player and an empty recordings folder needs
+	// answered first (#1351: no call was being decoded at all, and
+	// nothing said so).
+	received atomic.Uint64
+	lastPCM  atomic.Int64
 
 	// sampleRate labels every PCM frame (0 = 8000). The daemon sets it to
 	// the live stream's rate and converts every feed into it (#1242).
@@ -177,16 +189,28 @@ type AudioPublisherStats struct {
 	Subscribers   int
 	DroppedTotal  uint64
 	TrackedGrants int
+	// SamplesTotal is the number of PCM samples the decode path has
+	// handed the publisher since start-up, whether or not anyone was
+	// subscribed. Zero means no voice has been decoded at all.
+	SamplesTotal uint64
+	// LastPCMAt is when the most recent PCM arrived; the zero time when
+	// SamplesTotal is 0.
+	LastPCMAt time.Time
 }
 
 func (p *AudioPublisher) Stats() AudioPublisherStats {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return AudioPublisherStats{
+	st := AudioPublisherStats{
 		Subscribers:   len(p.subs),
 		DroppedTotal:  p.dropped.Load(),
 		TrackedGrants: len(p.grants),
+		SamplesTotal:  p.received.Load(),
 	}
+	if ns := p.lastPCM.Load(); ns != 0 {
+		st.LastPCMAt = time.Unix(0, ns).UTC()
+	}
+	return st
 }
 
 // WritePCM satisfies composer.PCMSink. It fans live PCM to every
@@ -229,6 +253,8 @@ func (p *AudioPublisher) writePCM(deviceSerial string, callID uint64, samples []
 	if p == nil || len(samples) == 0 {
 		return nil
 	}
+	p.received.Add(uint64(len(samples)))
+	p.lastPCM.Store(time.Now().UnixNano())
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if len(p.subs) == 0 {

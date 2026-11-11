@@ -311,3 +311,58 @@ func TestAudioPatch_GatedByAuth(t *testing.T) {
 		t.Errorf("SetMuted called despite gate")
 	}
 }
+
+// GET /api/v1/audio tells "no voice has been decoded" apart from "playback
+// is broken" (#1351): stream_samples_total counts decoded PCM whether or
+// not anything was listening, and last_audio_at appears with the first
+// sample.
+func TestAudioStatus_ReportsDecodedPCMReceived(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	pub, err := NewAudioPublisher(bus, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = pub.Run(ctx) }()
+	defer pub.Close()
+
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Audio: newFakeAudio(), AudioPublisher: pub})
+	defer teardown()
+
+	get := func() AudioStatusDTO {
+		t.Helper()
+		resp, err := http.Get(base + "/api/v1/audio")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body AudioStatusDTO
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return body
+	}
+
+	// Nothing decoded yet: zero, and no timestamp at all.
+	if st := get(); st.StreamSamplesTotal != 0 || st.LastAudioAt != "" {
+		t.Fatalf("before any PCM: samples=%d last_audio_at=%q, want 0 and empty", st.StreamSamplesTotal, st.LastAudioAt)
+	}
+
+	// Decoded PCM with NO stream subscriber attached still counts.
+	if err := pub.WritePCM("VOICE-1", make([]int16, 320)); err != nil {
+		t.Fatal(err)
+	}
+	st := get()
+	if st.StreamSamplesTotal != 320 {
+		t.Errorf("stream_samples_total = %d, want 320", st.StreamSamplesTotal)
+	}
+	at, err := time.Parse(time.RFC3339, st.LastAudioAt)
+	if err != nil {
+		t.Fatalf("last_audio_at %q: %v", st.LastAudioAt, err)
+	}
+	if time.Since(at) > 5*time.Second {
+		t.Errorf("last_audio_at = %v, want within the last few seconds", at)
+	}
+}
