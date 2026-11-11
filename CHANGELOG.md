@@ -8,6 +8,22 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`wmbus`: a noise spike no longer knocks the chip clock off a strong
+  telegram (#1256).** A crossing of the slicing threshold within half a chip
+  of the previous one cannot be a chip edge, but the clock took it as one and
+  pulled its phase and period toward it. On a clean −16.8 dBFS heat-cost-
+  allocator telegram from the reporter's 8 Nov walk one such spike, right
+  before a 107-chip run of zeros, drifted the clock through that run and the
+  next, failing the last two CRC blocks (the same telegram decoded when
+  replayed alone). The clock now ignores such crossings; the telegram decodes
+  and the walk's 417 snippets give 240 CRC-valid in sequence (was 239) and
+  170 cold (was 171). Pinned by `clock_longrun_test.go` on that telegram.
+- **`wmbus`: a lost SDR that stays away is said so, loudly (#1256).** Once a
+  live run has waited a minute for its SDR the waiting line says whether the
+  dongle is still on the USB bus at all and asks for a replug (a phone's OTG
+  port stays off after a disconnect until then), and every waiting line rings
+  the terminal bell, which Termux turns into a vibration. On the 8 Nov walk
+  the run polled "no SDRs found" for 19 minutes in a pocket.
 - **The web player's REC button switched recordings off on its first click
   (#1351).** Nothing in the web console loaded the daemon's audio state, so
   the button always rendered as "off" and its first click sent
