@@ -73,7 +73,7 @@ func serveMiniIIOD(t *testing.T, xml []byte) string {
 }
 
 func TestIIOProbeCommandSavesContextXML(t *testing.T) {
-	xml, err := os.ReadFile("../../internal/sdr/iio/testdata/pluto_context_reconstructed.xml")
+	xml, err := os.ReadFile("../../internal/sdr/iio/testdata/plutosky_rev_c_context.xml")
 	if err != nil {
 		t.Fatal(err)
 	}

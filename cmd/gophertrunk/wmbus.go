@@ -251,7 +251,7 @@ FLAGS:`)
 		}
 		return nil
 	}
-	dev, name, err := openPowerDevice(*rtlTCP, *serial, log)
+	dev, name, err := openPowerDevice(*rtlTCP, "", *serial, log)
 	if err != nil {
 		rep.Fatal(1, err)
 	}
@@ -314,7 +314,7 @@ FLAGS:`)
 			stream <-chan []complex64
 		}
 		back, ok := wmbusReopen(ctx, func() (opened, error) {
-			d, _, err := openPowerDevice(*rtlTCP, *serial, log)
+			d, _, err := openPowerDevice(*rtlTCP, "", *serial, log)
 			if err != nil {
 				return opened{}, err
 			}

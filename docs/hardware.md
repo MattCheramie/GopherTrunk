@@ -22,7 +22,7 @@ transport (USBDEVFS on Linux, IOKit on macOS, WinUSB on Windows).
 | **HydraSDR RFOne** | `hydrasdr` | `0x38af:0x0001` · `0x1d50:0x60a1` (older units, told apart from an Airspy by the USB Product string) | Wire-protocol-complete against the vendor's `hydrasdr-host` library (#1325); shares the Airspy driver's stream path and real-to-IQ converter. Not yet run against attached hardware. |
 | **Airspy HF+ Discovery / HF+ Dual Port / legacy HF+** | `airspyhf` | `0x03eb:0x800c` | Wire-protocol-complete; HF (9 kHz – 31 MHz) + VHF (60 – 260 MHz). A hardware-gated harness now exists (`internal/sdr/airspyhf/airspyhf_real_test.go`, `GOPHERTRUNK_AIRSPYHF_REAL`); on-air validation against attached hardware is still pending. |
 | **rtl_tcp remote** (any librtlsdr-shipped server) | `rtltcp` | TCP | Remote RTL-SDR mounted over the network. See [Remote rtl_tcp SDRs](#remote-rtl_tcp-sdrs). |
-| **ADALM-Pluto / PlutoSky** (Pluto-firmware AD936x boards) | `iio` | TCP | Talks to iiod, the libiio daemon on the board itself (port 30431); no SoapySDR or libiio on the host. 12-bit RX, 260.4 kS/s–61.44 MS/s. Not yet confirmed on air. See [ADALM-Pluto, PlutoSky and other AD936x boards](#adalm-pluto-plutosky-and-other-ad936x-boards). |
+| **ADALM-Pluto / PlutoSky** (Pluto-firmware AD936x boards) | `iio` | TCP | Talks to iiod, the libiio daemon on the board itself (port 30431); no SoapySDR or libiio on the host. 12-bit RX, 260.4 kS/s–61.44 MS/s. Probe and sample read confirmed on a PlutoSky; decode not yet confirmed on air. See [ADALM-Pluto, PlutoSky and other AD936x boards](#adalm-pluto-plutosky-and-other-ad936x-boards). |
 | **SoapySDRServer remote** (USRP / LimeSDR / bladeRF / ADALM-Pluto & PlutoSky / HackRF / Airspy / RTL-SDR / SDRplay …) | `soapyremote` | TCP | Any SoapySDR-supported radio mounted over the network with 16/32-bit IQ + control. Field-tested on air against USRP X310 and B210 rigs (single-branch; MRC diversity combining is still experimental). See [Remote SoapySDRServer SDRs](#remote-soapysdrserver-sdrs). |
 
 The HackRF and Airspy / Airspy HF+ drivers speak the documented
@@ -1196,8 +1196,22 @@ What the driver does, all pinned to libiio v0.25 and SoapyPlutoSDR's source:
 The `iio: connected` log line prints the iiod version, `hw_model`,
 `fw_version`, the RX device, its sample format and the full scale.
 
-Not yet confirmed on air with a Pluto or PlutoSky (#764/#771); reports are
-welcome on #1329. Design notes: `docs/design/native-pluto-driver.md`.
+The one-shot tools take the board on the command line, since they read no
+config file: `gophertrunk power -iio 192.168.2.1 …` sweeps it
+([power sweep](power-sweep.html)) and `gophertrunk capture -iio 192.168.2.1
+-freq …` records IQ from it. An `sdr.iio` entry in `config.yaml` is for the
+daemon only.
+
+What is confirmed on a real board (#1329, a PlutoSky on Pluto v0.38 and on
+tezuka-v0.3.24 firmware): the probe connects, reads the device list, the
+current settings and one buffer of samples at the right level, over the USB
+link and over the LAN, from Linux with and without libiio and from Termux
+over WLAN. The board's own device list is the driver's test fixture
+(`internal/sdr/iio/testdata/plutosky_rev_c_context.xml`), and every
+attribute the driver writes is checked against it. The daemon's decode path
+(tune, stream, lock a control channel) is not yet confirmed on air
+(#764/#771); reports are welcome on #1329. Design notes:
+`docs/design/native-pluto-driver.md`.
 
 #### Through SoapySDR: `sdr.soapy_remote`
 

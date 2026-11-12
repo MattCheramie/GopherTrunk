@@ -16,6 +16,7 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/powersweep"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr/iio"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtltcp"
 )
 
@@ -47,6 +48,7 @@ func runPower(args []string) {
 	biasTee := fs.Bool("bias-tee", false, "enable the bias-tee (local dongles and rtl_tcp servers that support it)")
 	serial := fs.String("serial", "", "local SDR serial (required when more than one is attached)")
 	rtlTCP := fs.String("rtltcp", "", "host:port of an rtl_tcp server to sweep instead of a local SDR")
+	iioAddr := fs.String("iio", "", "address of a Pluto / PlutoSky board's iiod (e.g. 192.168.2.1) to sweep instead of a local SDR")
 	settle := fs.Duration("settle", 0, "samples discarded after each retune (default 50ms local, 250ms rtl_tcp)")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
@@ -54,7 +56,7 @@ func runPower(args []string) {
 
 USAGE:
   gophertrunk power -f lower:upper:bin [-i interval] [-e duration | -1]
-                    [-rtltcp host:port | -serial S] [-gain G] [-ppm N]
+                    [-rtltcp host:port | -iio addr | -serial S] [-gain G] [-ppm N]
                     [-rate S/s] [-crop F] [-out file.csv | file.csv]
 
 OUTPUT (rtl_power's CSV layout, one line per hop):
@@ -67,6 +69,9 @@ EXAMPLES:
 
   # Same, from a dongle shared by an rtl_tcp server (e.g. on an Android phone)
   gophertrunk power -rtltcp 127.0.0.1:1234 -f 88M:108M:10k -i 30s -out fm.csv
+
+  # From an ADALM-Pluto / PlutoSky over its iiod (no SoapySDR or libiio needed)
+  gophertrunk power -iio 192.168.2.1 -f 88M:108M:10k -gain 400 -out fm.csv
 
   # One quick sweep of the 2 m band to the terminal
   gophertrunk power -f 144M:148M:5k -i 1 -1
@@ -119,7 +124,7 @@ FLAGS:`)
 	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	dev, name, err := openPowerDevice(*rtlTCP, *serial, log)
+	dev, name, err := openPowerDevice(*rtlTCP, *iioAddr, *serial, log)
 	if err != nil {
 		rep.Fatal(1, err)
 	}
@@ -158,7 +163,9 @@ FLAGS:`)
 	settleFor := *settle
 	if settleFor <= 0 {
 		settleFor = powerSettleLocal
-		if *rtlTCP != "" {
+		if *rtlTCP != "" || *iioAddr != "" {
+			// A network radio: the retune and the first samples both
+			// cross a socket.
 			settleFor = powerSettleRTLTCP
 		}
 	}
@@ -407,18 +414,34 @@ func iqStreamEnded(dev sdr.Device, fallback error) error {
 	return fallback
 }
 
-// openPowerDevice opens the rtl_tcp server at addr when given, else the local
-// SDR matching serial. It returns the device and a name for the banner.
-func openPowerDevice(addr, serial string, log *slog.Logger) (sdr.Device, string, error) {
-	if addr != "" {
-		if serial != "" {
-			return nil, "", errors.New("-rtltcp and -serial are mutually exclusive")
+// openPowerDevice opens the rtl_tcp server at addr when given, the Pluto-style
+// board whose iiod is at iioAddr when given (issue #1329; the #1230 reporter's
+// `sdr.iio` config does nothing here, since the one-shot tools read no config
+// file), else the local SDR matching serial. It returns the device and a name
+// for the banner.
+func openPowerDevice(addr, iioAddr, serial string, log *slog.Logger) (sdr.Device, string, error) {
+	n := 0
+	for _, s := range []string{addr, iioAddr, serial} {
+		if s != "" {
+			n++
 		}
+	}
+	if n > 1 {
+		return nil, "", errors.New("-rtltcp, -iio and -serial are mutually exclusive")
+	}
+	if addr != "" {
 		dev, err := rtltcp.New([]rtltcp.Spec{{Addr: addr}}, log).Open(0)
 		if err != nil {
 			return nil, "", fmt.Errorf("rtl_tcp %s: %w", addr, err)
 		}
 		return dev, "rtl_tcp " + addr, nil
+	}
+	if iioAddr != "" {
+		dev, err := iio.New([]iio.Spec{{Addr: iioAddr}}, log).Open(0)
+		if err != nil {
+			return nil, "", err
+		}
+		return dev, "iio " + iio.NormalizeAddr(iioAddr), nil
 	}
 	dev, info, err := openCaptureDevice(serial)
 	if err != nil {

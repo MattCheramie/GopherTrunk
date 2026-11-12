@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseReconstructedPlutoContext(t *testing.T) {
-	raw, err := os.ReadFile("testdata/pluto_context_reconstructed.xml")
+	raw, err := os.ReadFile("testdata/plutosky_rev_c_context.xml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,7 +18,7 @@ func TestParseReconstructedPlutoContext(t *testing.T) {
 		t.Errorf("fw_version = %q", got)
 	}
 	rx := ctx.FindDevice("cf-ad9361-lpc")
-	if rx == nil || rx.ID != "iio:device4" {
+	if rx == nil || rx.ID != "iio:device3" {
 		t.Fatalf("cf-ad9361-lpc = %+v", rx)
 	}
 	i := rx.FindChannel("voltage0", false)
@@ -28,7 +28,7 @@ func TestParseReconstructedPlutoContext(t *testing.T) {
 	if got := rx.Mask(i, rx.FindChannel("voltage1", false)); got != "00000003" {
 		t.Errorf("mask = %q, want 00000003", got)
 	}
-	phy := ctx.FindDevice("iio:device1")
+	phy := ctx.FindDevice("iio:device0")
 	if phy == nil || phy.Name != "ad9361-phy" {
 		t.Fatalf("lookup by id: %+v", phy)
 	}

@@ -13,9 +13,9 @@ import (
 func TestProbeIsReadOnlyAndReportsBoard(t *testing.T) {
 	f := newFakeIIOD(t)
 	f.mu.Lock()
-	f.attrs["iio:device1 altvoltage0 frequency"] = "433920000"
-	f.attrs["iio:device1 voltage0 gain_control_mode"] = "slow_attack"
-	f.attrs["iio:device1 voltage0 hardwaregain"] = "71.000000 dB"
+	f.attrs["iio:device0 altvoltage0 frequency"] = "433920000"
+	f.attrs["iio:device0 voltage0 gain_control_mode"] = "slow_attack"
+	f.attrs["iio:device0 voltage0 hardwaregain"] = "71.000000 dB"
 	f.readbuf = func(w io.Writer, _ string, n int, _ int) {
 		// I at the positive rail, Q at half scale, for n/4 samples.
 		vals := make([]int16, n/2)
@@ -42,7 +42,7 @@ func TestProbeIsReadOnlyAndReportsBoard(t *testing.T) {
 	if rep.BindErr != nil {
 		t.Fatalf("BindErr = %v", rep.BindErr)
 	}
-	if rep.Version != "0.25.b6028fd" || rep.RXDevice != "iio:device4" || rep.SampleFormat != "le:S12/16>>0" {
+	if rep.Version != "0.25.b6028fd" || rep.RXDevice != "iio:device3" || rep.SampleFormat != "le:S12/16>>0" {
 		t.Errorf("report = %+v", rep)
 	}
 	if rep.LOFrequency != "433920000" || rep.GainMode != "slow_attack" || rep.HardwareGain != "71.000000 dB" {
@@ -67,7 +67,7 @@ func TestProbeIsReadOnlyAndReportsBoard(t *testing.T) {
 			open = c
 		}
 	}
-	if open != "OPEN iio:device4 4096 00000003\r\n" {
+	if open != "OPEN iio:device3 4096 00000003\r\n" {
 		t.Errorf("OPEN = %q", open)
 	}
 }

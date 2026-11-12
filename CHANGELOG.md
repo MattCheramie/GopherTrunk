@@ -7,6 +7,16 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **`gophertrunk power -iio` and `gophertrunk capture -iio`** sweep or record
+  from an ADALM-Pluto / PlutoSky through the iiod on the board, like `-rtltcp`
+  for an rtl_tcp dongle (#1329, #1230). The one-shot tools read no config
+  file, so an `sdr.iio` entry did nothing for them and a sweep ended in "no
+  SDRs found". The iio driver's test fixture is now the #1329 reporter's real
+  PlutoSky device list (it replaces a reconstructed one that numbered the
+  devices differently), and every attribute the driver writes is checked
+  against it.
+
 ### Fixed
 - **Go toolchain moved to 1.26.11** for GO-2026-6859: an HTTP/1 server using
   `MaxBytesReader` could crash on a header race when a handler read the

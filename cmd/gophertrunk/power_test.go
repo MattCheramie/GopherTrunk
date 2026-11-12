@@ -138,7 +138,7 @@ func TestPowerSweepOverRTLTCP(t *testing.T) {
 	)
 	srv := newFakeRTLTCP(t, toneHz)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	dev, name, err := openPowerDevice(srv.ln.Addr().String(), "", log)
+	dev, name, err := openPowerDevice(srv.ln.Addr().String(), "", "", log)
 	if err != nil {
 		t.Fatal(err)
 	}

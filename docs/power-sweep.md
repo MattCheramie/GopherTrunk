@@ -25,6 +25,9 @@ gophertrunk power -f 88M:108M:10k -out fm.csv
 # The same from a remote dongle behind rtl_tcp
 gophertrunk power -rtltcp 192.168.1.50:1234 -f 88M:108M:10k -out fm.csv
 
+# From an ADALM-Pluto / PlutoSky over its own iiod (no SoapySDR or libiio)
+gophertrunk power -iio 192.168.2.1 -f 88M:108M:10k -gain 400 -out fm.csv
+
 # One sweep of the 2 m band to the terminal, integrating for 1 s
 gophertrunk power -f 144M:148M:5k -i 1 -1
 
@@ -91,12 +94,13 @@ your dongle runs that rate without dropping samples.
 | `-1` | off | Run one sweep, then exit. |
 | `-out` | stdout | CSV path. A trailing positional file name also works, as with rtl_power. |
 | `-rtltcp host:port` | (none) | Sweep the dongle behind an rtl_tcp server instead of a local SDR. |
+| `-iio addr` | (none) | Sweep an ADALM-Pluto / PlutoSky through the iiod on the board (`192.168.2.1` on the USB link, or its LAN address) instead of a local SDR. The one-shot tools read no config file, so an `sdr.iio` entry in `config.yaml` does not apply here; name the board on the command line. |
 | `-serial` | (none) | Pick a local SDR when several are attached. |
 | `-gain` | `auto` | `auto`, or tenths of a dB as everywhere in GopherTrunk: `280` is 28 dB, and `28.0` also reads as 28 dB. |
 | `-ppm` | `0` | Frequency correction. |
 | `-rate` | `2400000` | Sample rate. Each hop covers `rate × (1 − crop)` Hz. |
 | `-crop` | `0.25` | Fraction of each FFT dropped at the edges, where the tuner's filter rolls off. |
-| `-settle` | 50 ms local, 250 ms rtl_tcp | Samples discarded after each retune. |
+| `-settle` | 50 ms local, 250 ms rtl_tcp / iio | Samples discarded after each retune. |
 | `-bias-tee` | off | Power an LNA through the antenna port. |
 
 Each sweep's lines are flushed as soon as the sweep finishes, so you can
