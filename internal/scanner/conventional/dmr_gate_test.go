@@ -200,6 +200,14 @@ func dmrAt2400k(iq []complex64) []complex64 {
 // and returns the engine fake after the stream (plus silence) has played.
 func runDMRChannel(t *testing.T, iq []complex64) *fakeEngine {
 	t.Helper()
+	return runModeChannel(t, ModeDMR, iq)
+}
+
+// runModeChannel scans one channel of the given mode carrying iq at the
+// scanner's SDR rate and returns the engine fake after the stream (plus
+// silence) has played.
+func runModeChannel(t *testing.T, mode string, iq []complex64) *fakeEngine {
+	t.Helper()
 	const freq = 442_387_500
 	tuner := &fakeTuner{}
 	eng := &fakeEngine{}
@@ -213,9 +221,9 @@ func runDMRChannel(t *testing.T, iq []complex64) *fakeEngine {
 	src := &fakeIQ{chunks: map[uint32][][]complex64{freq: chunks}, tuner: tuner}
 	s, err := New(Options{
 		Tuner: tuner, IQ: src, Engine: eng, Recorder: fakeRecorder{},
-		DeviceSerial: "CONV-DMR-GATE",
+		DeviceSerial: "CONV-" + mode + "-GATE",
 		Channels: []Channel{{
-			Label: "Rptr", FrequencyHz: freq, Mode: ModeDMR,
+			Label: "Rptr", FrequencyHz: freq, Mode: mode,
 			SquelchDbFS: -50, Hangtime: 300 * time.Millisecond,
 		}},
 		SampleRateHz: amTestRate,

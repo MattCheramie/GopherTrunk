@@ -211,6 +211,9 @@ func (d *DMRCallDetector) Present() bool {
 	return d.lastCall >= 0 && d.samples-d.lastCall <= d.hold
 }
 
+func (d *DMRCallDetector) gateName() string        { return "DMR" }
+func (d *DMRCallDetector) minDwell() time.Duration { return dmrGateMinDwell }
+
 // Reset clears all state; the scanner calls it on every retune.
 func (d *DMRCallDetector) Reset() {
 	d.fe.reset()

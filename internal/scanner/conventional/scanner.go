@@ -709,7 +709,30 @@ func buildChannelDetector(ch Channel, sampleHz float64, log *slog.Logger) toneDe
 		}
 		return nil
 	}
+	if ch.Mode == ModeYSF {
+		// A ysf channel opens only on a System Fusion frame sync, not on
+		// any carrier (issue #1261: an analog FM test tone on the channel
+		// opened a "ysf" call that recorded nothing).
+		if d := NewYSFCallDetector(sampleHz); d != nil {
+			return d
+		}
+		return nil
+	}
 	return buildDetector(ch.Tone, sampleHz, log)
+}
+
+// callGate is a toneDetector that runs a protocol receiver on the channel's
+// IQ and reports a CALL rather than a carrier: the DMR gate (a voice sync or
+// Voice LC Header, not an idle beacon) and the YSF gate (a frame sync, not an
+// analog carrier), both issue #1261. Unlike a tone detector it must see
+// EVERY chunk of the dwell, gaps and all (a simplex radio's TDMA gaps, the
+// receiver's own settling), and once the channel's power squelch has broken
+// it may hold the scan window open for minDwell so its receiver can settle
+// and hear the next sync. A silent channel costs no extra time.
+type callGate interface {
+	toneDetector
+	gateName() string
+	minDwell() time.Duration
 }
 
 // buildDetector returns a tone detector when gating is configured for
@@ -866,13 +889,13 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 	cd := s.dataFor(idx)
 	level, open := s.squelchMeasure(idx, ch)
 	var held time.Duration
-	// A DMR call gate runs its own receiver, so it sees every chunk (a
-	// simplex radio's TDMA gaps included); once the channel's power squelch
-	// has broken it may extend the window to dmrGateMinDwell to hear a voice
-	// sync or Voice LC Header. A silent DMR channel costs no extra time.
-	dmrGate, _ := det.(*DMRCallDetector)
+	// A call gate (DMR, YSF) runs its own receiver, so it sees every chunk
+	// (a simplex radio's TDMA gaps included); once the channel's power
+	// squelch has broken it may extend the window to its minDwell to hear
+	// the next sync. A silent channel costs no extra time.
+	gate, _ := det.(callGate)
 	started := s.opts.Now()
-	dmrExtended := false
+	gateExtended := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -883,10 +906,10 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				deadline.Reset(dataScanHoldStep)
 				continue
 			}
-			if dmrGate != nil && dmrExtended {
-				if rest := dmrGateMinDwell - s.opts.Now().Sub(started); rest > 0 {
+			if gate != nil && gateExtended {
+				if rest := gate.minDwell() - s.opts.Now().Sub(started); rest > 0 {
 					deadline.Reset(rest)
-					dmrExtended = false // one extension
+					gateExtended = false // one extension
 					continue
 				}
 			}
@@ -899,13 +922,13 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 			if pos != nil {
 				pos.advance(len(iq), powerOK)
 			}
-			if dmrGate != nil {
-				present := dmrGate.Process(iq)
+			if gate != nil {
+				present := gate.Process(iq)
 				if powerOK {
-					dmrExtended = true
+					gateExtended = true
 				}
 				if powerOK && present {
-					s.log.Info("conv: DMR call gate opened", "freq_hz", ch.FrequencyHz, "label", ch.Label)
+					s.log.Info("conv: call gate opened", "gate", gate.gateName(), "freq_hz", ch.FrequencyHz, "label", ch.Label)
 					return true
 				}
 				continue
@@ -1070,9 +1093,9 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 			} else if bridge > 0 && lastChunk.Sub(lastAbove) < bridge {
 				active = true // a TDMA gap inside one over, not a release
 			}
-			if dmrGate, ok := det.(*DMRCallDetector); ok {
+			if gate, ok := det.(callGate); ok {
 				// Fed every chunk: its receiver needs the gaps too.
-				active = dmrGate.Process(iq) && active
+				active = gate.Process(iq) && active
 			} else if active && det != nil {
 				active = det.Process(iq)
 			}

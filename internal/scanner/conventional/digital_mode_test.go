@@ -36,11 +36,19 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 			for i := range sig {
 				sig[i] *= 0.1
 			}
-			if tc.mode == ModeDMR {
+			switch tc.mode {
+			case ModeDMR:
 				// A DMR channel opens only on a call (issue #1261), so it
 				// needs a real one: Voice LC Headers then voice superframes.
 				c1, c2 := dmrCallBursts(r, 4)
 				sig = dmrAt2400k(modulateDMR(r, dmrRepeaterDibits(r, c1, c2)))
+				for i := range sig {
+					sig[i] *= 0.2
+				}
+			case ModeYSF:
+				// A ysf channel opens only on a frame sync (issue #1261), so
+				// it needs real frames: header, V/D mode 2, terminator.
+				sig = dmrAt2400k(modulateYSF(r, ysfCallDibits(t, r, 8)))
 				for i := range sig {
 					sig[i] *= 0.2
 				}

@@ -20,3 +20,15 @@ noise follows, so the two slices are carrier + voice and noise only, from
 the same receiver at the same gain. Channelized to 48 kHz the same way as
 the CTCSS slices. Used by `am_realair_test.go` (squelch) and by
 `internal/voice/composer/am_realair_test.go` (carrier tracking).
+
+`ysf_issue1261_analog_tone_448900k_48k.cs16` is a 1 s slice (1.0 s–2.0 s)
+of the capture @v2maldo posted on issue #1261 (11 Nov) as a System Fusion
+test on 448.900 MHz: GopherTrunk's per-call voice IQ debug tap on a `ysf`
+scan-list channel (RTL-SDR Blog V4, 2.4 MS/s cs16, tuned on-channel),
+channelized to 48 kHz with `ccdecoder.NewDownconverter`. It is NOT a C4FM
+transmission: the discriminator output is a single 1 kHz sine (an analog
+FM test tone at about ±1.8–2.6 kHz deviation, 1.4 kHz off frequency), and
+57 % of the original's samples have I or Q at the ADC rail (the
+constellation is the clipping square: the handheld was next to the dongle). `ysf_gate_test.go` pins that the YSF call gate stays shut on
+it: on power alone the scanner had opened a "ysf" call that recorded
+nothing.
