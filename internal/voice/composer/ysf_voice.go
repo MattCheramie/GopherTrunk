@@ -58,7 +58,10 @@ func (c *Composer) runYSFVoiceChain(ctx context.Context, serial, system string, 
 		vd2Frames    atomic.Uint64
 		otherFrames  atomic.Uint64 // V/D mode 1 / voice FR / data: not decoded
 		fichFailures atomic.Uint64
+		syncHits     atomic.Uint64 // frames cut at a frame sync, FICH good or bad
 		warnedMode   bool
+		rail         iqRailMeter
+		iqSamples    uint64
 		// lastVD2 lets a frame whose FICH failed its CRC still decode
 		// when the call's last good FICH said V/D mode 2 voice, as
 		// MMDVMHost does with its last FICH.
@@ -82,6 +85,7 @@ func (c *Composer) runYSFVoiceChain(ctx context.Context, serial, system string, 
 	}
 	rx := newYSFVoiceReceiver(fe.OutRateHz(), func(dibits []uint8, baseIdx int) {
 		for _, af := range framer.Process(dibits, baseIdx) {
+			syncHits.Add(1)
 			isVoice := false
 			switch {
 			case af.FICHOK:
@@ -114,7 +118,17 @@ func (c *Composer) runYSFVoiceChain(ctx context.Context, serial, system string, 
 	ended := func(how string) {
 		c.log.Info("composer: ysf voice chain ended"+how, "serial", serial,
 			"voice_frames", voiceFrames.Load(), "vd2_frames", vd2Frames.Load(),
-			"undecoded_mode_frames", otherFrames.Load(), "fich_failures", fichFailures.Load())
+			"undecoded_mode_frames", otherFrames.Load(), "fich_failures", fichFailures.Load(),
+			"sync_hits", syncHits.Load(), "adc_rail_pct", rail.pct(), "iq_samples", iqSamples)
+		// A call with NO frame sync at all was not a System Fusion
+		// transmission as this receiver saw it. The first #1261 YSF
+		// capture was an analog FM carrier carrying a 1 kHz test tone,
+		// 57 % of its samples at the ADC rail; the chain logged nothing
+		// that said so, and the operator read it as "YSF decodes no sound".
+		if syncHits.Load() == 0 && float64(iqSamples) >= 0.5*iqHz {
+			c.log.Warn("composer: ysf call carried no YSF frame sync at all — the carrier was not System Fusion C4FM (analog FM, a test tone, another digital mode), or the front end was overloaded; check adc_rail_pct and lower the gain if it is high",
+				"serial", serial, "system", system, "seconds", float64(iqSamples)/iqHz, "adc_rail_pct", rail.pct())
+		}
 	}
 	for {
 		select {
@@ -128,9 +142,37 @@ func (c *Composer) runYSFVoiceChain(ctx context.Context, serial, system string, 
 				return
 			}
 			bt.observe(iq)
+			rail.observe(iq)
+			iqSamples += uint64(len(iq))
 			rx.Process(fe.Process(nil, iq))
 		}
 	}
+}
+
+// iqRailMeter counts input samples whose I or Q sits at the ADC rail, on
+// every 64th sample (the figure is a percentage, not a per-sample gate). A
+// u8 RTL-SDR sample at either rail scales to ±1.0 exactly; a cs16 one to
+// ±0.99997.
+type iqRailMeter struct{ seen, rail uint64 }
+
+const iqRailLevel = 0.99
+
+func (m *iqRailMeter) observe(iq []complex64) {
+	for i := 0; i < len(iq); i += 64 {
+		m.seen++
+		re, im := real(iq[i]), imag(iq[i])
+		if re >= iqRailLevel || re <= -iqRailLevel || im >= iqRailLevel || im <= -iqRailLevel {
+			m.rail++
+		}
+	}
+}
+
+// pct is the share of observed samples at the rail, in whole percent.
+func (m *iqRailMeter) pct() int {
+	if m.seen == 0 {
+		return 0
+	}
+	return int(100 * m.rail / m.seen)
 }
 
 // newYSFVoiceReceiver is the voice chain's System Fusion receiver, with
@@ -138,13 +180,19 @@ func (c *Composer) runYSFVoiceChain(ctx context.Context, serial, system string, 
 // the correction the 4-level slicer fails from ~200 Hz of carrier offset, and a
 // real radio is routinely a few hundred hertz off; without the filter the
 // discriminator sees the front end's whole ±24 kHz stream, neighbours
-// included. Measured on synthetic streams; no YSF capture exists yet.
+// included. Measured on synthetic streams; the only on-air capture so far
+// (11 Nov) was not a System Fusion transmission (see TestYSFReplay).
 func newYSFVoiceReceiver(sampleHz float64, sink ysf.DibitSink) *ysfrx.Receiver {
-	return ysfrx.New(ysfrx.Options{
+	rx := ysfrx.New(ysfrx.Options{
 		SampleRateHz:        sampleHz,
 		DeviationHz:         ysfVoiceDeviationHz,
 		EnableAFC:           true,
 		EnableChannelFilter: true,
 		DibitSink:           sink,
 	})
+	// The chain starts at the grant, on a transmission that is already
+	// running at an arbitrary symbol phase; seed the timing loop
+	// feed-forward rather than lose the first frames to its pull-in.
+	rx.ArmTimingAcquisition()
+	return rx
 }

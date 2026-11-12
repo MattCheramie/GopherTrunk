@@ -2403,6 +2403,26 @@ confirmation before any close-as-completed.
   difference. Gate (#764/#771): the reporter's own file through
   `GT_ACARS_AUDIO=<wav> go test ./cmd/gophertrunk -run TestACARSReplay -v`, then a live
   scanner run. Known limit: an ACARS burst also opens an ordinary AM "call".
+- **The first on-air YSF capture (#1261, 11 Nov) was NOT System Fusion: an analog FM carrier with
+  a 1 kHz test tone, 1.4 kHz off, 57 % of IQ samples at the ADC rail (the constellation is the clipping
+  square) — and a `ysf`
+  scan-list channel opened a "ysf" call on it because YSF (like NXDN / D-STAR) squelched on in-channel
+  POWER alone.** Read the capture before any DSP theory: `TestYSFReplay` (`GT_YSF_IQ`, the harness)
+  prints the rail share (57 % here), the discriminator spectrum (one 1000 Hz line, 40 dB over the
+  median bin) and the 4-level eye (12 discrete levels = a sine sampled at 4.8 samples per cycle, not
+  four), and says so in its VERDICT line. The voice chain decoded nothing, correctly, but logged
+  nothing that said why — the operator read it as "YSF detects no sound". Fixed in two places:
+  `conventional.YSFCallDetector` (`ysf_gate.go`, the DMR-gate shape, via the new `callGate` interface
+  the scanner now type-asserts instead of `*DMRCallDetector`) opens a `ysf` channel only on a YSF FSW
+  (failing-first: `TestScannerYSFAnalogCarrierOpensNoCall`, plus the committed 1 s real-air slice
+  `testdata/ysf_issue1261_analog_tone_448900k_48k.cs16`), and the chain's ended line carries
+  `sync_hits` / `adc_rail_pct` with a WARN when a call had no sync at all. The gate exposed the
+  #836 timing lesson on YSF: the receiver's MM loop found the first FSW at 0.6–1.2 s from three of
+  ten start phases (past the 500 ms scan window), so `ysfrx.Receiver.ArmTimingAcquisition` (the DMR
+  feed-forward estimator, two agreeing windows, opt-in, unarmed = byte-identical) seeds it: 0.11 s
+  at every phase; the voice chain arms it too. NXDN and D-STAR scan-list channels still open on power
+  alone (same hole, not fixed here). Still open: a real DN-mode capture — ask for the radio's mode and
+  a lower gain (the handheld was in the room).
 - **A DMR scan-list channel's squelch is now a CALL gate, not a power gate (#1261 follow-up).** A
   keyed-but-idle repeater (Idle bursts / CSBK beacons) held the conventional scanner on its channel.
   `conventional.DMRCallDetector` (`dmr_gate.go`, the NAC-gate shape) runs the production DMR receiver on

@@ -116,11 +116,24 @@ type Receiver struct {
 	dibitBase int
 
 	// Reusable scratch slices so Process doesn't allocate per call.
-	disc    []float32
-	matched []float32
-	symbols []float32
-	sliced  []int8
-	dibits  []uint8
+	disc     []float32
+	matched  []float32
+	symbols  []float32
+	symbols2 []float32
+	sliced   []int8
+	dibits   []uint8
+
+	// Feed-forward symbol-timing acquisition (ArmTimingAcquisition).
+	sps         float64
+	sampleBase  int // matched-filter samples processed so far
+	acqPending  bool
+	acqSkip     int
+	acqBuf      []float32
+	acqStart    int
+	acqHaveCand bool
+	acqCandInst float64
+	acqWindows  int
+	timingSeeds int
 }
 
 // New constructs a Receiver from opts. Panics if SampleRateHz or
@@ -180,7 +193,122 @@ func New(opts Options) *Receiver {
 		mf:        demod.NewC4FM(int(sps+0.5), span, alpha, slicerScale),
 		clock:     sync.NewMuellerMuller(sps, gain),
 		dibitSink: opts.DibitSink,
+		sps:       sps,
 	}
+}
+
+// Feed-forward symbol-timing acquisition, the DMR receiver's (issue #836)
+// on a continuous carrier. The Mueller-Müller loop pulls a bad start phase
+// in at gain·error per symbol, and from near a half symbol (its unstable
+// equilibrium) that takes a long time: the scanner's YSF call gate, started
+// on a transmission at ten sub-sample phases, found the first frame sync
+// after 0.11 s at the best phases and 0.6–1.2 s at three of them (issue
+// #1261) — longer than the scan window it has to open in. A caller that
+// starts the receiver on a carrier that may already be up (the gate, the
+// voice chain at a grant) arms an acquisition: the next
+// timingAcqSkipSymbols symbols are skipped (the matched filter's
+// transient), then windows of timingAcqSymbols symbols of matched-filter
+// output are measured with sync.EstimateSymbolPhase, and the loop is seeded
+// (MuellerMuller.SetPhase) once two consecutive windows agree within
+// timingAcqAgreeSamples (one window is not evidence: a keyup transient can
+// pass the estimator's gates a couple of samples off). After
+// timingAcqMaxWindows disagreeing windows it gives up and the loop pulls in
+// on its own, as before the acquisition existed. Off unless armed, so every
+// existing stream is byte-identical.
+const (
+	timingAcqSkipSymbols  = 10
+	timingAcqSymbols      = 96
+	timingAcqAgreeSamples = 1.0
+	timingAcqMaxWindows   = 4
+)
+
+// ArmTimingAcquisition schedules a feed-forward symbol-timing acquisition
+// on the samples that follow. Call after New and after each Reset when the
+// stream may already carry a transmission.
+func (r *Receiver) ArmTimingAcquisition() {
+	r.acqPending = true
+	r.acqSkip = int(timingAcqSkipSymbols * r.sps)
+	r.acqBuf = r.acqBuf[:0]
+	r.acqHaveCand = false
+	r.acqWindows = 0
+}
+
+// TimingSeeds is the number of feed-forward timing seeds applied so far.
+func (r *Receiver) TimingSeeds() int { return r.timingSeeds }
+
+// observeTimingAcq fills the armed acquisition window from this chunk's
+// matched-filter output. When a window completes and its estimate is
+// confirmed it returns the chunk index k at which the clock must be seeded
+// (samples [0,k) are timed as before, [k,…) after the seed) and the seed
+// value mu: the loop's next symbol instant, in samples past chunk sample
+// k−1, on the estimated phase's grid.
+func (r *Receiver) observeTimingAcq() (k int, mu float64, seed bool) {
+	if !r.acqPending {
+		return 0, 0, false
+	}
+	window := int(timingAcqSymbols * r.sps)
+	for i := range r.matched {
+		if r.acqSkip > 0 {
+			r.acqSkip--
+			continue
+		}
+		if len(r.acqBuf) == 0 {
+			r.acqStart = r.sampleBase + i
+		}
+		r.acqBuf = append(r.acqBuf, r.matched[i])
+		if len(r.acqBuf) < window {
+			continue
+		}
+		tau, ok := sync.EstimateSymbolPhase(r.acqBuf, r.sps)
+		start := r.acqStart
+		r.acqBuf = r.acqBuf[:0]
+		r.acqWindows++
+		if !ok {
+			if r.acqWindows >= timingAcqMaxWindows {
+				r.acqPending = false
+				r.acqHaveCand = false
+				return 0, 0, false
+			}
+			continue
+		}
+		// The symbol instants sit at start + tau + n·sps. Confirm the
+		// estimate against the previous window's before touching the loop.
+		inst := float64(start) + tau
+		if !r.acqHaveCand {
+			r.acqHaveCand = true
+			r.acqCandInst = inst
+			continue
+		}
+		d := math.Mod(inst-r.acqCandInst, r.sps)
+		if d > r.sps/2 {
+			d -= r.sps
+		} else if d < -r.sps/2 {
+			d += r.sps
+		}
+		if math.Abs(d) > timingAcqAgreeSamples {
+			r.acqCandInst = inst
+			if r.acqWindows >= timingAcqMaxWindows {
+				r.acqPending = false
+				r.acqHaveCand = false
+				return 0, 0, false
+			}
+			continue
+		}
+		r.acqPending = false
+		r.acqHaveCand = false
+		// The loop's next instant must be the first of those past the last
+		// sample it will have processed before the seed, chunk sample i.
+		last := float64(r.sampleBase + i)
+		if inst <= last {
+			inst += math.Ceil((last-inst)/r.sps) * r.sps
+			if inst <= last {
+				inst += r.sps
+			}
+		}
+		r.timingSeeds++
+		return i + 1, inst - last, true
+	}
+	return 0, 0, false
 }
 
 // Process pushes one chunk of complex64 IQ samples through the chain.
@@ -200,7 +328,17 @@ func (r *Receiver) Process(iq []complex64) {
 		r.afc.Process(r.disc)
 	}
 	r.matched = r.mf.MatchedFilter(r.matched, r.disc)
-	r.symbols = r.clock.Process(r.symbols, r.matched)
+	if k, mu, seed := r.observeTimingAcq(); seed {
+		// Seed the clock between the two halves of this chunk so every
+		// symbol after the acquisition window is timed from the estimate.
+		r.symbols = r.clock.Process(r.symbols, r.matched[:k])
+		r.clock.SetPhase(mu)
+		r.symbols2 = r.clock.Process(r.symbols2, r.matched[k:])
+		r.symbols = append(r.symbols, r.symbols2...)
+	} else {
+		r.symbols = r.clock.Process(r.symbols, r.matched)
+	}
+	r.sampleBase += len(r.matched)
 	if len(r.symbols) == 0 {
 		return
 	}
@@ -223,6 +361,10 @@ func (r *Receiver) Process(iq []complex64) {
 // absolute dibit positions.
 func (r *Receiver) Reset() {
 	r.dibitBase = 0
+	r.sampleBase = 0
+	r.acqPending = false
+	r.acqBuf = r.acqBuf[:0]
+	r.acqHaveCand = false
 	if r.afc != nil {
 		r.afc.Reset()
 	}

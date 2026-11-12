@@ -1204,6 +1204,15 @@ scanner:
   Voice Full Rate ("VW") are recognised and logged but not decoded.
   Wires-X / network traffic relayed by a repeater is ordinary DN audio
   on air and decodes the same way.
+- **System Fusion channels open only on a Fusion transmission.** Like a
+  DMR channel, a `ysf` channel opens when it hears a YSF frame sync, not
+  on any carrier: an analog FM signal on the frequency (a test tone, an
+  FM user) is skipped instead of opening a call that records nothing. To
+  check, it may stay on a `ysf` channel whose carrier is up for up to half
+  a second. If a call does open and decodes no sync at all, the daemon's
+  diagnostic log says so (`composer: ysf call carried no YSF frame sync`)
+  with the share of samples at the ADC rail; a high share means the gain
+  is far too high for a radio that close.
 - **D-STAR and System Fusion are experimental.** Their voice decode has
   not yet been confirmed on air.
 - **NXDN: pick the channel width.** `mode: nxdn` is the 12.5 kHz mode

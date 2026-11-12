@@ -168,7 +168,8 @@ depends on the path:
   The digital modes work as they do on the scan list, only continuously: a
   `p25` channel takes `nac` and `p25_phase1_demod_mode` and opens only on its
   own NAC (#1262), a `dmr` channel opens only on a call, not on a repeater's
-  idle beacons (#1261), and each call runs the same voice chain as a scan-list
+  idle beacons, a `ysf` channel only on a System Fusion frame sync, not on an
+  analog carrier (#1261), and each call runs the same voice chain as a scan-list
   call. P25 channels may share one frequency when each sets its own `nac`
   (not F7E / F7F), the P25 counterpart of a tone gate: an operator's own units
   and another agency's on one frequency record as two channels. Their serials
