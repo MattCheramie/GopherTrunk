@@ -8,6 +8,22 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Go toolchain moved to 1.26.11** for GO-2026-6859: an HTTP/1 server using
+  `MaxBytesReader` could crash on a header race when a handler read the
+  request body while writing its response header. An older `go` downloads
+  1.26.11 automatically; CI's `setup-go` pins the same version.
+- **A `ysf` scan-list channel opens only on a System Fusion frame sync
+  (#1261).** It squelched on in-channel power alone, so an analog FM carrier
+  on the frequency (the reporter's first "YSF" capture was a 1 kHz test tone,
+  57 % of its samples at the ADC rail) opened a "ysf" call that recorded
+  nothing and said nothing about why. The channel now opens the way a `dmr`
+  channel does, on the protocol's own sync, and may dwell up to half a second
+  on a carrier to hear one. The YSF receiver also seeds its symbol timing
+  feed-forward when started on a running transmission (the first frame sync
+  came 0.6–1.2 s in from three of ten start timings; now 0.11 s from all), and
+  the `composer: ysf voice chain ended` line carries `sync_hits` and
+  `adc_rail_pct`, with a WARN when a call had no frame sync at all.
+  `TestYSFReplay` (`GT_YSF_IQ`) is the capture harness.
 - **`wmbus`: a noise spike no longer knocks the chip clock off a strong
   telegram (#1256).** A crossing of the slicing threshold within half a chip
   of the previous one cannot be a chip edge, but the clock took it as one and
