@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.3.9] — 2026-11-12
+
 ### Added
 - **`gophertrunk power -iio` and `gophertrunk capture -iio`** sweep or record
   from an ADALM-Pluto / PlutoSky through the iiod on the board, like `-rtltcp`
