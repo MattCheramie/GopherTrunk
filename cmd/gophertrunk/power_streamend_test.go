@@ -57,7 +57,7 @@ func hangUpRTLTCP(t *testing.T, iqBytes int) string {
 func TestPowerExplainsRTLTCPHangUp(t *testing.T) {
 	const rate = 240_000
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	dev, _, err := openPowerDevice(hangUpRTLTCP(t, 4096), "", log)
+	dev, _, err := openPowerDevice(hangUpRTLTCP(t, 4096), "", "", log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestPowerExplainsRTLTCPHangUp(t *testing.T) {
 // reported as the server closing, not just "IQ stream ended".
 func TestCaptureOverRTLTCPReportsHangUp(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	dev, _, err := openPowerDevice(hangUpRTLTCP(t, 20000), "", log)
+	dev, _, err := openPowerDevice(hangUpRTLTCP(t, 20000), "", "", log)
 	if err != nil {
 		t.Fatal(err)
 	}

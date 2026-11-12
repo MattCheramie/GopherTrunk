@@ -36,7 +36,7 @@ type fakeIIOD struct {
 
 func newFakeIIOD(t *testing.T) *fakeIIOD {
 	t.Helper()
-	xml, err := os.ReadFile("testdata/pluto_context_reconstructed.xml")
+	xml, err := os.ReadFile("testdata/plutosky_rev_c_context.xml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,8 +47,8 @@ func newFakeIIOD(t *testing.T) *fakeIIOD {
 	f := &fakeIIOD{
 		t: t, ln: ln, xml: xml,
 		attrs: map[string]string{
-			"iio:device1 altvoltage0 frequency_available": "[70000000 1 6000000000]",
-			"iio:device4 voltage0 sampling_frequency":     "2400000",
+			"iio:device0 altvoltage0 frequency_available": "[46875001 1 6000000000]",
+			"iio:device3 voltage0 sampling_frequency":     "2400000",
 		},
 		failWith: map[string]int{},
 	}

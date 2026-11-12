@@ -1427,8 +1427,16 @@ confirmation before any close-as-completed.
   READBUF mask rides the first chunk of EVERY READBUF (server `rw_buffer` sets `new_client` per
   call); a written value goes out with its NUL (`strlen+1`); the mask bit is libiio's channel
   NUMBER after `reorder_channels`, not the raw scan index. AD9361 attributes and the ×8 decimation
-  below 25 MHz/12 follow SoapyPlutoSDR. `testdata/pluto_context_reconstructed.xml` is
-  RECONSTRUCTED, not captured — replace it with the reporter's real `PRINT` output. On-air-gated.
+  below 25 MHz/12 follow SoapyPlutoSDR. The fixture is now the reporter's REAL board listing
+  (`testdata/plutosky_rev_c_context.xml`, 6 Nov; the reconstructed one it replaced numbered the
+  devices phy 1 / rx 4 where the board has 0 / 3 — the driver binds by name, the fake iiod's
+  attribute keys did not) and `realboard_test.go` pins every attribute the driver addresses
+  against it. `gophertrunk iio probe` is CONFIRMED on the PlutoSky (Mint, Debian without libiio,
+  Termux over WLAN; USB link and LAN; 65536-sample read at −34 dBFS, 0 % at the rail). The
+  one-shot tools read NO config file, so `sdr.iio` in config.yaml does nothing for `power` /
+  `capture` — the #1230 reporter's "no SDRs found" — they take `-iio <addr>` now (same shape as
+  `-rtltcp`; `TestPowerSweepOverIIO` against a fake board serving the real listing). Still
+  on-air-gated: the daemon path (tune, stream, lock a CC) on the PlutoSky.
 - **SoapyRemote CS16 is NOT always 16-bit full scale (#1329).** `GET_NATIVE_STREAM_FORMAT`
   replies with the format AND a double full scale, and the reference client divides by it whenever
   the wire format is the native one (`client/Streaming.cpp` setupStream, `ClientStreamData.cpp`). A

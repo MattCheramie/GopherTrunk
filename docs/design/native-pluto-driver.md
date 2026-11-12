@@ -187,18 +187,25 @@ is "reference-pinned, not verified".
   channel numbering, masks), `driver.go` (the `sdr.Device`). One deviation from
   the plan: no ppm hint is applied; a non-zero one is logged once.
 - Test plan items 1, 3, 4 and 5 are covered (`driver_test.go`,
-  `context_test.go`, a fake iiod that records raw bytes). Item 2 is **not**:
-  `testdata/pluto_context_reconstructed.xml` is reconstructed from the public
-  `iio_info` layout of a Pluto, not captured from a board. Replace it with the
-  reporter's real `PRINT` output when it arrives.
+  `context_test.go`, a fake iiod that records raw bytes). Item 2 landed on
+  6 Nov 2026: `testdata/plutosky_rev_c_context.xml` is the reporter's
+  PlutoSky's real `PRINT` output (Pluto v0.38 firmware, iiod 0.25), and
+  `realboard_test.go` checks every attribute the driver reads or writes
+  against it. The reconstructed listing it replaced numbered the devices
+  differently (phy `iio:device1` / rx `iio:device4`; the board has
+  `iio:device0` / `iio:device3`); the driver binds by name, so nothing in it
+  depended on the numbers, but the fake iiod's attribute keys did.
 - Config, pool gate (`TestRemoteOnlySDRConfigsRegisterTheirDriver`), config
   builder, web builder, `config.example.yaml` and `docs/hardware.md` are wired.
 
 ## What the reporter can check now
 
 `gophertrunk iio probe -addr 192.168.2.1 -out board.xml` (after #1342) does
-both checks below in one read-only step and saves the `PRINT` XML that should
-replace `testdata/pluto_context_reconstructed.xml`.
+both checks below in one read-only step and saves the `PRINT` XML. The
+reporter ran it on 6–8 Nov 2026 from Linux Mint, Debian 11 without libiio
+and Termux over WLAN: version, device list, settings and a 65536-sample read
+at −33 to −35 dBFS RMS with no sample at the rail, over the USB link and the
+LAN. `gophertrunk power -iio` / `capture -iio` then take the board directly.
 
 Two checks need only the board, not SoapyPlutoSDR, and they settle open points
 above:

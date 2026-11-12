@@ -24,22 +24,24 @@ func TestOpenSendsLiteralCommands(t *testing.T) {
 	want := []string{
 		"VERSION\r\n",
 		"PRINT\r\n",
-		"READ iio:device1 OUTPUT altvoltage0 frequency_available\r\n",
-		"WRITE iio:device1 OUTPUT altvoltage0 powerdown 2\r\n0\x00",
+		"READ iio:device0 OUTPUT altvoltage0 frequency_available\r\n",
+		"WRITE iio:device0 OUTPUT altvoltage0 powerdown 2\r\n0\x00",
 	}
 	assertCommands(t, f.commands(), want)
 
 	if got := dev.Info().Serial; got != "plutosky" {
 		t.Errorf("serial = %q", got)
 	}
-	if dev.rx.ID != "iio:device4" || dev.phy.ID != "iio:device1" {
-		t.Errorf("bound phy=%s rx=%s, want iio:device1 / iio:device4", dev.phy.ID, dev.rx.ID)
+	if dev.rx.ID != "iio:device3" || dev.phy.ID != "iio:device0" {
+		t.Errorf("bound phy=%s rx=%s, want iio:device0 / iio:device3", dev.phy.ID, dev.rx.ID)
 	}
 	if dev.fullScale != 2048 {
 		t.Errorf("full scale = %v, want 2048 (12-bit LSB-aligned, #1331)", dev.fullScale)
 	}
-	if lo, hi := dev.FreqRange(); lo != 70_000_000 || hi != 4_294_967_295 {
-		t.Errorf("FreqRange = %d-%d, want 70000000-4294967295 (6 GHz clamped to uint32)", lo, hi)
+	// The board's own frequency_available (the PlutoSky on tezuka firmware
+	// reports an RX LO floor of 46 875 001 Hz; 6 GHz clamps to uint32).
+	if lo, hi := dev.FreqRange(); lo != 46_875_001 || hi != 4_294_967_295 {
+		t.Errorf("FreqRange = %d-%d, want 46875001-4294967295", lo, hi)
 	}
 	if !strings.Contains(dev.Info().Product, "PlutoSDR Rev.C") {
 		t.Errorf("product = %q, want the board's hw_model", dev.Info().Product)
@@ -50,7 +52,7 @@ func TestOpenWritesRFPortWhenConfigured(t *testing.T) {
 	f := newFakeIIOD(t)
 	openFake(t, f, Spec{RFPort: "A_BALANCED"})
 	cmds := f.commands()
-	if got, want := cmds[len(cmds)-1], "WRITE iio:device1 INPUT voltage0 rf_port_select 11\r\nA_BALANCED\x00"; got != want {
+	if got, want := cmds[len(cmds)-1], "WRITE iio:device0 INPUT voltage0 rf_port_select 11\r\nA_BALANCED\x00"; got != want {
 		t.Errorf("last command = %q, want %q", got, want)
 	}
 }
@@ -63,7 +65,7 @@ func TestSetCenterFreqLiteral(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCommands(t, f.commands()[n:], []string{
-		"WRITE iio:device1 OUTPUT altvoltage0 frequency 10\r\n851012500\x00",
+		"WRITE iio:device0 OUTPUT altvoltage0 frequency 10\r\n851012500\x00",
 	})
 }
 
@@ -74,27 +76,27 @@ func TestSetSampleRateLiterals(t *testing.T) {
 		want []string
 	}{
 		{2_400_000, 0, []string{
-			"WRITE iio:device1 INPUT voltage0 sampling_frequency 8\r\n2400000\x00",
-			"WRITE iio:device4 INPUT voltage0 sampling_frequency 8\r\n2400000\x00",
-			"WRITE iio:device1 INPUT voltage0 rf_bandwidth 8\r\n2400000\x00",
+			"WRITE iio:device0 INPUT voltage0 sampling_frequency 8\r\n2400000\x00",
+			"WRITE iio:device3 INPUT voltage0 sampling_frequency 8\r\n2400000\x00",
+			"WRITE iio:device0 INPUT voltage0 rf_bandwidth 8\r\n2400000\x00",
 		}},
 		// Below 25 MHz/12 the PHY runs at 8x and the RX core decimates
 		// (SoapyPlutoSDR setSampleRate).
 		{1_000_000, 0, []string{
-			"WRITE iio:device1 INPUT voltage0 sampling_frequency 8\r\n8000000\x00",
-			"WRITE iio:device4 INPUT voltage0 sampling_frequency 8\r\n1000000\x00",
-			"WRITE iio:device1 INPUT voltage0 rf_bandwidth 8\r\n1000000\x00",
+			"WRITE iio:device0 INPUT voltage0 sampling_frequency 8\r\n8000000\x00",
+			"WRITE iio:device3 INPUT voltage0 sampling_frequency 8\r\n1000000\x00",
+			"WRITE iio:device0 INPUT voltage0 rf_bandwidth 8\r\n1000000\x00",
 		}},
 		// The bandwidth floor is the AD9361's 200 kHz; an explicit one wins.
 		{300_000, 0, []string{
-			"WRITE iio:device1 INPUT voltage0 sampling_frequency 8\r\n2400000\x00",
-			"WRITE iio:device4 INPUT voltage0 sampling_frequency 7\r\n300000\x00",
-			"WRITE iio:device1 INPUT voltage0 rf_bandwidth 7\r\n300000\x00",
+			"WRITE iio:device0 INPUT voltage0 sampling_frequency 8\r\n2400000\x00",
+			"WRITE iio:device3 INPUT voltage0 sampling_frequency 7\r\n300000\x00",
+			"WRITE iio:device0 INPUT voltage0 rf_bandwidth 7\r\n300000\x00",
 		}},
 		{2_400_000, 1_500_000, []string{
-			"WRITE iio:device1 INPUT voltage0 sampling_frequency 8\r\n2400000\x00",
-			"WRITE iio:device4 INPUT voltage0 sampling_frequency 8\r\n2400000\x00",
-			"WRITE iio:device1 INPUT voltage0 rf_bandwidth 8\r\n1500000\x00",
+			"WRITE iio:device0 INPUT voltage0 sampling_frequency 8\r\n2400000\x00",
+			"WRITE iio:device3 INPUT voltage0 sampling_frequency 8\r\n2400000\x00",
+			"WRITE iio:device0 INPUT voltage0 rf_bandwidth 8\r\n1500000\x00",
 		}},
 	}
 	for _, tc := range cases {
@@ -135,9 +137,9 @@ func TestSetGainLiterals(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCommands(t, f.commands()[n:], []string{
-		"WRITE iio:device1 INPUT voltage0 gain_control_mode 12\r\nslow_attack\x00",
-		"WRITE iio:device1 INPUT voltage0 gain_control_mode 7\r\nmanual\x00",
-		"WRITE iio:device1 INPUT voltage0 hardwaregain 3\r\n41\x00",
+		"WRITE iio:device0 INPUT voltage0 gain_control_mode 12\r\nslow_attack\x00",
+		"WRITE iio:device0 INPUT voltage0 gain_control_mode 7\r\nmanual\x00",
+		"WRITE iio:device0 INPUT voltage0 hardwaregain 3\r\n41\x00",
 	})
 }
 
@@ -145,7 +147,7 @@ func TestNegativeStatusIsAnErrno(t *testing.T) {
 	f := newFakeIIOD(t)
 	dev := openFake(t, f, Spec{})
 	f.mu.Lock()
-	f.failWith["WRITE iio:device1 OUTPUT altvoltage0 frequency"] = -22
+	f.failWith["WRITE iio:device0 OUTPUT altvoltage0 frequency"] = -22
 	f.mu.Unlock()
 	err := dev.SetCenterFreq(100_000_000)
 	var en *ErrnoError
@@ -158,7 +160,7 @@ func TestActualSampleRateReadsRXCore(t *testing.T) {
 	f := newFakeIIOD(t)
 	dev := openFake(t, f, Spec{})
 	f.mu.Lock()
-	f.attrs["iio:device4 voltage0 sampling_frequency"] = "2399999\x00" // with NUL, as sysfs-backed reads can carry
+	f.attrs["iio:device3 voltage0 sampling_frequency"] = "2399999\x00" // with NUL, as sysfs-backed reads can carry
 	f.mu.Unlock()
 	n := len(f.commands())
 	got, err := dev.ActualSampleRate()
@@ -168,7 +170,7 @@ func TestActualSampleRateReadsRXCore(t *testing.T) {
 	if got != 2_399_999 {
 		t.Errorf("ActualSampleRate = %d", got)
 	}
-	assertCommands(t, f.commands()[n:], []string{"READ iio:device4 INPUT voltage0 sampling_frequency\r\n"})
+	assertCommands(t, f.commands()[n:], []string{"READ iio:device3 INPUT voltage0 sampling_frequency\r\n"})
 }
 
 func TestOpenRefusesNonPlutoContext(t *testing.T) {
@@ -225,7 +227,7 @@ func TestStreamIQConvertsAndParsesChunks(t *testing.T) {
 	const samples = 8192
 	f.mu.Lock()
 	f.readbuf = func(w io.Writer, devID string, n int, call int) {
-		if devID != "iio:device4" || n != samples*4 {
+		if devID != "iio:device3" || n != samples*4 {
 			fmt.Fprintf(w, "-22\n")
 			return
 		}
@@ -283,7 +285,7 @@ func TestStreamIQConvertsAndParsesChunks(t *testing.T) {
 			open = c
 		}
 	}
-	if open != "OPEN iio:device4 8192 00000003\r\n" {
+	if open != "OPEN iio:device3 8192 00000003\r\n" {
 		t.Errorf("OPEN = %q", open)
 	}
 }

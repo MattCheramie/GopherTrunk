@@ -37,6 +37,7 @@ func runCapture(args []string) {
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	serial := fs.String("serial", "", "SDR serial to capture from (default: the sole enumerated device)")
 	rtlTCP := fs.String("rtltcp", "", "host:port of an rtl_tcp server to capture from instead of a local SDR (e.g. an rtl_tcp driver app on a phone)")
+	iioAddr := fs.String("iio", "", "address of a Pluto / PlutoSky board's iiod (e.g. 192.168.2.1) to capture from instead of a local SDR")
 	freq := fs.Uint("freq", 0, "centre frequency in Hz (required)")
 	sampleRate := fs.Uint("sample-rate", 2_400_000, "sample rate in Hz")
 	gain := fs.Int("gain", -1, "tuner gain in tenths of a dB (-1 selects automatic gain control)")
@@ -62,7 +63,7 @@ func runCapture(args []string) {
 		fmt.Fprintln(fs.Output(), `gophertrunk capture — record raw IQ off a live SDR to a .cfile + metadata sidecar.
 
 USAGE:
-  gophertrunk capture -freq <hz> [-serial <s> | -rtltcp <host:port>] [-sample-rate <hz>] -seconds <n> -out <path>
+  gophertrunk capture -freq <hz> [-serial <s> | -rtltcp <host:port> | -iio <addr>] [-sample-rate <hz>] -seconds <n> -out <path>
 
 EXAMPLES:
   # 30 s of P25 control-channel IQ at 2.4 MS/s → cfile + sidecar
@@ -132,11 +133,12 @@ FLAGS:`)
 		dev  sdr.Device
 		info sdr.Info
 	)
-	if *rtlTCP != "" {
+	if *rtlTCP != "" || *iioAddr != "" {
 		// Same opener as `power` / `wmbus`: on a phone the dongle is only
-		// reachable through an rtl_tcp driver app (#1256).
+		// reachable through an rtl_tcp driver app (#1256), and a Pluto /
+		// PlutoSky only through its own iiod (#1329).
 		log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-		dev, _, err = openPowerDevice(*rtlTCP, *serial, log)
+		dev, _, err = openPowerDevice(*rtlTCP, *iioAddr, *serial, log)
 		if err == nil {
 			info = dev.Info()
 		}
