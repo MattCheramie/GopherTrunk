@@ -147,6 +147,17 @@ sdr:
 | Airspy HF+ Dual Port | `0x800c` (`airspyhf`) | Same as Discovery | 768 kSPS | Same as Discovery | +4.5 V on the HF SMA only | Identified by the `DUAL` substring. The VHF SMA does not carry bias voltage. |
 | Legacy Airspy HF+ | `0x800c` (`airspyhf`) | Same as Discovery | 768 kSPS | Same as Discovery | Hardware-revision dependent | Pre-Discovery hardware; uncommon. |
 
+**Airspy R2 / Mini / HydraSDR `gain` values.** The number is not a true dB
+figure. GopherTrunk divides it into steps of 30 (one stage step, nominally 3 dB)
+and fills the three tuner stages **in order**: LNA first, then mixer, then VGA,
+each 0–15. So `gain: 1350` is the maximum (15/15/15), `1320` is 15/15/14, and
+`400` is LNA 13 with the mixer **and** the VGA at 0. A low value starves the
+mixer and IF amplifier entirely, and the signal can fall to the ADC's noise floor
+(a flat spectrum, no control-channel lock) even though the LNA is nearly at full
+gain (#1321). Start near the top (`1200`–`1350`) and step down by 30–90 while the
+decode holds, rather than starting low. `gain: auto` turns on the LNA and mixer
+AGC with the VGA at a fixed mid value. The HydraSDR's LNA tops out at 14.
+
 **Mixing an Airspy HF+ with RTL-SDRs (scanner only).** `sdr.sample_rate` is
 shared by every SDR, and an HF+ cannot run an RTL-SDR's 2.4 MS/s. Give the HF+
 its own rate with `sample_rate` on its `sdr.devices` entry (for example

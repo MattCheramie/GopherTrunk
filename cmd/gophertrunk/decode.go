@@ -35,7 +35,7 @@ func runDecode(args []string) {
 	out := fs.String("out", "", "WAV output path (required; must be a regular file for the WAV header to be patched)")
 	vocoderName := fs.String("vocoder", "imbe", "vocoder name from the registry (imbe, ambe2, null, ...)")
 	voiceProfile := fs.String("voice-profile", "", "reference-decoder balance preset for the vocoder (mbelib = default dsd-neo calibration; op25 = the OP25 / trunk-recorder equal-power unvoiced level), the same choice as recordings.voice_profile")
-	legacySynth := fs.Bool("legacy-synthesis", false, "decode with the raw decoder's legacy synthesis (no spec-faithful §6.2 amplitude enhancement, uncalibrated unvoiced band level) instead of the daemon's recording defaults — for A/B only")
+	legacySynth := fs.Bool("legacy-synthesis", false, "decode with the raw decoder's legacy synthesis (no spec-faithful §6.2 amplitude enhancement, uncalibrated unvoiced band level) instead of the daemon's recording defaults — for A/B only. Affects the MBE vocoders (imbe, ambe2*) only: tetra-acelp has neither stage, so its output is identical with or without it")
 	listVocoders := fs.Bool("list-vocoders", false, "print the registered vocoder names and exit")
 	statsFlag := fs.Bool("stats", true, "print a per-call voice audio-quality summary to stderr after decoding")
 	normalizeFlag := fs.Bool("normalize", false, "loudness-normalize the output WAV (EBU R128, -16 LUFS / -1.5 dBTP) after decoding")
@@ -111,7 +111,8 @@ FLAGS:`)
 	}
 	defer v.Close()
 
-	frames, decodeErr := voice.DecodeStreamWithVocoder(reader, v, outFile)
+	counted := &sampleCountingVocoder{Vocoder: v}
+	frames, decodeErr := voice.DecodeStreamWithVocoder(reader, counted, outFile)
 	if errors.Is(decodeErr, voice.ErrPartialFrame) {
 		fmt.Fprintf(os.Stderr, "decode: input ended mid-frame after %d complete frames; WAV truncated to that point\n", frames)
 		// Don't exit non-zero — the WAV is playable up to the
@@ -120,7 +121,7 @@ FLAGS:`)
 		rep.Fatal(1, decodeErr)
 	}
 	fmt.Printf("decoded %d frame(s) → %s (%d ms of audio)\n",
-		frames, *out, frames*20)
+		frames, *out, counted.audioMillis())
 
 	if *normalizeFlag {
 		// Close the WAV first so its length fields are patched and flushed
@@ -174,4 +175,24 @@ func openInput(path string) (io.Reader, func(), error) {
 		return nil, nil, err
 	}
 	return f, func() { f.Close() }, nil
+}
+
+// sampleCountingVocoder counts the PCM samples a decode produced, so the
+// summary line reports the audio actually written instead of assuming 20 ms per
+// frame: an IMBE / AMBE+2 frame is 20 ms but a TETRA ACELP frame is 30 ms
+// (#1321: 66 tetra-acelp frames were reported as 1320 ms of a 1.98 s WAV).
+type sampleCountingVocoder struct {
+	voice.Vocoder
+	samples int
+}
+
+func (c *sampleCountingVocoder) Decode(frame []byte) ([]int16, error) {
+	pcm, err := c.Vocoder.Decode(frame)
+	c.samples += len(pcm)
+	return pcm, err
+}
+
+// audioMillis is the decoded audio's length at the vocoder contract's 8 kHz.
+func (c *sampleCountingVocoder) audioMillis() int {
+	return c.samples * 1000 / 8000
 }

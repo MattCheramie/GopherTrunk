@@ -15,6 +15,23 @@ for tagged releases.
   every SYSINFO (about 1.2 M lines / 424 MB overnight on a 4-cell group). It
   is now logged on the first decode, on a real parameter change, and when the
   CCK id first appears or changes; the line keeps carrying the last CCK id.
+- **`recordings.write_raw: false` now applies to TETRA and DMR calls (#1321).**
+  The recorder wrote a `.raw` vocoder-frame sidecar for every TETRA (TMO and
+  DMO) and DMR call whatever the setting said, a leftover from before those
+  protocols had built-in vocoders. If you use those sidecars, set
+  `write_raw: true`. EDACS ProVoice, which has no built-in vocoder, still
+  always gets one.
+- **`gophertrunk decode` reports the real audio length (#1321).** The summary
+  line assumed 20 ms per frame, so a `tetra-acelp` decode (30 ms frames)
+  reported two thirds of the WAV's length. It now counts the samples written.
+
+### Documentation
+- **Airspy / HydraSDR `gain` values (#1321).** `docs/hardware.md` now explains
+  how the number is split across the LNA, mixer and VGA stages (filled in that
+  order, 30 per step, 1350 = maximum), and why a low value such as `400` leaves
+  the mixer and VGA at 0 and can lose the signal entirely. The `decode
+  -legacy-synthesis` help now says it affects the IMBE/AMBE vocoders only:
+  TETRA ACELP output is identical with or without it.
 
 ## [v1.3.9] — 2026-11-12
 

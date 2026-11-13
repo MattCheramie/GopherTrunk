@@ -481,24 +481,6 @@ func DefaultVocoderForProtocol() map[string]string {
 	}
 }
 
-// dmrVoiceProtocol reports whether protocol is a DMR voice protocol.
-// DMR voice calls always get a .raw sidecar (alongside the decoded
-// WAV) so the on-air AMBE frames remain available for out-of-band
-// tools even though the in-process vocoder now renders them.
-func dmrVoiceProtocol(protocol string) bool {
-	return protocol == "dmr-tier1" || protocol == "dmr-tier2" || protocol == "dmr-tier3"
-}
-
-// tetraVoiceProtocol reports whether a call is TETRA voice. The composer's
-// TETRA chain now TCH/S-decodes each traffic burst and emits post-FEC 137-bit
-// speech frames, which the clean-room ACELP vocoder ("tetra-acelp") renders to
-// PCM — the same post-FEC-frames-in-`.raw` + decoded-WAV shape as DMR. The
-// `.raw` sidecar is always written so the speech frames remain available for
-// out-of-band tools.
-func tetraVoiceProtocol(protocol string) bool {
-	return protocol == "tetra" || protocol == "tetra-dmo"
-}
-
 // NewRecorder validates options and returns a recorder ready to Run.
 // Like the engine, the recorder subscribes to the bus at construction
 // so that CallStart events published before Run starts are not lost.
@@ -1278,10 +1260,12 @@ func (r *Recorder) buildSession(cs trunking.CallStart, startedAt time.Time) *rec
 		}
 	}
 	s.wavPath = filepath.Join(dir, base+r.audioExt())
-	// ProVoice and DMR voice grants always get a sidecar — neither has
-	// an in-process vocoder, so the .raw file is the only capture of
-	// the call.
-	if r.writeRaw || cs.Grant.ProVoice || dmrVoiceProtocol(cs.Grant.Protocol) || tetraVoiceProtocol(cs.Grant.Protocol) {
+	// recordings.write_raw decides the sidecar for every protocol with an
+	// in-process vocoder, DMR and TETRA included (#1321: write_raw: false
+	// still wrote a .raw for every TETRA call). Only EDACS ProVoice forces
+	// one: it has no in-process decoder, so the .raw file is the only
+	// capture of the call.
+	if r.writeRaw || cs.Grant.ProVoice {
 		s.rawPath = filepath.Join(dir, base+".raw")
 		s.rawWanted = true
 	}
