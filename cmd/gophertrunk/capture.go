@@ -144,6 +144,7 @@ FLAGS:`)
 		}
 	} else {
 		dev, info, err = openCaptureDevice(*serial)
+		err = noSDRWithConfigHint("capture", err)
 	}
 	if err != nil {
 		rep.Fatal(1, err)

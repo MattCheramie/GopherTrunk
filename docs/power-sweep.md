@@ -108,6 +108,11 @@ Each sweep's lines are flushed as soon as the sweep finishes, so you can
 
 ## Things to know
 
+- **`power` reads no config file.** Name a network radio on the command line
+  (`-iio`, `-rtltcp`). If `power` finds no local SDR and the config file the
+  daemon would load lists network radios, the error names the flag for each,
+  for example `sdr.iio lists a Pluto / PlutoSky at 192.168.1.179: run
+  gophertrunk power -iio 192.168.1.179 ...`. `capture` does the same.
 - **Only one program can use the dongle.** Stop the daemon, or any other
   rtl_tcp client, before sweeping the same SDR.
 - **An rtl_tcp server serves one client at a time.** If `power` (or
