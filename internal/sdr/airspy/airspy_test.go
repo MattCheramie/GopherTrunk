@@ -376,6 +376,11 @@ func TestSplitAirspyGain(t *testing.T) {
 		{90, 3, 0, 0},
 		{600, 15, 5, 0},    // saturates LNA; remainder rolls to mixer
 		{1500, 15, 15, 15}, // fully saturated
+		// The values in docs/hardware.md (#1321): 1350 is the real maximum,
+		// 1320 is not clamped, and 400 leaves the mixer and VGA at 0.
+		{1350, 15, 15, 15},
+		{1320, 15, 15, 14},
+		{400, 13, 0, 0},
 	}
 	for _, c := range cases {
 		l, m, v := splitAirspyGain(c.tenthDB)

@@ -229,7 +229,9 @@ recordings:
       attack_ms: 5       # envelope attack (default 5)
       release_ms: 80     # envelope release (default 80)
       makeup_db: 0       # fixed post-compression gain (default 0)
-  write_raw: true   # also append a .raw sidecar with the vocoder frames
+  write_raw: true   # also append a .raw sidecar with the vocoder frames (every
+                    # digital protocol, DMR and TETRA included; EDACS ProVoice
+                    # always gets one since it has no built-in vocoder)
   mbe_files: false  # also write a dsd-fme-playable sidecar per call (.imb for
                     # P25 Phase 1, .amb for DMR/NXDN/P25p2) so recordings can be
                     # decoded offline with `dsd-fme -r <file>`; TETRA/ProVoice/

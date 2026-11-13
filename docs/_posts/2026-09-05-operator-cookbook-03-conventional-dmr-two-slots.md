@@ -278,8 +278,9 @@ useful bug report there is.
   license-free DMR — same family, single-slot by design
   ([dmr-tier-1]({{ '/reference/dmr-tier-1/' | relative_url }})), and it stays
   on the single-slot voice path.
-- **AMBE frame sidecars.** DMR calls always write a `.raw` vocoder-frame
-  sidecar; add `recordings.mbe_files: true` for DSD-FME-playable `.amb`
+- **AMBE frame sidecars.** `recordings.write_raw: true` writes a `.raw`
+  vocoder-frame sidecar per call (DMR used to write one regardless of the
+  setting; since #1321 it follows `write_raw` like every protocol); add `recordings.mbe_files: true` for DSD-FME-playable `.amb`
   files if you want to A/B GopherTrunk's vocoder against mbelib — the
   workflow [vocoders.md]({{ '/vocoders.html' | relative_url }}) documents.
 - **Names over numbers.** The same talkgroup CSV from Part 2 works here;
