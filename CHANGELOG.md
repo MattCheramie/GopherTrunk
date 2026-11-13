@@ -7,6 +7,17 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **TETRA: `tetra: SYSINFO cell parameters` no longer floods the log on
+  encrypted cells (#1350).** A cell with air-interface encryption alternates
+  one SYSINFO field between the hyperframe number and the CCK id, and every
+  alternation was read as a parameter change, so the INFO line was written on
+  every SYSINFO (about 1.2 M lines / 424 MB overnight on a 4-cell group). It
+  is now logged on the first decode, on a real parameter change, and when the
+  CCK id first appears or changes; the line keeps carrying the last CCK id.
+
+## [v1.3.9] — 2026-11-12
+
 ### Added
 - **`gophertrunk power -iio` and `gophertrunk capture -iio`** sweep or record
   from an ADALM-Pluto / PlutoSky through the iiod on the board, like `-rtltcp`
@@ -18,13 +29,6 @@ for tagged releases.
   against it.
 
 ### Fixed
-- **TETRA: `tetra: SYSINFO cell parameters` no longer floods the log on
-  encrypted cells (#1350).** A cell with air-interface encryption alternates
-  one SYSINFO field between the hyperframe number and the CCK id, and every
-  alternation was read as a parameter change, so the INFO line was written on
-  every SYSINFO (about 1.2 M lines / 424 MB overnight on a 4-cell group). It
-  is now logged on the first decode, on a real parameter change, and when the
-  CCK id first appears or changes; the line keeps carrying the last CCK id.
 - **Go toolchain moved to 1.26.11** for GO-2026-6859: an HTTP/1 server using
   `MaxBytesReader` could crash on a header race when a handler read the
   request body while writing its response header. An older `go` downloads
