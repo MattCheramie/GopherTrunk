@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`power` / `capture` say how to reach the network radio in your config
+  (#1230).** Both tools read no config file, so an `sdr.iio` (Pluto /
+  PlutoSky) or `sdr.rtl_tcp` entry did nothing and the run ended in a bare
+  "no SDRs found". When no local SDR is found, they now check the config the
+  daemon would load and name the flag for each network radio it lists
+  (`-iio 192.168.1.179`, `-rtltcp host:port`); a `sdr.soapy_remote` entry is
+  reported as daemon-only.
 - **TETRA: `tetra: SYSINFO cell parameters` no longer floods the log on
   encrypted cells (#1350).** A cell with air-interface encryption alternates
   one SYSINFO field between the hyperframe number and the CCK id, and every

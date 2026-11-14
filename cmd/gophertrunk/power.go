@@ -126,7 +126,7 @@ FLAGS:`)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	dev, name, err := openPowerDevice(*rtlTCP, *iioAddr, *serial, log)
 	if err != nil {
-		rep.Fatal(1, err)
+		rep.Fatal(1, noSDRWithConfigHint("power", err))
 	}
 	defer closeSDRBounded(dev, sdrCloseTimeout, os.Stderr, "power")
 	if err := dev.SetSampleRate(uint32(*rate)); err != nil {
