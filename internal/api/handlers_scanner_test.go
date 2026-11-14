@@ -531,3 +531,36 @@ func TestScannerManualTune_AMMode(t *testing.T) {
 		t.Errorf("AM manual tune not routed with its squelch: %+v", cock.manualReqs)
 	}
 }
+
+// TestScannerManualTune_SquelchOpenMs: squelch_open_ms reaches the cockpit,
+// and a value outside 0..1000 is rejected before it does (#1321).
+func TestScannerManualTune_SquelchOpenMs(t *testing.T) {
+	bus := events.NewBus(8)
+	defer bus.Close()
+	cock := &fakeCockpit{}
+	base, teardown := mkServer(t, ServerOptions{Bus: bus, Scanner: cock, AllowMutations: true})
+	defer teardown()
+
+	post := func(body string) int {
+		resp, err := http.Post(base+"/api/v1/scanner/manual_tune", "application/json", bytes.NewReader([]byte(body)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := post(`{"frequency_hz":155895000,"squelch_open_ms":60}`); code != 200 {
+		t.Fatalf("status=%d, want 200", code)
+	}
+	if len(cock.manualReqs) != 1 || cock.manualReqs[0].SquelchOpenMs != 60 {
+		t.Fatalf("squelch_open_ms not routed: %+v", cock.manualReqs)
+	}
+	for _, bad := range []string{`-1`, `1001`} {
+		if code := post(`{"frequency_hz":155895000,"squelch_open_ms":` + bad + `}`); code != 400 {
+			t.Errorf("squelch_open_ms=%s: status=%d, want 400", bad, code)
+		}
+	}
+	if len(cock.manualReqs) != 1 {
+		t.Errorf("rejected requests reached the cockpit: %+v", cock.manualReqs)
+	}
+}

@@ -918,6 +918,9 @@ func validateConvChannelAt(path string, ch ConvChannelConfig) error {
 	if ch.SquelchHysteresisDb < 0 {
 		return fmt.Errorf("%s: squelch_hysteresis_db must be ≥ 0", path)
 	}
+	if ch.SquelchOpenMs < 0 || ch.SquelchOpenMs > 1000 {
+		return fmt.Errorf("%s: squelch_open_ms must be 0..1000", path)
+	}
 	if g := strings.TrimSpace(ch.Gain); g != "" && !strings.EqualFold(g, "auto") {
 		if _, err := strconv.ParseFloat(strings.ReplaceAll(g, ",", "."), 64); err != nil {
 			return fmt.Errorf("%s: gain %q must be \"auto\" or tenths of a dB (e.g. \"280\")", path, ch.Gain)

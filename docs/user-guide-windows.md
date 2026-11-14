@@ -1074,6 +1074,7 @@ scanner:
 | `squelch_dbfs` | Squelch threshold in dBFS (FM channels), measured on the channel itself (±8 kHz), not the SDR's whole span |
 | `squelch_cn_db` | AM channels: carrier-to-noise open threshold in dB (default 12) |
 | `hangtime_ms` | Carrier-lost dwell before hopping |
+| `squelch_open_ms` | Optional: how long the channel must stay above its squelch (`squelch_dbfs`, or `squelch_cn_db` on AM) before a call opens. A click above the threshold then no longer opens a call, so a channel with impulsive noise can run a lower squelch. `0` (default) opens at once; at most `1000`. The first `squelch_open_ms` of each transmission is not recorded, so keep it short (30–80 ms rejects a click). Also accepted by `POST /api/v1/scanner/manual_tune` |
 | `priority` | Integer 0–10 for scan order |
 | `tone` | Optional CTCSS / DCS sub-audible squelch gate |
 
@@ -1082,6 +1083,14 @@ carrier is present **and** the configured tone is detected, so
 adjacent-system traffic on the same frequency doesn't trigger a
 false dwell. Omit the block (or set `mode: none`) for plain
 carrier-only squelch.
+
+**Setting the squelch.** `GET /api/v1/scanner` reports each scan-list
+channel's live level next to its threshold: `level_dbfs` against
+`squelch_dbfs` (FM and digital channels), or `level_cn_db` against
+`squelch_cn_db` (AM). It is the same in-channel number the squelch
+compares, smoothed over about 200 ms, with `level_at` saying when it was
+last measured. The scanner measures a channel only while it is on it, so
+read it with no signal present and set the squelch a few dB above.
 
 #### AM channels (VHF air band)
 

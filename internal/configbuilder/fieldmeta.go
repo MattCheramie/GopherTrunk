@@ -458,6 +458,7 @@ var fieldMetas = map[string]FieldMeta{
 	"ConvChannelConfig.SquelchCNDb":         {Label: "AM squelch C/N (dB)", Help: "AM channels only: open when the carrier stands this many dB over the channel's own noise floor (in a ~188 Hz bin). Independent of gain. Default 12; noise alone reads ~3–7."},
 	"ConvChannelConfig.HangtimeMs":          {Help: "Hold time after carrier drop before the channel is released. Default 1500 ms."},
 	"ConvChannelConfig.ActivityDebounceMs":  {Label: "Activity debounce (ms)", Help: "Minimum sustained above-squelch time that resets the hangtime countdown, so a brief blip can't hold the channel open. Default 50 ms."},
+	"ConvChannelConfig.SquelchOpenMs":       {Label: "Squelch open delay (ms)", Help: "How long the channel must stay above its squelch before a call opens, so a click above the threshold doesn't become a call and a noisy channel can run a lower squelch. 0 (default) opens at once; at most 1000."},
 	"ConvChannelConfig.SquelchHysteresisDb": {Label: "Squelch hysteresis (dB)", Help: "Level margin below the squelch threshold before a signal counts as gone while a call is active. Default 3 dB."},
 	"ConvChannelConfig.Priority":            {Help: "Scan priority 1–10 (higher wins). 0 = unset."},
 	"ConvChannelConfig.TalkgroupID":         {Label: "Talkgroup ID", Help: "Fixed talkgroup ID this channel surfaces under (API, call log, Rdio Scanner / OpenMHz / Broadcastify uploads). 0 = positional default (0x80000000 | list index), which shifts when the channel list is edited — pin an ID to keep talkgroup_file roster rows durable."},

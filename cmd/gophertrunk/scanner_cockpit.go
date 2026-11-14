@@ -117,6 +117,11 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 					LockedOut:    ch.LockedOut,
 					LastBreakAt:  ch.LastBreakAt,
 					DeviceSerial: snap.DeviceSerial,
+					LevelDbFS:    ch.LevelDbFS,
+					LevelCNDb:    ch.LevelCNDb,
+					LevelAt:      ch.LevelAt,
+					SquelchDbFS:  ch.SquelchDbFS,
+					SquelchCNDb:  ch.SquelchCNDb,
 				})
 			}
 			offset += len(snap.Channels)
@@ -300,6 +305,9 @@ func (c scannerCockpit) ManualTune(req api.ManualTuneRequest) (int, bool) {
 	}
 	if req.HangtimeMs > 0 {
 		ch.Hangtime = time.Duration(req.HangtimeMs) * time.Millisecond
+	}
+	if req.SquelchOpenMs > 0 {
+		ch.SquelchOpenDelay = time.Duration(req.SquelchOpenMs) * time.Millisecond
 	}
 	if ch.Label == "" {
 		ch.Label = "manual"

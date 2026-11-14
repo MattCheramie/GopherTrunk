@@ -241,6 +241,10 @@ type ManualTuneRequest struct {
 	// (issue #1219); ignored for fm/nfm. 0 = the scanner default.
 	SquelchCNDb float64 `json:"squelch_cn_db"`
 	HangtimeMs  int     `json:"hangtime_ms"`
+	// SquelchOpenMs is the channel's squelch_open_ms: how long it must stay
+	// above its threshold before a call opens. 0 = open on the first chunk
+	// (default); at most 1000.
+	SquelchOpenMs int `json:"squelch_open_ms"`
 }
 
 // ScannerStatus is the JSON shape returned by GET /api/v1/scanner —
@@ -365,6 +369,18 @@ type ConvChannelStatusDTO struct {
 	LastBreakAt time.Time `json:"last_break_at,omitempty"`
 	// DeviceSerial is the SDR this channel scans on (issue #1260).
 	DeviceSerial string `json:"device_serial,omitempty"`
+	// LevelDbFS is the channel's live in-channel power in dBFS — the number
+	// squelch_dbfs is compared with — smoothed over ~200 ms; LevelCNDb the
+	// AM channel equivalent (carrier-to-noise, compared with squelch_cn_db).
+	// Unset until the scanner has visited the channel; LevelAt is when it
+	// was last measured (the scanner measures a channel only while on it).
+	// SquelchDbFS / SquelchCNDb are the thresholds in effect, defaults
+	// applied. Issue #1321 follow-up.
+	LevelDbFS   *float64  `json:"level_dbfs,omitempty"`
+	LevelCNDb   *float64  `json:"level_cn_db,omitempty"`
+	LevelAt     time.Time `json:"level_at,omitempty"`
+	SquelchDbFS float64   `json:"squelch_dbfs,omitempty"`
+	SquelchCNDb float64   `json:"squelch_cn_db,omitempty"`
 }
 
 // Server hosts the GopherTrunk HTTP/SSE/WebSocket API. A separate gRPC
