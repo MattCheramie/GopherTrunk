@@ -277,7 +277,8 @@ route (older build), the TUI assumes mutations are off and
 | `POST` | `/api/v1/scanner/hunt/{system}/{hold,resume,retune}` | — | Per-system CC-hunt control. |
 | `POST` | `/api/v1/scanner/conventional/{hold,resume}` | — | Conventional scanner control. |
 | `POST` | `/api/v1/scanner/conventional/{index}/{dwell,lockout,unlockout}` | — | Per-channel control. |
-| `POST` | `/api/v1/scanner/manual_tune` | `{"frequency_hz":155895000,"label":"...","mode":"fm"}` | Adds a runtime VFO channel and dwells. |
+| `POST` | `/api/v1/scanner/manual_tune` | `{"frequency_hz":155895000,"label":"...","mode":"fm"}` (optional `squelch_dbfs`, `squelch_cn_db`, `hangtime_ms`, `squelch_open_ms`) | Adds a runtime VFO channel and dwells. |
+| `DELETE` | `/api/v1/scanner/manual_tune/{index}` | — | Removes a VFO channel; a dwell in progress on it ends at once. |
 | `POST` | `/api/v1/calls/{deviceSerial}/end` | `{"reason":"manual"}` | 404 if no active call on that device. |
 | `PATCH` | `/api/v1/talkgroups/{id}` | `{"priority":3,"lockout":true,"scan":false}` | All fields optional; supply at least one. Returns the updated TalkgroupDTO. |
 | `POST` | `/api/v1/retention/sweep` | — | Synchronous; 503 if no call-log persistence configured. |

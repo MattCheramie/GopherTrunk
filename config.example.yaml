@@ -1580,6 +1580,12 @@ scanner:
   #     # e.g. an AirspyHF at 768000 beside 2.4 MS/s RTL-SDRs.
   #     # device: "00000002"
   #     hangtime_ms: 1500
+  #     # Optional: how long the channel must stay above its squelch before
+  #     # a call opens (#1321). A click above squelch_dbfs then no longer
+  #     # opens a hangtime-length "call", so a channel with impulsive noise
+  #     # can run a lower squelch. 0 (default) opens at once; at most 1000.
+  #     # The first squelch_open_ms of each transmission is not recorded.
+  #     # squelch_open_ms: 60
   #     priority: 4
   #     # Optional fixed talkgroup ID for the API / call log / scan-type
   #     # upload consumers (Rdio Scanner, OpenMHz, Broadcastify Calls).

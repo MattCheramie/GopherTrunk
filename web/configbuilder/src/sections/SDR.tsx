@@ -393,6 +393,7 @@ function DeviceEditor(props: {
               HangtimeMs: 0,
               ActivityDebounceMs: 0,
               SquelchHysteresisDb: 0,
+              SquelchOpenMs: 0,
               Priority: 0,
               TalkgroupID: 0,
               Gain: "",
@@ -430,6 +431,7 @@ function DeviceEditor(props: {
                   <NumberField label="Squelch (dBFS)" step={0.1} value={c.SquelchDbFS} onChange={(v) => set({ ...c, SquelchDbFS: v })} />
                 )}
                 <NumberField label="Hangtime (ms)" value={c.HangtimeMs} onChange={(v) => set({ ...c, HangtimeMs: v })} />
+                <NumberField label="Squelch open delay (ms)" value={c.SquelchOpenMs} onChange={(v) => set({ ...c, SquelchOpenMs: v })} />
                 <NumberField label="Talkgroup ID (0 = positional)" value={c.TalkgroupID} onChange={(v) => set({ ...c, TalkgroupID: v })} />
                 <NumberField label="Audio gain (dB)" step={0.5} value={c.AudioGainDB ?? 0} onChange={(v) => set({ ...c, AudioGainDB: v })} />
                 <SelectField

@@ -164,7 +164,7 @@ func TestDataDecoderBusyHoldsHangtime(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			s.beginDwell(0, s.channels[0], stream, streamCtx, cancel)
+			s.beginDwell(&channelVisit{idx: 0, cancel: cancel}, s.channels[0], stream, streamCtx, cancel)
 		}()
 		sent := 0
 		for {

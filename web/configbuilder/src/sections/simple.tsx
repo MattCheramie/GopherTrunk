@@ -510,6 +510,7 @@ export function ScannerSection() {
             HangtimeMs: 0,
             ActivityDebounceMs: 0,
             SquelchHysteresisDb: 0,
+            SquelchOpenMs: 0,
             Priority: 0,
             TalkgroupID: 0,
             Gain: "",
@@ -555,6 +556,7 @@ export function ScannerSection() {
                   <NumberField label="Squelch (dBFS)" step={0.1} value={ch.SquelchDbFS} onChange={(x) => setCh({ ...ch, SquelchDbFS: x })} />
                 )}
                 <NumberField label="Hangtime (ms)" value={ch.HangtimeMs} onChange={(x) => setCh({ ...ch, HangtimeMs: x })} />
+                <NumberField label="Squelch open delay (ms)" value={ch.SquelchOpenMs} onChange={(x) => setCh({ ...ch, SquelchOpenMs: x })} />
                 <NumberField label="Activity debounce (ms)" value={ch.ActivityDebounceMs} onChange={(x) => setCh({ ...ch, ActivityDebounceMs: x })} />
                 <NumberField label="Squelch hysteresis (dB)" step={0.1} value={ch.SquelchHysteresisDb} onChange={(x) => setCh({ ...ch, SquelchHysteresisDb: x })} />
                 <NumberField label="Priority" value={ch.Priority} onChange={(x) => setCh({ ...ch, Priority: x })} />

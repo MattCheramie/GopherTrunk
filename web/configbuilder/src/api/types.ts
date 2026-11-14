@@ -280,6 +280,9 @@ export interface ConvChannelConfig {
   HangtimeMs: number;
   ActivityDebounceMs: number;
   SquelchHysteresisDb: number;
+  // How long the channel must stay above squelch before a call opens;
+  // 0 = at once (#1321).
+  SquelchOpenMs: number;
   Priority: number;
   TalkgroupID: number;
   // Per-channel tuner gain on the scanner SDR: "auto" or tenths of a dB;

@@ -98,6 +98,7 @@ func convChannelFromConfig(ch config.ConvChannelConfig, tgid uint32) conventiona
 		// (50 ms debounce / 3 dB hysteresis) in one place.
 		ActivityDebounce:    msToDuration(ch.ActivityDebounceMs, 0),
 		SquelchHysteresisDb: ch.SquelchHysteresisDb,
+		SquelchOpenDelay:    msToDuration(ch.SquelchOpenMs, 0),
 		Priority:            ch.Priority,
 		TalkgroupID:         tgid,
 		Tone: conventional.ToneConfig{

@@ -345,6 +345,10 @@ func (s *Server) handleScannerManualTune(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, http.StatusBadRequest, "mode must be fm, nfm, am, p25, dmr, nxdn, nxdn48, dstar or ysf")
 		return
 	}
+	if req.SquelchOpenMs < 0 || req.SquelchOpenMs > 1000 {
+		s.writeError(w, http.StatusBadRequest, "squelch_open_ms must be 0..1000")
+		return
+	}
 	idx, ok := s.scanner.ManualTune(req)
 	if !ok {
 		s.writeError(w, http.StatusServiceUnavailable, "conventional scanner not configured")

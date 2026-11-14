@@ -622,7 +622,14 @@ type ConvChannelConfig struct {
 	// squelch_dbfs before a chunk counts as inactive during a call.
 	// Default 3 dB; 0 = default.
 	SquelchHysteresisDb float64 `yaml:"squelch_hysteresis_db"`
-	Priority            int     `yaml:"priority"` // 1..10, 0 = unset
+	// SquelchOpenMs is how long the channel must stay above its squelch
+	// threshold before a call opens: activity_debounce_ms for the leading
+	// edge, so a click above squelch_dbfs does not open a hangtime-length
+	// call and a channel with impulsive noise can run a lower squelch.
+	// 0 (default) opens on the first chunk above the threshold; at most
+	// 1000. Issue #1321 follow-up.
+	SquelchOpenMs int `yaml:"squelch_open_ms"`
+	Priority      int `yaml:"priority"` // 1..10, 0 = unset
 	// TalkgroupID pins the synthetic talkgroup ID this channel surfaces
 	// under (API, call log, scan-type upload consumers such as Rdio
 	// Scanner / OpenMHz / Broadcastify Calls). Unset (0) keeps the

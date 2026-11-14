@@ -85,6 +85,19 @@ type Channel struct {
 	// countdown. Default 3 dB. Zero uses the default; a tiny value
 	// disables the margin.
 	SquelchHysteresisDb float64
+	// SquelchOpenDelay is how long the channel must stay above its open
+	// threshold (SquelchDbFS, or SquelchCNDb on AM) before the squelch
+	// opens: ActivityDebounce for the LEADING edge. A short click above the
+	// threshold then no longer opens a hangtime-length call, so a channel
+	// with impulsive noise can run a lower squelch (issue #1321 follow-up).
+	// Measured in stream time (samples), so chunk size does not change it;
+	// the scan window is extended while a run is in progress. On an
+	// OnsetIQSource (a wideband conventional tap) the call's audio still
+	// starts where the run began; on the scan-list scanner the delay is
+	// not recorded, so keep it short. 0
+	// (default) opens on the first chunk, as before; at most
+	// MaxSquelchOpenDelay.
+	SquelchOpenDelay time.Duration
 	// Priority is forwarded to the synthetic talkgroup so the
 	// engine's preemption logic respects it relative to other
 	// conv-scanner channels.
@@ -330,6 +343,17 @@ type ChannelStatus struct {
 	// Decoders lists the data decoders configured on the channel
 	// (issue #1220).
 	Decoders []string `json:"decoders,omitempty"`
+	// LevelDbFS is the channel's live in-channel power, the number
+	// SquelchDbFS is compared with (FM and digital channels), smoothed over
+	// ~200 ms; LevelCNDb is the AM channel equivalent, the carrier-to-noise
+	// SquelchCNDb is compared with. Unset until the channel has been
+	// visited; LevelAt is when it was last measured — the scanner measures
+	// a channel only while it is on it. Issue #1321 follow-up.
+	LevelDbFS   *float64  `json:"level_dbfs,omitempty"`
+	LevelCNDb   *float64  `json:"level_cn_db,omitempty"`
+	LevelAt     time.Time `json:"level_at,omitempty"`
+	SquelchDbFS float64   `json:"squelch_dbfs,omitempty"`
+	SquelchCNDb float64   `json:"squelch_cn_db,omitempty"`
 }
 
 // Status is the scanner-wide snapshot.
@@ -362,7 +386,10 @@ type Scanner struct {
 	// data parallels channels: data[i] is non-nil iff channels[i] has
 	// data decoders (Channel.Decoders) that could be built. Same
 	// lifecycle as detectors.
-	data        []*channelData
+	data []*channelData
+	// levels parallels channels: the live squelch level Snapshot reports
+	// (squelch_open.go). Same lifecycle as detectors.
+	levels      []*levelGauge
 	cursor      int
 	state       State
 	held        bool
@@ -406,6 +433,43 @@ type Scanner struct {
 	// Atomic because the composer's FM chain polls it from its own
 	// goroutine on every IQ chunk.
 	squelchState atomic.Int32
+	// visit is the Run loop's current channel visit (scan window or
+	// dwell), nil between visits. Guarded by mu. RemoveTemporaryChannel
+	// and LockoutChannel abort it through here: ending the engine call is
+	// not enough, the Run goroutine is still reading that channel's
+	// stream (issue #1321 follow-up).
+	visit *channelVisit
+}
+
+// channelVisit is one Run-loop visit to a channel. idx follows the channel
+// through a RemoveTemporaryChannel re-index; aborted is set (with the
+// stream cancelled) when an operator action ended the visit from outside,
+// in which case that action has already ended any synthetic call. Both
+// fields are guarded by Scanner.mu.
+type channelVisit struct {
+	idx     int
+	aborted bool
+	cancel  context.CancelFunc
+}
+
+// abortVisitLocked aborts the current visit when it is on channel idx. It
+// returns the visit's stream cancel (nil when there was nothing to abort)
+// and whether a synthetic call was open on it, which the caller must end
+// with its own reason AFTER releasing mu and BEFORE calling cancel, so the
+// Run loop cannot start the next call before this one has ended. Callers
+// hold mu.
+func (s *Scanner) abortVisitLocked(idx int) (cancel context.CancelFunc, dwelling bool) {
+	v := s.visit
+	if v == nil || v.idx != idx || v.aborted {
+		return nil, false
+	}
+	v.aborted = true
+	dwelling = s.dwellIndex == idx
+	if dwelling {
+		s.dwellIndex = -1
+		s.state = StateScanning
+	}
+	return v.cancel, dwelling
 }
 
 // squelchState values published by beginDwell and read by SquelchOpen.
@@ -528,6 +592,9 @@ func New(opts Options) (*Scanner, error) {
 		if ch.Mode == ModeAM && ch.SquelchCNDb <= 0 {
 			ch.SquelchCNDb = DefaultAMSquelchCNDb
 		}
+		if ch.SquelchOpenDelay < 0 || ch.SquelchOpenDelay > MaxSquelchOpenDelay {
+			return nil, fmt.Errorf("conventional: channel %q: squelch open delay %v must be 0..%v", ch.Label, ch.SquelchOpenDelay, MaxSquelchOpenDelay)
+		}
 		if err := validateTone(ch.Tone); err != nil {
 			return nil, fmt.Errorf("conventional: channel %q: %w", ch.Label, err)
 		}
@@ -560,7 +627,9 @@ func New(opts Options) (*Scanner, error) {
 	data := make([]*channelData, len(channels))
 	amMeters := make([]*amCNMeter, len(channels))
 	powerMeters := make([]*channelPowerMeter, len(channels))
+	levels := make([]*levelGauge, len(channels))
 	for i, ch := range channels {
+		levels[i] = &levelGauge{}
 		data[i] = buildChannelData(ch, opts.SampleRateHz, opts.DataDecoders, opts.Log)
 		amMeters[i] = buildAMMeter(ch, opts.SampleRateHz, opts.Log)
 		powerMeters[i] = buildChannelPowerMeter(ch, opts.SampleRateHz)
@@ -585,6 +654,7 @@ func New(opts Options) (*Scanner, error) {
 		opts:             opts,
 		log:              opts.Log,
 		channels:         channels,
+		levels:           levels,
 		detectors:        detectors,
 		data:             data,
 		amMeters:         amMeters,
@@ -849,11 +919,21 @@ func (s *Scanner) Run(ctx context.Context) error {
 		if pm := s.powerMeterFor(idx); pm != nil {
 			pm.reset()
 		}
+		if g := s.levelFor(idx); g != nil {
+			g.startVisit()
+		}
+
+		v := &channelVisit{idx: idx, cancel: cancel}
+		s.mu.Lock()
+		s.visit = v
+		s.mu.Unlock()
 
 		// Wait for either squelch to break, the min-dwell timer to
-		// expire (advance), or ctx cancel.
-		broken := s.scanWindow(ctx, idx, ch, stream, pos)
+		// expire (advance), or ctx cancel. streamCtx, not ctx: an operator
+		// removing or locking out this channel cancels it.
+		broken := s.scanWindow(streamCtx, idx, ch, stream, pos)
 		if !broken {
+			s.endVisit(v)
 			cancel()
 			continue
 		}
@@ -865,8 +945,18 @@ func (s *Scanner) Run(ctx context.Context) error {
 
 		// Squelch is open — hand off to the engine and stay on this
 		// channel feeding PCM through the recorder until hangtime.
-		s.beginDwell(idx, ch, stream, streamCtx, cancel)
+		s.beginDwell(v, ch, stream, streamCtx, cancel)
+		s.endVisit(v)
 	}
+}
+
+// endVisit clears the current visit when it is still v.
+func (s *Scanner) endVisit(v *channelVisit) {
+	s.mu.Lock()
+	if s.visit == v {
+		s.visit = nil
+	}
+	s.mu.Unlock()
 }
 
 // scanWindow returns true when squelch opens within MinDwellPerChannel,
@@ -887,7 +977,10 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 	defer deadline.Stop()
 	det := s.detectorFor(idx)
 	cd := s.dataFor(idx)
+	gauge := s.levelFor(idx)
 	level, open := s.squelchMeasure(idx, ch)
+	onset := onsetRun{delay: ch.SquelchOpenDelay, rateHz: s.opts.SampleRateHz, now: s.opts.Now}
+	onsetExtended := false
 	var held time.Duration
 	// A call gate (DMR, YSF) runs its own receiver, so it sees every chunk
 	// (a simplex radio's TDMA gaps included); once the channel's power
@@ -913,12 +1006,24 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 					continue
 				}
 			}
+			// A carrier run still short of SquelchOpenDelay gets one
+			// extension, so a delay longer than the scan window can open.
+			if rest := onset.remaining(); rest > 0 && !onsetExtended {
+				deadline.Reset(rest + openDelaySlack)
+				onsetExtended = true
+				continue
+			}
 			return false
 		case iq, ok := <-stream:
 			if !ok {
 				return false
 			}
-			powerOK := level(iq) >= open
+			lv := level(iq)
+			gauge.observeChunk(lv, len(iq), s.opts.SampleRateHz, s.opts.Now)
+			powerOK := lv >= open
+			// openOK: above threshold for SquelchOpenDelay (the chunk itself
+			// when the delay is 0, exactly as before).
+			openOK := onset.observe(len(iq), powerOK)
 			if pos != nil {
 				pos.advance(len(iq), powerOK)
 			}
@@ -927,7 +1032,7 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				if powerOK {
 					gateExtended = true
 				}
-				if powerOK && present {
+				if openOK && present {
 					s.log.Info("conv: call gate opened", "gate", gate.gateName(), "freq_hz", ch.FrequencyHz, "label", ch.Label)
 					return true
 				}
@@ -940,9 +1045,15 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				cd.feed(iq)
 			}
 			if det == nil {
-				return true
+				if openOK {
+					return true
+				}
+				continue
 			}
 			if det.Process(iq) {
+				if !openOK {
+					continue
+				}
 				if nd, ok := det.(*NACDetector); ok {
 					s.log.Info("conv: NAC gate opened",
 						"freq_hz", ch.FrequencyHz, "label", ch.Label,
@@ -973,20 +1084,27 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 // via the engine, and stays on the channel feeding PCM to the
 // recorder until hangtime silence is observed. Returns after
 // publishing CallEnd.
-func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, streamCtx context.Context, cancel context.CancelFunc) {
+func (s *Scanner) beginDwell(v *channelVisit, ch Channel, stream <-chan []complex64, streamCtx context.Context, cancel context.CancelFunc) {
 	defer cancel()
+	now := s.opts.Now()
+	s.mu.Lock()
+	if v.aborted {
+		// Removed or locked out between squelch breaking and here: the
+		// channel (and possibly its index) is gone, so open nothing.
+		s.mu.Unlock()
+		return
+	}
+	idx := v.idx
+	s.state = StateDwell
+	s.dwellIndex = idx
+	s.lastBreakAt[idx] = now
+	s.mu.Unlock()
+
 	// Squelch just broke in scanWindow, so the dwell starts open; every
 	// exit path (hangtime, stream error, ctx cancel) clears the
 	// published state so SquelchOpen reports ok=false between dwells.
 	s.squelchState.Store(squelchOpenState)
 	defer s.squelchState.Store(squelchNoDwell)
-
-	now := s.opts.Now()
-	s.mu.Lock()
-	s.state = StateDwell
-	s.dwellIndex = idx
-	s.lastBreakAt[idx] = now
-	s.mu.Unlock()
 
 	// Synthesize a Grant. GroupID defaults to a channel-index-derived
 	// value so each conv channel surfaces as a distinct talkgroup in the
@@ -1045,6 +1163,7 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	// hovering at the threshold doesn't flicker the countdown.
 	level, open := s.squelchMeasure(idx, ch)
 	keepAlive := open - ch.SquelchHysteresisDb
+	gauge := s.levelFor(idx)
 	// belowSince marks the start of the current below-threshold run
 	// (zero => currently active). aboveSince marks the start of a run
 	// of above-threshold chunks seen *during* a countdown — it is the
@@ -1070,24 +1189,26 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	for {
 		select {
 		case <-streamCtx.Done():
-			s.endDwell(idx, trunking.EndReasonError)
+			s.endDwell(v, trunking.EndReasonError)
 			return
 		case <-ticker.C:
 			if stalled := s.opts.Now().Sub(lastChunk); stalled >= s.opts.StreamStallTimeout {
 				s.log.Warn("conv: IQ stream stalled during dwell — ending call and re-opening the stream",
 					"freq_hz", ch.FrequencyHz, "label", ch.Label,
 					"no_samples_for", stalled.Round(time.Millisecond))
-				s.endDwell(idx, trunking.EndReasonError)
+				s.endDwell(v, trunking.EndReasonError)
 				return
 			}
 			s.opts.Engine.Touch(s.opts.DeviceSerial)
 		case iq, ok := <-stream:
 			if !ok {
-				s.endDwell(idx, trunking.EndReasonError)
+				s.endDwell(v, trunking.EndReasonError)
 				return
 			}
 			lastChunk = s.opts.Now()
-			active := level(iq) >= keepAlive
+			lv := level(iq)
+			gauge.observeChunk(lv, len(iq), s.opts.SampleRateHz, s.opts.Now)
+			active := lv >= keepAlive
 			if active {
 				lastAbove = lastChunk
 			} else if bridge > 0 && lastChunk.Sub(lastAbove) < bridge {
@@ -1122,7 +1243,7 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 				if belowSince.IsZero() {
 					belowSince = now
 				} else if now.Sub(belowSince) >= ch.Hangtime {
-					s.endDwell(idx, trunking.EndReasonNormal)
+					s.endDwell(v, trunking.EndReasonNormal)
 					return
 				}
 			}
@@ -1140,14 +1261,22 @@ func (s *Scanner) beginDwell(idx int, ch Channel, stream <-chan []complex64, str
 	}
 }
 
-func (s *Scanner) endDwell(idx int, reason trunking.EndReason) {
-	s.opts.Engine.EndSyntheticCall(s.opts.DeviceSerial, reason)
+// endDwell ends the visit's synthetic call — unless an operator action
+// already aborted the visit and ended the call itself (see
+// abortVisitLocked), which this checks in the same critical section that
+// clears dwellIndex, so a call is never ended twice.
+func (s *Scanner) endDwell(v *channelVisit, reason trunking.EndReason) {
 	s.mu.Lock()
-	if s.dwellIndex == idx {
+	if v.aborted {
+		s.mu.Unlock()
+		return
+	}
+	if s.dwellIndex == v.idx {
 		s.state = StateScanning
 		s.dwellIndex = -1
 	}
 	s.mu.Unlock()
+	s.opts.Engine.EndSyntheticCall(s.opts.DeviceSerial, reason)
 }
 
 // pickNextChannel returns the index + a copy of the next channel to
@@ -1332,11 +1461,14 @@ func (s *Scanner) LockoutChannel(idx int) bool {
 		return false
 	}
 	s.lockedOut[idx] = true
-	dwelling := s.dwellIndex == idx
+	cancel, dwelling := s.abortVisitLocked(idx)
 	ch := s.channels[idx]
 	s.mu.Unlock()
 	if dwelling {
 		s.opts.Engine.EndSyntheticCall(s.opts.DeviceSerial, trunking.EndReasonLockout)
+	}
+	if cancel != nil {
+		cancel() // leave the channel now, not after hangtime (#1321)
 	}
 	if s.opts.OnLockoutChange != nil {
 		s.opts.OnLockoutChange(ch, true)
@@ -1399,6 +1531,10 @@ func (s *Scanner) AddTemporaryChannel(ch Channel) int {
 	if ch.Mode == ModeAM && ch.SquelchCNDb <= 0 {
 		ch.SquelchCNDb = DefaultAMSquelchCNDb
 	}
+	if ch.SquelchOpenDelay < 0 || ch.SquelchOpenDelay > MaxSquelchOpenDelay {
+		s.log.Warn("conv: squelch open delay out of range on temp channel; using 0", "delay", ch.SquelchOpenDelay, "max", MaxSquelchOpenDelay)
+		ch.SquelchOpenDelay = 0
+	}
 	if err := validateTone(ch.Tone); err != nil {
 		// Bad tone config on a temp channel: log and strip the
 		// tone rather than reject the whole tune. The manual
@@ -1434,6 +1570,7 @@ func (s *Scanner) AddTemporaryChannel(ch Channel) int {
 	s.data = append(s.data, cd)
 	s.amMeters = append(s.amMeters, am)
 	s.powerMeters = append(s.powerMeters, pm)
+	s.levels = append(s.levels, &levelGauge{})
 	s.lastBreakAt = append(s.lastBreakAt, time.Time{})
 	s.tempChannels[idx] = true
 	s.forcedDwellIndex = idx
@@ -1456,29 +1593,35 @@ func (s *Scanner) AddTemporaryChannel(ch Channel) int {
 // not assume indices are stable across a remove.
 func (s *Scanner) RemoveTemporaryChannel(idx int) bool {
 	s.mu.Lock()
-	if !s.tempChannels[idx] {
+	if !s.tempChannels[idx] || idx >= len(s.channels) {
 		s.mu.Unlock()
 		return false
 	}
-	// If we're currently dwelling on the channel being removed,
-	// end the synthetic call first so the engine cleans up.
-	dwelling := s.dwellIndex == idx
+	// Abort the Run loop's visit if it is on this channel — scan window
+	// or dwell. Ending the engine call alone left the dwell loop reading
+	// the removed channel's stream, with its frequency and squelch, until
+	// hangtime: forever with a squelch under the noise floor (#1321).
+	cancel, dwelling := s.abortVisitLocked(idx)
+	s.removeChannelLocked(idx)
 	s.mu.Unlock()
 	if dwelling {
 		s.opts.Engine.EndSyntheticCall(s.opts.DeviceSerial, trunking.EndReasonManual)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	// Re-validate under the lock (a concurrent remove could have
-	// snuck in).
-	if !s.tempChannels[idx] || idx >= len(s.channels) {
-		return false
+	if cancel != nil {
+		cancel()
 	}
+	return true
+}
+
+// removeChannelLocked drops channel idx from every per-channel slice and
+// shifts the indices that point past it. Callers hold mu.
+func (s *Scanner) removeChannelLocked(idx int) {
 	s.channels = append(s.channels[:idx], s.channels[idx+1:]...)
 	s.detectors = append(s.detectors[:idx], s.detectors[idx+1:]...)
 	s.data = append(s.data[:idx], s.data[idx+1:]...)
 	s.amMeters = append(s.amMeters[:idx], s.amMeters[idx+1:]...)
 	s.powerMeters = append(s.powerMeters[:idx], s.powerMeters[idx+1:]...)
+	s.levels = append(s.levels[:idx], s.levels[idx+1:]...)
 	s.lastBreakAt = append(s.lastBreakAt[:idx], s.lastBreakAt[idx+1:]...)
 	// Rebuild the tempChannels + lockedOut sets with shifted indices.
 	// Both maps share the same shift rule: drop the removed entry,
@@ -1502,7 +1645,9 @@ func (s *Scanner) RemoveTemporaryChannel(idx int) bool {
 	} else if s.forcedDwellIndex > idx {
 		s.forcedDwellIndex--
 	}
-	return true
+	if s.visit != nil && s.visit.idx > idx {
+		s.visit.idx--
+	}
 }
 
 // Snapshot returns a copy of the current scanner state for the
@@ -1521,6 +1666,22 @@ func (s *Scanner) Snapshot() Status {
 			LockedOut:   s.lockedOut[i],
 			LastBreakAt: s.lastBreakAt[i],
 			Decoders:    ch.Decoders,
+		}
+		if ch.Mode == ModeAM {
+			channels[i].SquelchCNDb = ch.SquelchCNDb
+		} else {
+			channels[i].SquelchDbFS = ch.SquelchDbFS
+		}
+		if i < len(s.levels) {
+			if db, at, ok := s.levels[i].read(); ok {
+				v := db
+				if ch.Mode == ModeAM {
+					channels[i].LevelCNDb = &v
+				} else {
+					channels[i].LevelDbFS = &v
+				}
+				channels[i].LevelAt = at
+			}
 		}
 	}
 	return Status{
