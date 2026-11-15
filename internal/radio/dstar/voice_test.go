@@ -102,11 +102,18 @@ func TestVoiceChannelDropsAnchorWithoutSync(t *testing.T) {
 		t.Fatalf("decoded %d frames, want %d (anchor should drop after 2 sync-less cycles)", len(got), want)
 	}
 
-	// A fresh sync re-anchors and decodes again.
+	// A fresh sync re-anchors and decodes again: its own frame, and (late
+	// entry, #1261) the three frames before it, which the dropped anchor
+	// skipped but which check out as voice.
 	before := len(got)
 	vc.Process(buildDVFrame(t, mkDVInfo(999), true), len(stream))
-	if len(got) != before+1 {
-		t.Fatalf("re-anchor sync decoded %d new frames, want 1", len(got)-before)
+	if len(got) != before+4 {
+		t.Fatalf("re-anchor sync decoded %d new frames, want 4 (3 late-entry + its own)", len(got)-before)
+	}
+	for i, f := range got[before:] {
+		if f.LateEntry != (i < 3) {
+			t.Fatalf("new frame %d: LateEntry=%v", i, f.LateEntry)
+		}
 	}
 }
 
