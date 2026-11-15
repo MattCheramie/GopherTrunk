@@ -151,8 +151,27 @@ func checkBlocks(raw []byte, f Format) (data []byte, blocks int, failed []int, e
 // On the reporter's walk the repaired telegrams were meters heard cleanly
 // elsewhere on the same walk (or, once, a water meter numbered in the
 // middle of a run of its heard neighbours), and 60 s of noise gave none.
+//
+// Three-bit repairs (14 Nov). Ground truth from the walks (a failed Qundis
+// block against the same meter's CRC-valid telegrams) showed the failures
+// the search missed were mostly STRONG telegrams with three to five errors
+// per block, nearly all among the block's least reliable bits. So when no
+// single or pair passes, every triple of the repairTripleCandidates least
+// reliable bits is tried as well: 56 more patterns. Measured on garbage
+// blocks carrying real reliability vectors from the 8 Nov walk, the chance
+// that one passes went from 1 in 487 to 1 in 410 (TestRepairGarbageBlock
+// FalseAcceptRate bounds it); across the five walks (2005 telegrams) it
+// decodes 36 more one-by-one and 11 more in sequence, every one a meter
+// whose ID the same walk heard without it. Wider searches decoded a few
+// more and let garbage through 2-4x as often: triples over the 10 or 12
+// weakest bits (1 in 324 / 222), triples over all 16 (1 in 105). A block
+// whose third error is a confident bit, or with four errors, is not
+// repaired.
 const (
 	repairCandidates = 16
+	// repairTripleCandidates is how many of a block's least reliable bits
+	// the three-bit search draws from.
+	repairTripleCandidates = 8
 	// repairMaxBlockBytes is the longest block (data + CRC) the distance-6
 	// argument holds for; format B's 126-byte block 2 is not repaired.
 	repairMaxBlockBytes = 18
@@ -201,8 +220,10 @@ func repairBlocks(raw []byte, rel []float32, f Format, failed []int) int {
 }
 
 // repairBlock repairs one block (data + 2 CRC bytes) in place when one or
-// two of its repairCandidates least reliable bits make it pass, and returns
-// the number of bits flipped (0 when no candidate passes).
+// two of its repairCandidates least reliable bits, or three of its
+// repairTripleCandidates least reliable bits, make it pass, and returns the
+// number of bits flipped (0 when no candidate passes). Fewer flips are tried
+// first.
 func repairBlock(block []byte, rel []float32) int {
 	idx := make([]int, len(rel))
 	for i := range idx {
@@ -227,6 +248,21 @@ func repairBlock(block []byte, rel []float32) int {
 			}
 			flip(i)
 			flip(j)
+		}
+	}
+	tri := idx[:min(repairTripleCandidates, len(idx))]
+	for a, i := range tri {
+		for b := a + 1; b < len(tri); b++ {
+			for _, k := range tri[b+1:] {
+				flip(i)
+				flip(tri[b])
+				if flip(k); ok() {
+					return 3
+				}
+				flip(i)
+				flip(tri[b])
+				flip(k)
+			}
 		}
 	}
 	return 0

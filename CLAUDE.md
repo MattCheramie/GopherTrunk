@@ -1397,10 +1397,20 @@ confirmation before any close-as-completed.
   noise spike through the threshold) is ignored by the loop — it fixes that telegram, walk 239→240
   live. What was measured and REJECTED (don't retry blind): phase pull-in scaled by run length
   (171/239 → 149/226 cold/live), and a long-baseline period (chips counted since frame start ÷
-  elapsed samples, from 64 chips: 164/239). The loop's PI overshoot on a post-run phase step
-  (0.4 % → 1.3 % period, measured) is real and still open; a period estimator that is precise
-  over long runs without false n-rounding is the lever. Instrument: a `debugDecide`/`debugClock`
-  hook in `receiver.go` + the live-vs-cold chip diff (scratch, not committed) found it in one pass.
+  elapsed samples, from 64 chips: 164/239). **14 Nov, all five walks (2005 telegrams, scoring
+  harness = `TestWMBusRealAirSnippets` per walk): the clock is NOT the yield limit.** The loop
+  gains swept 0.08-0.25 × 0.001-0.01 move yield ±2 % with today's values on top; a rate term
+  ÷ run length was neutral; a least-squares period over every transition of the frame lost cold
+  telegrams (911 → 883). Ground truth (failed Qundis blocks diffed against the same meter's
+  valid telegrams — beware recurring content diffs at bits 176-183 and 629-631, a date and a
+  counter) showed the misses are STRONG (−25..−30 dBFS) telegrams with 3-5 errors per block,
+  nearly all among the block's ~10 least reliable bits. The repair now also tries triples of
+  the 8 weakest bits (cold +36, live +11; garbage-block false accept 1/487 → 1/410, measured by
+  randomising real blocks while keeping their reliabilities). Wider searches decoded a few more
+  at 2-4× the false accepts. Untried levers, measured only: 8 samples per chip is live +51 but
+  cold −37 at twice the CPU the S5 already lacks. Why a strong on-carrier telegram carries a
+  ~3 % bit error rate is the open question. (The 8 Nov long-run telegram was found with a
+  `debugDecide`/`debugClock` hook in `receiver.go` + a live-vs-cold chip diff, scratch.)
   (3) Drops: both walks lose CPU ~90 s into each run (screen timeout shape); the S5 banner says
   `cpus=2` of 4 (cores offlined) — ask whether termux-wake-lock ran.
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**

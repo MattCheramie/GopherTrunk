@@ -186,15 +186,15 @@ progress line suggests a `-ppm` value that would centre the tuner; the sign
 convention is the driver's, so try both signs and keep the one that shrinks
 the offset. If nothing decodes near a meter, try `-ppm` and a fixed `-gain`.
 
-**Weak telegrams.** At the edge of reception a telegram can fail its CRC
-on one or two bits. For C mode telegrams the decoder then tries flipping the
-bits it was least sure of, at most two per CRC block, and accepts the
-telegram only if the block's CRC then passes. The CRC catches every error of
-up to five bits in a block, so a real one- or two-bit error has exactly one
-repair. A telegram repaired this way prints `(CRC repaired: N bits)`, and
-its JSON carries `corrected_bits`. A badly damaged block passes this way
-about once in 500 tries, so skip telegrams with `corrected_bits` if a reading
-must never be wrong. The decoder also limits the clicks that FM reception
+**Weak telegrams.** A telegram can fail its CRC on a few bits. For C mode
+telegrams the decoder then tries flipping the bits it was least sure of, and
+accepts the telegram only if the block's CRC then passes. It tries one or
+two of a block's 16 least reliable bits, then three of its 8 least reliable
+bits. The CRC catches every error of up to five bits in a block, so a real
+error of up to three bits has exactly one repair. A telegram repaired this
+way prints `(CRC repaired: N bits)`, and its JSON carries `corrected_bits`.
+A badly damaged block passes this way about once in 400 tries, so skip
+telegrams with `corrected_bits` if a reading must never be wrong. The decoder also limits the clicks that FM reception
 produces at low signal levels, which are what made the strongest-looking
 bits of a weak telegram the wrong ones. On the S5's saved telegrams the two
 together took the CRC-valid count from 128 to 133.

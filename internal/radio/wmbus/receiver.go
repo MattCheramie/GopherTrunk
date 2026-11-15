@@ -452,17 +452,17 @@ func (r *Receiver) clock(v float64) {
 			// Known limit (#1256, measured on the 8 Nov walk): after a
 			// long NRZ run the error is what accumulated over the whole
 			// run, and this loop pulls it in 15 % per transition while
-			// the rate term integrates every residual, so a 0.4 % period
-			// error can become 1.3 % and the next 100-chip run drifts the
-			// sampling point most of a chip. Two remedies were measured
-			// on the walk's 417 snippets and REJECTED: a phase gain
-			// scaled by the run length (full pull-in after a long run)
-			// decoded 149 cold / 226 live against 171 / 239, and a
-			// long-baseline period (chips counted since the frame start,
-			// divided into elapsed samples, applied from 64 chips) 164 /
-			// 239. The period needs ~0.5 % accuracy before a 100-chip run,
-			// which ±0.3-sample crossing jitter does not give; a better
-			// estimator is still open.
+			// the rate term integrates every residual. Measured on all
+			// five of the reporter's walks (2005 telegrams, 14 Nov), the
+			// clock is NOT what limits yield: the two gains swept 0.08-0.25
+			// / 0.001-0.01 move it ±2 % with these values on top; a rate
+			// term divided by the run length was neutral (911/1179 cold /
+			// live → 907/1178); a least-squares period over every
+			// transition of the frame lost cold telegrams (883/1181); and
+			// earlier, a phase gain scaled by run length (149/226 on one
+			// walk) and a two-point long-baseline period (164/239). The
+			// failures that remain are mostly strong telegrams with 3-5
+			// bit errors spread over the frame (see repairBlock).
 			e := tc - (r.tSample - r.spc/2)
 			e -= r.spc * math.Round(e/r.spc)
 			r.tSample += sampleLoopGain * e
