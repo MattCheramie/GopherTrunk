@@ -1427,8 +1427,8 @@ trunking:
   #   - name: "Legacy-DStar"
   #     protocol: dstar
   #     control_channels: [144_000_000]
-  #     dstar_fec_mode: "on"            # default off — flip on for raw 660-bit
-  #                                     # on-wire D-STAR JARL DV-mode headers
+  #     dstar_fec_mode: "on"            # the default (#1261): the on-air header
+  #                                     # FEC; "off" reads unencoded header bits
   #
   # Encrypted DMR systems (ARC4 / RC4 "Enhanced Privacy") and P25 systems
   # using ADP (RC4, ALGID 0xAA). If you are authorized to monitor a system

@@ -127,6 +127,15 @@ func golayEncode2312(data uint16) uint32 {
 	return uint32(data)<<11 | uint32(golayParity(data))
 }
 
+// GolayDecode2312 is golayDecode2312 for the other AMBE paths that
+// share mbelib's Golay(23,12) (D-STAR). framing.GolayDecode23_12 is a
+// DIFFERENT (23,12) Golay code: it disagrees with mbelib on real
+// frames, so an AMBE path must not use it.
+func GolayDecode2312(cw uint32) (uint16, int) { return golayDecode2312(cw) }
+
+// GolayEncode2312 is golayEncode2312, exported with GolayDecode2312.
+func GolayEncode2312(data uint16) uint32 { return golayEncode2312(data) }
+
 // c1Keystream returns the pseudo-random sequence DMR XORs onto the C1
 // sub-vector, seeded by the 12-bit C0 data word. Entries 1..23 are
 // valid (index 0 is unused). Ported from mbelib

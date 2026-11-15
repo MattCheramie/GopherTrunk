@@ -11,45 +11,95 @@ package dstar
 // stable positions.
 type BitSink func(bits []byte, baseIdx int)
 
-// D-STAR sync words per the JARL D-STAR DV-mode specification.
-// Two distinct patterns mark the two burst types a receiver tracks:
+// D-STAR sync words, in on-air time order (#1261).
 //
-//	FrameSync     32-bit "Frame Sync" prefix that opens every voice
-//	              + data superframe (the "FRMSYNC" bit pattern).
-//	DataSync      24-bit Slow Data sync inside the voice payload's
-//	              alternating-frame slow-data channel.
-//
-// Stored as canonical hex; helpers materialise the dibits MSB-first
-// for the symbol-domain detector (D-STAR is GMSK so symbols are
-// bits, not dibits, but the higher-level detector is the same shape
-// across all protocols here — call-sites pack their bits into the
-// dibit slots two-bits-at-a-time when they reach this stage).
+// Earlier versions of this file carried 0xEAA060 and 0x552D16 here,
+// unpacked MSB first. Neither is what a D-STAR radio sends, in either
+// polarity: 0x552D16 is MMDVMHost's slow-data sync as BYTES, which go
+// on air LSB first, and 0xEAA060 matched nothing. Every synthetic test
+// built its signal from the same constants, so they agreed with each
+// other and GopherTrunk never framed a real transmission. The values
+// below are the MMDVM firmware's receive patterns (DStarDefines.h,
+// DSTAR_FRAME_SYNC_DATA / DSTAR_DATA_SYNC_DATA / DSTAR_END_SYNC_DATA),
+// which MMDVM matches bit by bit as they arrive, so MSB first here IS
+// time order. Bit 1 is what MMDVM reads from a negative sample; GT's
+// receiver slices the other way round, and radios differ, so every
+// detector here also looks for the complement (see Polarity).
 const (
-	// FrameSyncHex is the 24-bit Header Frame Sync that prefixes
-	// every D-STAR PCH (Preamble + Header) per the JARL DV-mode
-	// specification. The canonical value 0xEAA060 ("111 0101 0101
-	// 0000 0011 0000 0000" MSB-first, then 0x60 padding) is the
-	// pattern emitted by MMDVMHost / DSDcc / OpenDV transmitters.
-	// On-air it follows a long bit-sync preamble (alternating
-	// 1010… for clock-recovery convergence); the bit-sync isn't
-	// part of the sync correlator because it has no information
-	// alignment value.
-	FrameSyncHex uint64 = 0xEAA060
+	// FrameSyncHex opens a transmission's header: the tail of the
+	// 1010… bit-sync preamble, the 15-bit frame sync 111011001010000
+	// (MMDVM's TX sends it as 0xEA 0xA6, LSB first) and the four zero
+	// bits that precede the 660-bit header FEC section, which starts
+	// on the next bit.
+	FrameSyncHex uint64 = 0x557650
 
-	// SlowDataSyncHex is the 24-bit Slow Data sync used inside voice
-	// frames to demarcate the slow-data channel. JARL spec value.
-	SlowDataSyncHex uint64 = 0x55_2D16
+	// SlowDataSyncHex is the slow-data field of DV frame 0 of every
+	// 21-frame cycle (bytes 0x55 0x2D 0x16, LSB first).
+	SlowDataSyncHex uint64 = 0xAAB468
+
+	// EndSyncHex ends a transmission (0x55 0x55 0x55 0x55 0xC8 0x7A,
+	// LSB first). It replaces the 97th..144th bits after a DV frame.
+	EndSyncHex uint64 = 0xAAAAAAAA135E
 
 	FrameSyncBits    = 24
 	SlowDataSyncBits = 24
+	EndSyncBits      = 48
 )
 
-// FrameSyncBitsSlice returns the 32 bits of the Frame Sync, MSB-first.
+// FrameSyncBitsSlice returns the 24 bits of the frame sync pattern in
+// time order.
 func FrameSyncBitsSlice() []uint8 { return hexToBits(FrameSyncHex, FrameSyncBits) }
 
-// SlowDataSyncBitsSlice returns the 24 bits of the Slow Data sync,
-// MSB-first.
+// SlowDataSyncBitsSlice returns the 24 bits of the slow-data sync in
+// time order.
 func SlowDataSyncBitsSlice() []uint8 { return hexToBits(SlowDataSyncHex, SlowDataSyncBits) }
+
+// EndSyncBitsSlice returns the 48 bits of the end-of-transmission
+// pattern in time order.
+func EndSyncBitsSlice() []uint8 { return hexToBits(EndSyncHex, EndSyncBits) }
+
+// BitSyncBits returns n bits of the 1010… bit-sync preamble a
+// transmitter sends before the frame sync (0xAA bytes, LSB first, so
+// the stream opens 0101…). n should be even so the frame sync follows
+// in phase.
+func BitSyncBits(n int) []uint8 {
+	out := make([]uint8, n)
+	for i := range out {
+		out[i] = uint8(i & 1)
+	}
+	return out
+}
+
+// BytesToBitsLSB unpacks bytes as D-STAR sends them: each byte LSB
+// first.
+func BytesToBitsLSB(b []byte) []uint8 {
+	out := make([]uint8, 0, 8*len(b))
+	for _, x := range b {
+		for k := 0; k < 8; k++ {
+			out = append(out, x>>uint(k)&1)
+		}
+	}
+	return out
+}
+
+// Polarity is the sense in which a receiver's bits relate to MMDVM's.
+// The frame and slow-data syncs are not their own complements, so a
+// detector learns the polarity from which one matched.
+type Polarity uint8
+
+const (
+	PolarityNormal Polarity = iota
+	PolarityInverted
+)
+
+// invertBits returns the complement of a bit pattern.
+func invertBits(p []uint8) []uint8 {
+	out := make([]uint8, len(p))
+	for i, b := range p {
+		out[i] = b ^ 1
+	}
+	return out
+}
 
 func hexToBits(hex uint64, n int) []uint8 {
 	out := make([]uint8, n)

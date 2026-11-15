@@ -25,7 +25,7 @@ const CallsignLen = 8
 //	             group call, "/<rpt>" = repeater routing).
 //	bytes 27-34  MY1  callsign — source / own station callsign.
 //	bytes 35-38  MY2  4-char short suffix.
-//	bytes 39-40  CRC-16-CCITT over bytes 0..38.
+//	bytes 39-40  CRC over bytes 0..38, low byte first (ComputeCRC).
 //
 // The structure is intentionally permissive: callers parse the
 // callsign + flag fields and dispatch on the UR field.
@@ -36,25 +36,25 @@ type Header struct {
 	UR                  string
 	MY1                 string
 	MY2                 string // 4-char suffix
-	CRC                 uint16 // CRC-CCITT over bytes 0..38, MSB-first
+	CRC                 uint16 // ComputeCRC over bytes 0..38 (on air low byte first)
 }
 
-// Flag bits within FLAG1 per the JARL spec.
+// Flag bits within FLAG1 (MMDVMHost DStarDefines.h: DSTAR_DATA_MASK
+// .. DSTAR_URGENT_MASK). The low three bits are a repeater-control
+// code, not individual flags; Flag1ControlCode masks them.
 const (
 	Flag1Data        uint8 = 0x80 // Data Type indicator
 	Flag1RepeaterMux uint8 = 0x40 // Repeater multiplexing
 	Flag1Interrupted uint8 = 0x20
 	Flag1Control     uint8 = 0x10
 	Flag1Urgent      uint8 = 0x08
-	Flag1EMR         uint8 = 0x04 // Emergency
-	Flag1BreakIn     uint8 = 0x02
+	Flag1ControlCode uint8 = 0x07
 )
 
-// IsEmergency reports whether the FLAG1 EMR bit is set.
-func (h Header) IsEmergency() bool { return h.Flag1&Flag1EMR != 0 }
-
-// IsBreakIn reports whether the FLAG1 Break-In bit is set.
-func (h Header) IsBreakIn() bool { return h.Flag1&Flag1BreakIn != 0 }
+// IsEmergency reports whether the FLAG1 urgent bit is set: the only
+// FLAG1 bit that marks a priority call. (GT used to read 0x04 as an
+// "EMR" bit; 0x04 is part of the repeater-control code.)
+func (h Header) IsEmergency() bool { return h.Flag1&Flag1Urgent != 0 }
 
 // IsData reports whether the FLAG1 Data bit is set (as opposed to a
 // voice + slow-data transmission).
@@ -87,8 +87,8 @@ func AssembleHeader(h Header) []byte {
 	copyCallsign(out[19:27], h.UR)
 	copyCallsign(out[27:35], h.MY1)
 	copyShort(out[35:39], h.MY2)
-	out[39] = byte(h.CRC >> 8)
-	out[40] = byte(h.CRC & 0xFF)
+	out[39] = byte(h.CRC)
+	out[40] = byte(h.CRC >> 8)
 	return out
 }
 
@@ -109,7 +109,7 @@ func ParseHeader(info []byte) (Header, error) {
 		UR:    string(info[19:27]),
 		MY1:   string(info[27:35]),
 		MY2:   string(info[35:39]),
-		CRC:   uint16(info[39])<<8 | uint16(info[40]),
+		CRC:   uint16(info[39]) | uint16(info[40])<<8,
 	}, nil
 }
 
@@ -133,21 +133,24 @@ func copyShort(dst []byte, s string) {
 	}
 }
 
-// ComputeCRC computes a CRC-16-CCITT (poly 0x1021, init 0xFFFF) over
-// the supplied bytes — the algorithm D-STAR uses for the header
-// integrity field. The function is exported so tests can assert
-// header round-trips include a valid CRC and fixtures can populate it.
+// ComputeCRC computes the header CRC over the supplied bytes:
+// CRC-16/X-25 (the reflected CCITT polynomial 0x8408, init 0xFFFF,
+// final XOR 0xFFFF), as MMDVMHost's CCRC::addCCITT161 and the MMDVM
+// firmware's header checksum compute it. The header carries it low
+// byte first (AssembleHeader does that). Check value: "123456789" →
+// 0x906E. The function GT used before was the unreflected 0x1021 CRC
+// with no final XOR, which no D-STAR radio sends.
 func ComputeCRC(data []byte) uint16 {
 	crc := uint16(0xFFFF)
 	for _, b := range data {
-		crc ^= uint16(b) << 8
+		crc ^= uint16(b)
 		for i := 0; i < 8; i++ {
-			if crc&0x8000 != 0 {
-				crc = (crc << 1) ^ 0x1021
+			if crc&1 != 0 {
+				crc = crc>>1 ^ 0x8408
 			} else {
-				crc <<= 1
+				crc >>= 1
 			}
 		}
 	}
-	return crc
+	return ^crc
 }

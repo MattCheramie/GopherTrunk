@@ -15,7 +15,6 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dstar"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 )
 
@@ -33,10 +32,10 @@ import (
 // internal/dsp/demod (paired with the GFSK demod the production
 // dstar/receiver uses).
 //
-// This test exercises the FECOff (default) path — the integration
-// stream carries pre-FEC bits straight to the Process adapter.
-// TestDaemonCCDecodesDStarFECOn exercises the full JARL DV-mode
-// chain (conv + scramble + interleave) the dstar package now ships.
+// The stream is short transmissions in the on-air format (#1261:
+// preamble, frame sync, FEC-encoded header, DV frames, end pattern),
+// decoded under the default dstar_fec_mode. TestDaemonCCDecodesDStarFECOn
+// sets `dstar_fec_mode: on` explicitly.
 func TestDaemonCCDecodesDStar(t *testing.T) {
 	const (
 		controlFreqHz = 145_670_000
@@ -145,57 +144,23 @@ WaitLoop:
 	waitForMetric(t, base, `gophertrunk_events_total{kind="cc.locked"} 1`, 2*time.Second)
 }
 
-// buildDStarHeaderStream assembles a D-STAR bit stream for the GFSK
-// modulator + receiver chain:
-//
-//   - 256-bit warmup of constant ones so the Mueller-Müller clock
-//     recovery sees a stable baseline before the sync burst arrives
-//   - `repeats` × (24-bit Frame Sync 0xEAA060 + 328-bit PCH header)
-//   - 100-bit trailer for clean flush
-//
-// Each PCH header carries a CQCQCQ group call with the supplied
-// MY1 / RPT2 / RPT1 callsigns and a valid CRC-CCITT trailer. Used
-// to exercise the FECOff path through the daemon's pipeline.
+// buildDStarHeaderStream assembles `repeats` short D-STAR transmissions in
+// the on-air format for the GFSK modulator + receiver chain: bit-sync
+// preamble, frame sync + FEC-encoded header (a CQCQCQ group call with the
+// supplied callsigns and a valid CRC), 21 null-AMBE DV frames and the end
+// pattern.
 func buildDStarHeaderStream(repeats int, ur, my1, rpt2, rpt1 string) []byte {
-	hdr := dstar.Header{
-		Flag1: 0,
-		Flag2: 0,
-		Flag3: 0,
-		RPT2:  rpt2,
-		RPT1:  rpt1,
-		UR:    ur,
-		MY1:   my1,
-		MY2:   "SUFX",
-	}
-	asm := dstar.AssembleHeader(hdr)
-	hdr.CRC = dstar.ComputeCRC(asm[:39])
-	asm = dstar.AssembleHeader(hdr)
-
-	headerBits := make([]byte, 0, 328)
-	for _, b := range asm {
-		for i := 0; i < 8; i++ {
-			headerBits = append(headerBits, (b>>uint(7-i))&1)
-		}
-	}
-
-	frame := make([]byte, 0, 32+328)
-	frame = append(frame, dstar.FrameSyncBitsSlice()...)
-	frame = append(frame, headerBits...)
-
-	out := make([]byte, 0, 256+repeats*(len(frame)+32)+100)
-	for i := 0; i < 256; i++ {
-		out = append(out, 1)
-	}
+	hdr := dstar.SealHeader(dstar.Header{RPT2: rpt2, RPT1: rpt1, UR: ur, MY1: my1, MY2: "SUFX"})
+	out := make([]byte, 0, repeats*3000)
 	for r := 0; r < repeats; r++ {
-		out = append(out, frame...)
-		for i := 0; i < 32; i++ {
-			out = append(out, 1)
+		out = append(out, dstar.BitSyncBits(256)...)
+		out = append(out, dstar.EncodeHeaderBurst(hdr)...)
+		for n := 0; n < dstar.DVFramesPerSyncCycle; n++ {
+			out = append(out, dstar.EncodeDVFrame(dstar.NullAMBEFrame(), n, [3]byte{'f', 'f', 'f'})...)
 		}
+		out = append(out, dstar.EndSyncBitsSlice()...)
 	}
-	for i := 0; i < 100; i++ {
-		out = append(out, 1)
-	}
-	return out
+	return append(out, dstar.BitSyncBits(100)...)
 }
 
 // TestDaemonCCDecodesDStarFECOn exercises the daemon's FECOn opt-in.
@@ -298,43 +263,7 @@ WaitLoop:
 	}
 }
 
-// buildDStarHeaderStreamFECOnIntegration is the integration-test
-// counterpart of buildDStarHeaderStream that emits the FEC-encoded
-// 660-bit on-wire payload after each 24-bit Frame Sync. Matches the
-// runtime "warmup + Frame Sync + payload + idle" framing the
-// production GFSK modulator + receiver chain wants to see.
+// buildDStarHeaderStreamFECOnIntegration is buildDStarHeaderStream.
 func buildDStarHeaderStreamFECOnIntegration(repeats int, ur, my1, rpt2, rpt1 string) []byte {
-	hdr := dstar.Header{
-		Flag1: 0,
-		Flag2: 0,
-		Flag3: 0,
-		RPT2:  rpt2,
-		RPT1:  rpt1,
-		UR:    ur,
-		MY1:   my1,
-		MY2:   "SUFX",
-	}
-	asm := dstar.AssembleHeader(hdr)
-	hdr.CRC = dstar.ComputeCRC(asm[:39])
-	asm = dstar.AssembleHeader(hdr)
-	channelBits := framing.EncodeDStarHeaderFEC(asm)
-
-	frame := make([]byte, 0, 24+len(channelBits))
-	frame = append(frame, dstar.FrameSyncBitsSlice()...)
-	frame = append(frame, channelBits...)
-
-	out := make([]byte, 0, 256+repeats*(len(frame)+32)+100)
-	for i := 0; i < 256; i++ {
-		out = append(out, 1)
-	}
-	for r := 0; r < repeats; r++ {
-		out = append(out, frame...)
-		for i := 0; i < 32; i++ {
-			out = append(out, 1)
-		}
-	}
-	for i := 0; i < 100; i++ {
-		out = append(out, 1)
-	}
-	return out
+	return buildDStarHeaderStream(repeats, ur, my1, rpt2, rpt1)
 }

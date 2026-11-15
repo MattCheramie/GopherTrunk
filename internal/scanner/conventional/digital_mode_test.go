@@ -58,6 +58,13 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 				sig = dmrAt2400k(readCS16Fixture(t, nxdn96VoiceFixture))
 			case ModeNXDN48:
 				sig = dmrAt2400k(readCS16Fixture(t, nxdn48VoiceFixture))
+			case ModeDStar:
+				// A dstar channel opens only on a D-STAR header or
+				// slow-data sync pair (issue #1261).
+				sig = dmrAt2400k(modulateDStar(r, dstarTransmissionBits(r, 60, true), false))
+				for i := range sig {
+					sig[i] *= 0.2
+				}
 			}
 			idle := make([]complex64, amTestRate/2)
 			for i := range idle {

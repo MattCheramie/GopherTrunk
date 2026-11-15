@@ -970,7 +970,7 @@ OP25 fixtures, MMDVMHost / DSDcc test data) opt out per-system:
 | MPT 1327 BCH | `mpt1327_bch_mode` | `off` |
 | MPT 1327 CWSC tolerance | `mpt1327_cwsc_tolerance` | `0` / `exact` / `off`, or `0`-`15` for custom |
 | Motorola Type II BCH | `motorola_bch_mode` | `off` |
-| D-STAR FEC | `dstar_fec_mode` | `on` enables the JARL DV-mode chain |
+| D-STAR FEC | `dstar_fec_mode` | `on` (default) decodes the on-air header; `off` reads unencoded header bits |
 
 TETRA additionally requires `tetra_colour_code: <non-zero>` for
 non-BSCH channels — descrambling produces garbage without it.
@@ -1237,12 +1237,16 @@ scanner:
   other width. Both decode to speech on recordings from Kenwood radios.
 - **System Fusion is experimental.** Its voice decode has not yet been
   confirmed on air.
-- **D-STAR does not decode real transmissions yet.** Its frame and
-  slow-data sync words do not match the ones D-STAR radios send, so it
-  finds no D-STAR frame on air. A `dstar` channel still opens on its power
-  squelch, so it records on any carrier, but the recording holds no audio.
-  Fixing it needs the D-STAR decoder rebuilt against a reference
-  implementation, and a real D-STAR recording to check it on.
+- **D-STAR channels open only on a D-STAR transmission.** A `dstar`
+  channel opens when it hears a D-STAR header or the slow-data sync that
+  every D-STAR voice stream repeats, not on any carrier: an analog FM
+  signal on the frequency is skipped. Joining a transmission already under
+  way takes two of those syncs, so the scanner may stay on a `dstar`
+  channel whose carrier is up for just over a second while it checks.
+- **D-STAR is experimental.** The D-STAR decoder was rebuilt to the format
+  real radios send (it could not decode a real transmission before) and is
+  checked against the reference firmware D-STAR hotspots run, but it has
+  not yet been confirmed on a real D-STAR recording.
 - **Not available:** `tone`, `decoders`, `nac` and
   `p25_phase1_demod_mode` are rejected on these channels.
 

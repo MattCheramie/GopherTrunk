@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math/bits"
 
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
 )
 
 // AMBE on-air forward-error-correction for D-STAR DV voice frames.
@@ -18,78 +18,65 @@ import (
 // over the C0/C1 sub-vectors (with an extended-Golay overall-parity
 // cell on C0), a C0-seeded pseudo-random descramble of C1, and the
 // C0:12 + C1:12 + C2:11 + C3:14 = 49-bit ambe_d assembly the vocoder
-// unpacks. It is reproduced here reusing the shared framing.Golay23_12
-// primitives, mirroring internal/radio/dmr/voice/ambefec.go and
-// internal/radio/nxdn/voice_ambe.go.
+// unpacks. It is reproduced here with mbelib's Golay(23,12), the one
+// internal/radio/dmr/voice/ambefec.go carries. Until #1261 this file
+// used framing.GolayDecode23_12, a different (23,12) Golay code, so even
+// a clean frame decoded to the wrong parameters.
 //
 // The ONE protocol-specific piece is how the 72 on-air bits are
-// interleaved into the four C0..C3 sub-vectors (DSD's dstar dW/dX
-// schedule).
-//
-// ⚠️ UNVERIFIED ON AIR. GopherTrunk has no D-STAR voice capture, so
-// the deinterleave table below is a documented *placeholder* (a direct
-// sequential split C0|C1|C2|C3, mirroring the NXDN / dPMR
-// placeholders) — enough to exercise the FEC machinery end to end via
-// the synthetic round-trip in voice_ambe_test.go, but NOT confirmed
-// against a real D-STAR DV frame. The first thing a capture confirms
-// is this table. Until then, treat live D-STAR audio as experimental.
-// See CLAUDE.md's TETRA-CRC "self-consistent bug" lesson for why the
-// table is not guessed.
+// interleaved into the four C0..C3 sub-vectors: DSD's D-STAR schedule
+// (dstar_const.h dW / dX, ISC licence): on-air bit i, in time order and
+// in MMDVM's polarity, is fr[dstarDW[i]][dstarDX[i]]. GT carried a
+// sequential C0|C1|C2|C3 placeholder here until #1261. The schedule is
+// pinned by the null AMBE frame MMDVMHost and the MMDVM firmware send
+// in a silent DV frame (9E 8D 32 88 26 1A 3F 61 E8, bytes LSB first):
+// it decodes with no Golay correction in C0 or in the descrambled C1,
+// which a wrong schedule does about once in four million frames
+// (voice_ambe_test.go).
 
 const (
 	dstarAMBEOnAirBits = 72 // on-air bits per AMBE DV voice frame
 	dstarAMBEInfoBits  = 49 // vocoder-payload bits per frame (ambe_d)
 )
 
+// dstarDW / dstarDX are DSD's dW / dX: the sub-vector and the cell of
+// each on-air voice bit.
+var dstarDW = [dstarAMBEOnAirBits]uint8{
+	0, 0, 3, 2, 1, 1, 0, 0, 1, 1, 0, 0,
+	3, 2, 1, 1, 3, 2, 1, 1, 0, 0, 3, 2,
+	0, 0, 3, 2, 1, 1, 0, 0, 1, 1, 0, 0,
+	3, 2, 1, 1, 3, 2, 1, 1, 0, 0, 3, 2,
+	0, 0, 3, 2, 1, 1, 0, 0, 1, 1, 0, 0,
+	3, 2, 1, 1, 3, 3, 2, 1, 0, 0, 3, 3,
+}
+
+var dstarDX = [dstarAMBEOnAirBits]uint8{
+	10, 22, 11, 9, 10, 22, 11, 23, 8, 20, 9, 21,
+	10, 8, 9, 21, 8, 6, 7, 19, 8, 20, 9, 7,
+	6, 18, 7, 5, 6, 18, 7, 19, 4, 16, 5, 17,
+	6, 4, 5, 17, 4, 2, 3, 15, 4, 16, 5, 3,
+	2, 14, 3, 1, 2, 14, 3, 15, 0, 12, 1, 13,
+	2, 0, 1, 13, 0, 12, 10, 11, 0, 12, 1, 13,
+}
+
 // dstarAMBEDeinterleave maps the 72 on-air voice bits (one bit per
-// byte, MSB-first) into the four C0..C3 sub-vectors carried in
-// fr[4][24]: C0 = fr[0][0..23] (24 bits: fr[0][0] is the Golay(24)
-// overall-parity cell, fr[0][1..23] the 23-bit codeword),
-// C1 = fr[1][0..22] (23 bits), C2 = fr[2][0..10] (11 bits),
-// C3 = fr[3][0..13] (14 bits). Total 24+23+11+14 = 72.
-//
-// PLACEHOLDER: a direct sequential split. Replace with the real D-STAR
-// dW/dX interleave schedule once a capture is available to verify
-// against (the encoder inverse below must be updated in lock-step).
-// Isolated here so that swap is a one-function change.
+// byte, time order) into the four C0..C3 sub-vectors carried in
+// fr[4][24], mbelib's ambe_fr layout: C0 = fr[0][0..23] (fr[0][0] is
+// the Golay(24) overall-parity cell, fr[0][1..23] the 23-bit
+// codeword), C1 = fr[1][0..22], C2 = fr[2][0..10], C3 = fr[3][0..13].
 func dstarAMBEDeinterleave(frame []byte) [4][24]uint8 {
 	var fr [4][24]uint8
-	p := 0
-	get := func() uint8 { b := frame[p] & 1; p++; return b }
-	for j := 0; j < 24; j++ {
-		fr[0][j] = get()
-	}
-	for j := 0; j < 23; j++ {
-		fr[1][j] = get()
-	}
-	for j := 0; j < 11; j++ {
-		fr[2][j] = get()
-	}
-	for j := 0; j < 14; j++ {
-		fr[3][j] = get()
+	for i := 0; i < dstarAMBEOnAirBits; i++ {
+		fr[dstarDW[i]][dstarDX[i]] = frame[i] & 1
 	}
 	return fr
 }
 
-// dstarAMBEInterleave is the inverse of dstarAMBEDeinterleave, packing
-// the four sub-vectors back into 72 on-air bits. Kept in lock-step with
-// the deinterleave placeholder so the round-trip test can exercise the
-// FEC.
+// dstarAMBEInterleave is the inverse of dstarAMBEDeinterleave.
 func dstarAMBEInterleave(fr [4][24]uint8) []byte {
 	out := make([]byte, dstarAMBEOnAirBits)
-	p := 0
-	put := func(b uint8) { out[p] = b & 1; p++ }
-	for j := 0; j < 24; j++ {
-		put(fr[0][j])
-	}
-	for j := 0; j < 23; j++ {
-		put(fr[1][j])
-	}
-	for j := 0; j < 11; j++ {
-		put(fr[2][j])
-	}
-	for j := 0; j < 14; j++ {
-		put(fr[3][j])
+	for i := 0; i < dstarAMBEOnAirBits; i++ {
+		out[i] = fr[dstarDW[i]][dstarDX[i]] & 1
 	}
 	return out
 }
@@ -113,7 +100,7 @@ func dstarC1Keystream(c0data uint16) [24]uint8 {
 }
 
 // DecodeDVVoiceBits decodes the 72 voice bits of one D-STAR DV frame
-// (one bit per byte MSB-first) into the 49-bit vocoder payload (one bit
+// (one bit per byte, time order) into the 49-bit vocoder payload (one bit
 // per byte). It returns the payload and the number of Golay errors
 // corrected across C0 and C1 (negative counts from an uncorrectable
 // sub-vector are clamped to 0). Pack the payload MSB-first to 7 bytes
@@ -130,7 +117,7 @@ func DecodeDVVoiceBits(frame []byte) ([]byte, int, error) {
 	for j := 0; j < 23; j++ {
 		c0cw |= uint32(fr[0][j+1]) << uint(j)
 	}
-	c0data, c0errs := framing.GolayDecode23_12(c0cw)
+	c0data, c0errs := dmrvoice.GolayDecode2312(c0cw)
 
 	// C1: descramble with the C0-seeded keystream, then Golay(23,12).
 	ks := dstarC1Keystream(c0data)
@@ -141,7 +128,7 @@ func DecodeDVVoiceBits(frame []byte) ([]byte, int, error) {
 	for j := 0; j < 23; j++ {
 		c1cw |= uint32(fr[1][j]) << uint(j)
 	}
-	c1data, c1errs := framing.GolayDecode23_12(c1cw)
+	c1data, c1errs := dmrvoice.GolayDecode2312(c1cw)
 
 	// Assemble ambe_d: C0(12) + C1(12) + C2(11) + C3(14).
 	out := make([]byte, dstarAMBEInfoBits)
@@ -183,13 +170,13 @@ func EncodeDVVoiceBits(info []byte) ([]byte, error) {
 		c1data |= uint16(info[12+k]&1) << uint(11-k)
 	}
 
-	c0cw := framing.GolayEncode23_12(c0data)
+	c0cw := dmrvoice.GolayEncode2312(c0data)
 	for j := 0; j < 23; j++ {
 		fr[0][j+1] = uint8((c0cw >> uint(j)) & 1)
 	}
 	fr[0][0] = uint8(bits.OnesCount32(c0cw) & 1) // ext-Golay overall parity
 
-	c1cw := framing.GolayEncode23_12(c1data)
+	c1cw := dmrvoice.GolayEncode2312(c1data)
 	for j := 0; j < 23; j++ {
 		fr[1][j] = uint8((c1cw >> uint(j)) & 1)
 	}

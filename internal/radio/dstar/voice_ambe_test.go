@@ -53,11 +53,19 @@ func TestDVVoiceBitsCorrectsErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	// C0 occupies on-air positions 0..23, C1 24..46 (sequential
-	// placeholder layout). Flip 3 bits in C0's codeword and 3 in C1's.
+	// Flip 3 on-air bits of C0's 23-bit codeword and 3 of C1's,
+	// located through the on-air schedule.
 	corrupt := append([]byte(nil), frame...)
-	for _, pos := range []int{1, 5, 12, 24, 30, 40} {
-		corrupt[pos] ^= 1
+	n0, n1 := 0, 0
+	for i := 0; i < dstarAMBEOnAirBits; i++ {
+		switch {
+		case dstarDW[i] == 0 && dstarDX[i] >= 1 && n0 < 3:
+			corrupt[i] ^= 1
+			n0++
+		case dstarDW[i] == 1 && n1 < 3 && i > 20:
+			corrupt[i] ^= 1
+			n1++
+		}
 	}
 	got, errs, err := DecodeDVVoiceBits(corrupt)
 	if err != nil {

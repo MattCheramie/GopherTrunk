@@ -792,6 +792,14 @@ func buildChannelDetector(ch Channel, sampleHz float64, log *slog.Logger) toneDe
 		}
 		return nil
 	}
+	if ch.Mode == ModeDStar {
+		// A dstar channel opens only on a D-STAR header or slow-data
+		// sync pair, not on any carrier (issue #1261).
+		if d := NewDStarCallDetector(sampleHz); d != nil {
+			return d
+		}
+		return nil
+	}
 	if ch.Mode == ModeYSF {
 		// A ysf channel opens only on a System Fusion frame sync, not on
 		// any carrier (issue #1261: an analog FM test tone on the channel

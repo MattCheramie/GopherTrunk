@@ -12,7 +12,7 @@ import (
 
 func TestHeaderRoundTrip(t *testing.T) {
 	in := Header{
-		Flag1: Flag1Data | Flag1EMR,
+		Flag1: Flag1Data | Flag1Urgent,
 		Flag2: 0x12,
 		Flag3: 0x34,
 		RPT2:  "KD0AAA B",
@@ -59,22 +59,21 @@ func TestHeaderFlagAccessors(t *testing.T) {
 	cases := []struct {
 		flag1 uint8
 		emr   bool
-		brk   bool
 		data  bool
 	}{
-		{0x00, false, false, false},
-		{Flag1EMR, true, false, false},
-		{Flag1BreakIn, false, true, false},
-		{Flag1Data, false, false, true},
-		{Flag1EMR | Flag1Data, true, false, true},
+		{0x00, false, false},
+		{Flag1Urgent, true, false},
+		// The low three bits are the repeater-control code, not an
+		// emergency flag (GT read 0x04 as "EMR" before #1261).
+		{0x04, false, false},
+		{Flag1Data, false, true},
+		{Flag1Urgent | Flag1Data, true, true},
 	}
 	for _, c := range cases {
 		h := Header{Flag1: c.flag1}
-		if h.IsEmergency() != c.emr ||
-			h.IsBreakIn() != c.brk ||
-			h.IsData() != c.data {
-			t.Errorf("flag1=%#02x: emr=%v brk=%v data=%v",
-				c.flag1, h.IsEmergency(), h.IsBreakIn(), h.IsData())
+		if h.IsEmergency() != c.emr || h.IsData() != c.data {
+			t.Errorf("flag1=%#02x: emr=%v data=%v",
+				c.flag1, h.IsEmergency(), h.IsData())
 		}
 	}
 }
@@ -96,18 +95,23 @@ func TestHeaderIsGroupCall(t *testing.T) {
 }
 
 func TestComputeCRCKnownVector(t *testing.T) {
-	// CRC-16-CCITT(0x1021, init 0xFFFF) over "123456789" is 0x29B1 by
-	// the standard reference vector — sanity-check the implementation
-	// against that.
+	// CRC-16/X-25's catalogue check value. The unreflected 0x1021 CRC
+	// GT used before #1261 gives 0x29B1 here.
 	got := ComputeCRC([]byte("123456789"))
-	if got != 0x29B1 {
-		t.Errorf("CRC of '123456789' = %#04x, want 0x29B1", got)
+	if got != 0x906E {
+		t.Errorf("CRC of '123456789' = %#04x, want 0x906E", got)
+	}
+	// And a header MMDVMHost's addCCITT161 sealed (the framing package's
+	// "cq" vector): bytes 39, 40 are its CRC, low byte first.
+	hdr := []byte("\x00\x00\x00DIRECT  DIRECT  CQCQCQ  W1AW    ID51")
+	if c := ComputeCRC(hdr); byte(c) != 0x55 || byte(c>>8) != 0x64 {
+		t.Errorf("CRC of the MMDVMHost header = %#04x, want bytes 55 64", c)
 	}
 }
 
 func TestComputeCRCRoundTripsHeader(t *testing.T) {
 	h := Header{
-		Flag1: Flag1EMR,
+		Flag1: Flag1Urgent,
 		RPT2:  "WB7XYZ B",
 		RPT1:  "WB7XYZ A",
 		UR:    "CQCQCQ  ",
@@ -227,7 +231,7 @@ func TestControlChannelEmitsGrantOnGroupCall(t *testing.T) {
 	})
 
 	cc.Ingest(Header{
-		Flag1: Flag1EMR,
+		Flag1: Flag1Urgent,
 		RPT2:  "KD0AAA B",
 		UR:    "CQCQCQ  ",
 		MY1:   "WB7XYZ  ",

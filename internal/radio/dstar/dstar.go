@@ -14,13 +14,11 @@
 //
 // What this package gives you:
 //
-//	sync.go     Frame Sync and Slow Data sync constants and a
-//	            tolerant SyncDetector matching the shape used by the
-//	            other protocol packages.
-//	header.go   PCH (Preamble + Header) parser — the 660-bit
-//	            packet that opens a transmission carrying the eight
-//	            callsign fields (RPT2, RPT1, UR, MY1) plus the
-//	            Repeater / Personal flags (RF1).
+//	sync.go     Frame sync, slow-data sync and end patterns in on-air
+//	            time order, and a tolerant SyncDetector; every
+//	            detector also finds the complement (Polarity).
+//	header.go   The 41-byte header (flags, RPT2, RPT1, UR, MY1, MY2)
+//	            and its CRC-16/X-25, carried low byte first.
 //	control.go  State machine that ingests Header frames and
 //	            publishes events.KindCCLocked + events.KindGrant on
 //	            the bus with `trunking.Grant.Protocol = "dstar"`.
@@ -34,9 +32,9 @@
 // Also wired now:
 //
 //	receiver/     The IQ → 4800 bps GMSK (BT=0.5) bit chain.
-//	framing.DecodeDStarHeaderFEC  The PCH FEC (interleave →
-//	              descramble → depuncture → K=5 Viterbi), driven by
-//	              Process under FECOn.
+//	framing.DecodeDStarHeaderFEC  The header FEC (descramble →
+//	              deinterleave → K=3 Viterbi), driven by Process.
+//	encode.go     On-air encoders for fixtures and synthetic signals.
 //	voice.go      Slow-Data-sync-anchored 96-bit DV cadence tracker
 //	              (VoiceChannel), independent of the header decode.
 //	voice_ambe.go The AMBE FEC to the 49-bit vocoder payload. D-STAR
@@ -46,7 +44,10 @@
 //	              separate vocoder is needed; the composer's dstar
 //	              voice chain renders it via the "ambe2" mapping.
 //
-// ⚠️ The voice path is UNVERIFIED ON AIR — the AMBE interleave table
-// is a documented placeholder and the DV cadence is spec-derived; a
-// real D-STAR capture is the gate (see voice_ambe.go).
+// The air format (#1261) follows the MMDVM firmware (DStarTX.cpp /
+// DStarRX.cpp, the code D-STAR hotspots and repeaters run) and DSD's
+// voice interleave, pinned by literal output of MMDVM's own encoder and
+// MMDVM's null AMBE frame. The format GT carried before was invented and
+// agreed only with its own encoder. ⚠️ Still UNVERIFIED ON A REAL D-STAR
+// CAPTURE (#764/#771).
 package dstar
