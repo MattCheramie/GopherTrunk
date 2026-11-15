@@ -2,6 +2,7 @@ package wmbus
 
 import (
 	"bytes"
+	"math/rand"
 	"testing"
 )
 
@@ -87,12 +88,54 @@ func TestFramerRepairNeedsSoftDecisions(t *testing.T) {
 	}
 }
 
-// Three bit errors in one block are beyond the repair: the CRC's minimum
-// distance of 6 means no one- or two-bit pattern can make it pass.
-func TestFramerDoesNotRepairThreeBitErrors(t *testing.T) {
+// Three bit errors among a block's eight least reliable bits are repaired
+// (issue #1256, 14 Nov). On the reporter's walks the CRC failures that
+// survived the one-or-two-bit search were mostly strong telegrams with
+// three to five errors, nearly all of them among the block's least reliable
+// bits; the two-bit limit could never fix them.
+func TestFramerRepairsThreeWeakBitErrors(t *testing.T) {
+	data, _, chips, first := repairFixture(t)
+	weak := map[int]float32{}
+	for _, bit := range []int{8*13 + 2, 8*15 + 4, 8*20 + 7} {
+		chips[first+bit] ^= 1
+		weak[first+bit] = 0.1
+	}
+	got := softFramesFromChips(chips, weak)
+	if len(got) != 1 {
+		t.Fatalf("%d frames", len(got))
+	}
+	f := got[0]
+	if !f.CRCOK || f.CorrectedBits != 3 || !bytes.Equal(f.Data, data) {
+		t.Fatalf("crc=%v corrected=%d data %x, want the sent frame repaired with 3 bits", f.CRCOK, f.CorrectedBits, f.Data)
+	}
+}
+
+// A third error that is NOT among the eight least reliable bits is left
+// alone: triples are searched only there, which is what keeps a garbage
+// block's chance of passing near the one-or-two-bit search's own.
+func TestFramerDoesNotRepairThreeBitErrorsOutsideTheWeakest(t *testing.T) {
 	_, _, chips, first := repairFixture(t)
 	weak := map[int]float32{}
 	for _, bit := range []int{8*13 + 2, 8*15 + 4, 8*20 + 7} {
+		chips[first+bit] ^= 1
+	}
+	weak[first+8*13+2], weak[first+8*15+4] = 0.1, 0.1
+	// Seven decoys weaker than the third error push it to rank 10.
+	for k := range 7 {
+		weak[first+8*17+k] = 0.2
+	}
+	weak[first+8*20+7] = 0.5
+	got := softFramesFromChips(chips, weak)
+	if len(got) != 1 || got[0].CRCOK || got[0].CorrectedBits != 0 {
+		t.Fatalf("got %+v, want block 2 failed and nothing repaired", got)
+	}
+}
+
+// Four bit errors are beyond the repair, however unreliable they are.
+func TestFramerDoesNotRepairFourBitErrors(t *testing.T) {
+	_, _, chips, first := repairFixture(t)
+	weak := map[int]float32{}
+	for _, bit := range []int{8*13 + 2, 8*15 + 4, 8*18 + 1, 8*20 + 7} {
 		chips[first+bit] ^= 1
 		weak[first+bit] = 0.1
 	}
@@ -168,5 +211,71 @@ func TestReceiverRealAirClickClip(t *testing.T) {
 	rx.Flush()
 	if len(ok) != 1 || ok[0].Manufacturer != "QDS" || ok[0].ID != "29547582" {
 		t.Fatalf("CRC-valid telegrams %+v, want QDS 29547582", ok)
+	}
+}
+
+// A Qundis heat cost allocator from the issue #1256 reporter's 8 Nov walk
+// (S5 + RTL-SDR, -28 dBFS), decoded by a fresh receiver: one block carries
+// three bit errors among its least reliable bits, which only the three-bit
+// search repairs. The same meter decodes cleanly four more times across the
+// reporter's walks, so the repaired telegram is a real one.
+func TestReceiverRealAirThreeBitRepair(t *testing.T) {
+	iq, rate := loadIQWav(t, "testdata/issue1256_qds_28235674_repair3bit.wav")
+	type got struct {
+		tg        Telegram
+		corrected int
+	}
+	var ok []got
+	rx, err := NewReceiver(ReceiverOptions{SampleRateHz: rate, OnFrame: func(f Frame, info FrameInfo) {
+		if !f.CRCOK || info.Inverted {
+			return
+		}
+		tg, err := ParseTelegram(f)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		ok = append(ok, got{tg, f.CorrectedBits})
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for j := 0; j < len(iq); j += 16384 {
+		rx.Process(iq[j:min(j+16384, len(iq))])
+	}
+	rx.Flush()
+	if len(ok) != 1 || ok[0].tg.Manufacturer != "QDS" || ok[0].tg.ID != "28235674" || ok[0].corrected != 3 {
+		t.Fatalf("CRC-valid telegrams %+v, want QDS 28235674 repaired with 3 bits", ok)
+	}
+}
+
+// TestRepairGarbageBlockFalseAcceptRate bounds how often the repair makes a
+// garbage block pass its CRC: the price of every pattern it tries. The one-
+// and two-bit search alone tries 136 patterns per block and measured 1 in
+// 487 on garbage blocks carrying real reliabilities; the triples add 56, for
+// 192 (about 1 in 340 for random blocks). A change that widens the search
+// must move this bound on purpose.
+func TestRepairGarbageBlockFalseAcceptRate(t *testing.T) {
+	rng := rand.New(rand.NewSource(1256))
+	const trials = 40000
+	pass := 0
+	block := make([]byte, 18)
+	rel := make([]float32, 8*len(block))
+	for range trials {
+		rng.Read(block)
+		for i := range rel {
+			rel[i] = rng.Float32()
+		}
+		if CRC16(block[:16]) == uint16(block[16])<<8|uint16(block[17]) {
+			continue
+		}
+		if repairBlock(block, rel) > 0 {
+			pass++
+		}
+	}
+	if rate := float64(pass) / trials; rate > 1.0/250 {
+		t.Fatalf("%d of %d garbage blocks repaired (1 in %.0f), want at most 1 in 250", pass, trials, 1/rate)
+	} else {
+		t.Logf("%d of %d garbage blocks repaired (1 in %.0f)", pass, trials, trials/float64(max(pass, 1)))
 	}
 }

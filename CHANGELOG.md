@@ -8,6 +8,12 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **`wmbus` repairs three-bit CRC errors (#1256).** The soft repair now also
+  tries every triple of a C mode block's 8 least reliable bits, after the
+  one- and two-bit search fails. On the reporter's five walks (2,005 saved
+  telegrams) it decodes 36 more one by one and 11 more in sequence, every
+  one from a meter the same walk heard without it. A garbage block now
+  passes about 1 in 410 instead of 1 in 487.
 - **`squelch_open_ms` on scan-list channels (#1321).** How long a channel
   must stay above its squelch before a call opens: the leading-edge twin of
   `activity_debounce_ms`. On a channel with impulsive noise, a click above
