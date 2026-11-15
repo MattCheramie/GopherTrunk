@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.4.0] — 2026-11-15
+
 ### Added
 - **`wmbus` repairs three-bit CRC errors (#1256).** The soft repair now also
   tries every triple of a C mode block's 8 least reliable bits, after the
