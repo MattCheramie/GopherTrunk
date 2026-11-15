@@ -30,6 +30,16 @@ for tagged releases.
   in-channel power from the spectrum.
 
 ### Fixed
+- **NXDN scan-list channels open only on an NXDN call (#1261).** An `nxdn`
+  or `nxdn48` channel squelched on in-channel power alone, so any carrier
+  on the frequency (an analog FM radio, a keyed carrier, a trunked site's
+  NXDN control channel) opened a call that recorded nothing. The channel
+  now opens only when it hears NXDN traffic frames: two frame syncs one
+  frame apart with a valid traffic-channel LICH. Checked on the reporter's
+  own recordings: both voice calls (NXDN96 and NXDN48) open, the control
+  channel and the analog-tone recording don't. A channel set to the wrong
+  width now never opens instead of recording silence.
+
 - **Removing a manual-tune channel, or locking out a channel, now leaves it
   at once (#1321).** `DELETE /api/v1/scanner/manual_tune/<i>` on a channel
   that was dwelling ended the call but left the scanner on the old

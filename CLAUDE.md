@@ -2438,9 +2438,34 @@ confirmation before any close-as-completed.
   #836 timing lesson on YSF: the receiver's MM loop found the first FSW at 0.6–1.2 s from three of
   ten start phases (past the 500 ms scan window), so `ysfrx.Receiver.ArmTimingAcquisition` (the DMR
   feed-forward estimator, two agreeing windows, opt-in, unarmed = byte-identical) seeds it: 0.11 s
-  at every phase; the voice chain arms it too. NXDN and D-STAR scan-list channels still open on power
-  alone (same hole, not fixed here). Still open: a real DN-mode capture — ask for the radio's mode and
-  a lower gain (the handheld was in the room).
+  at every phase; the voice chain arms it too. Still open: a real DN-mode capture — ask for the radio's
+  mode and a lower gain (the handheld was in the room).
+- **NXDN scan-list channels are call-gated too (#1261, 15 Nov), pinned on REAL air.**
+  `conventional.NXDNCallDetector` (`nxdn_gate.go`) runs the voice chain's NXDN receiver config and is
+  present only within 500 ms of a CONFIRMED traffic frame: a frame sync (cold tolerance 1) followed by
+  another exactly 192 dibits later (tolerance 3), whose descrambled LICH has good parity and RFCT
+  RTCH/RDCH/composite. The pair is load-bearing: a lone sync at tolerance 1 is ~3e-5 per dibit, one
+  false sync every ~7 s at NXDN96. Measured on the reporter's three slices at 48 kHz AND 2.4 MS/s from
+  ten offsets: NXDN96 voice opens in 60-100 ms, NXDN48 in 440-770 ms (hence a per-mode scan window,
+  500 ms / 1 s), the RCCH control channel and the analog-tone YSF capture never; 30 s of noise never. A
+  wrong-width channel (NXDN96 audio on an `nxdn48` channel or vice versa) now never opens instead of
+  recording silence. Failing-first: `TestScannerNXDNAnalogCarrierOpensNoCall` /
+  `ControlChannelOpensNoCall` open a call with the gate unwired. The gate rebuilds its receiver on
+  Reset because `nxdnrx.Receiver.Reset` keeps the timing loop and filter histories.
+- **The D-STAR sync words are WRONG — D-STAR has never been able to frame real air, and its gate
+  is deliberately NOT built.** Checked 15 Nov against MMDVM firmware `DStarDefines.h`, which matches
+  ON-AIR symbols: the slow-data sync is `101010101011010001101000` (`DSTAR_DATA_SYNC_DATA 0xAAB468`)
+  and the frame sync `…0101 0111 0110 0101 0000` (`DSTAR_FRAME_SYNC_DATA 0x557650`, i.e. the 15-bit
+  `111011001010000` after the bit sync). GT's `dstar.SlowDataSyncHex 0x552D16` is MMDVMHost's BYTE
+  constant `{0x55,0x2D,0x16}`, which goes on air LSB-first per byte, unpacked MSB-first; and
+  `FrameSyncHex 0xEAA060` matches nothing (its own comment calls it 32-bit and spells a binary that
+  is not 0xEAA060). Neither matches in either polarity. Both the header path (`process.go`) and the DV
+  voice chain (`voice.go`) anchor on them, and siglab's fixtures and the dstar tests synthesise with
+  the same constants — the self-consistent trap again. So a `dstar` channel still squelches on power
+  (a gate on these syncs would block every real transmission, which is worse). The fix is a REBUILD of
+  the air format against MMDVM's code (`DStarRX.cpp`: syncs, header scrambler / interleave / K=3 FEC /
+  CRC, DV frame layout, slow-data scrambling), pinned by reference-literal tests, then a gate; a real
+  D-STAR capture is the gate for that work (#764/#771). Don't ask a reporter to test D-STAR before it.
 - **A DMR scan-list channel's squelch is now a CALL gate, not a power gate (#1261 follow-up).** A
   keyed-but-idle repeater (Idle bursts / CSBK beacons) held the conventional scanner on its channel.
   `conventional.DMRCallDetector` (`dmr_gate.go`, the NAC-gate shape) runs the production DMR receiver on

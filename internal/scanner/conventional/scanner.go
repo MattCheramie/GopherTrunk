@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -775,6 +776,18 @@ func buildChannelDetector(ch Channel, sampleHz float64, log *slog.Logger) toneDe
 		// beacon (issue #1261). Without a sample rate there is no gate and
 		// the channel opens on power alone, as before.
 		if d := NewDMRCallDetector(sampleHz); d != nil {
+			return d
+		}
+		return nil
+	}
+	if ch.Mode == ModeNXDN || ch.Mode == ModeNXDN48 {
+		// An nxdn channel opens only on NXDN traffic frames, not on any
+		// carrier or an NXDN control channel (issue #1261).
+		rate := nxdnrx.SymbolRate
+		if ch.Mode == ModeNXDN48 {
+			rate = nxdnrx.SymbolRateNXDN48
+		}
+		if d := NewNXDNCallDetector(sampleHz, rate); d != nil {
 			return d
 		}
 		return nil
