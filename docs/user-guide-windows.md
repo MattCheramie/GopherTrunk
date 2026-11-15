@@ -1222,14 +1222,27 @@ scanner:
   diagnostic log says so (`composer: ysf call carried no YSF frame sync`)
   with the share of samples at the ADC rail; a high share means the gain
   is far too high for a radio that close.
-- **D-STAR and System Fusion are experimental.** Their voice decode has
-  not yet been confirmed on air.
+- **NXDN channels open only on an NXDN call.** An `nxdn` or `nxdn48`
+  channel opens when it hears NXDN voice or data frames, not on any
+  carrier: an analog FM signal on the frequency, or an NXDN *control*
+  channel (a trunked site's, where nobody is talking), is skipped instead
+  of opening a call that records nothing. To check, it may stay on a
+  channel whose carrier is up for up to half a second (`nxdn`) or a second
+  (`nxdn48`, whose frames are twice as long).
 - **NXDN: pick the channel width.** `mode: nxdn` is the 12.5 kHz mode
   (NXDN96, 9600 bps); `mode: nxdn48` is the 6.25 kHz very-narrow mode
   (NXDN48, 4800 bps) that many radios call "narrow". A channel set to the
-  wrong one opens on the carrier but records no audio. Both decode to
-  speech on recordings from Kenwood radios; a live run is still to
-  confirm them.
+  wrong width never opens, because its frames don't decode at the other
+  rate: if an NXDN channel never opens while its carrier is up, try the
+  other width. Both decode to speech on recordings from Kenwood radios.
+- **System Fusion is experimental.** Its voice decode has not yet been
+  confirmed on air.
+- **D-STAR does not decode real transmissions yet.** Its frame and
+  slow-data sync words do not match the ones D-STAR radios send, so it
+  finds no D-STAR frame on air. A `dstar` channel still opens on its power
+  squelch, so it records on any carrier, but the recording holds no audio.
+  Fixing it needs the D-STAR decoder rebuilt against a reference
+  implementation, and a real D-STAR recording to check it on.
 - **Not available:** `tone`, `decoders`, `nac` and
   `p25_phase1_demod_mode` are rejected on these channels.
 

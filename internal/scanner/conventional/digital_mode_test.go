@@ -52,6 +52,12 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 				for i := range sig {
 					sig[i] *= 0.2
 				}
+			case ModeNXDN:
+				// An nxdn channel opens only on NXDN traffic frames (issue
+				// #1261): the reporter's real NXDN96 call.
+				sig = dmrAt2400k(readCS16Fixture(t, nxdn96VoiceFixture))
+			case ModeNXDN48:
+				sig = dmrAt2400k(readCS16Fixture(t, nxdn48VoiceFixture))
 			}
 			idle := make([]complex64, amTestRate/2)
 			for i := range idle {
