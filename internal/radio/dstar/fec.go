@@ -14,27 +14,20 @@ func encodeFECForTest(info []byte) []byte {
 	return framing.EncodeDStarHeaderFEC(info)
 }
 
-// FECMode selects how the Process adapter interprets the bit stream
-// it slices after each Frame Sync match.
+// FECMode selects how the Process adapter interprets the bits after
+// each frame sync match.
 //
-//   - FECOff: the adapter reads HeaderInfoBits (328) bits straight
-//     off the wire and parses them as the 41-byte PCH header.
-//     Useful for synthesized fixtures whose conv encoder + scrambler
-//
-//   - interleaver layers aren't applied. Default — matches the
-//     in-package fixture path and operator captures that have been
-//     pre-decoded out of band.
-//
-//   - FECOn: the adapter reads framing.DStarHeaderChannelBits (660)
-//     bits, runs the full JARL DV-mode chain (deinterleave →
-//     descramble → depuncture → K=5 Viterbi → 328 info bits), and
-//     parses the recovered information field as the 41-byte header.
-//     This is the path that lights up on a live-air capture.
+//   - FECOn (the default): the 660-bit on-air FEC section, decoded by
+//     framing.DecodeDStarHeaderFEC. This is what every D-STAR radio
+//     sends.
+//   - FECOff: the 41 header bytes unencoded (328 bits, each byte LSB
+//     first). No radio sends that; it exists for input that has been
+//     de-FEC'd elsewhere.
 type FECMode uint8
 
 const (
-	FECOff FECMode = iota
-	FECOn
+	FECOn FECMode = iota
+	FECOff
 )
 
 // FECOnHeaderBits is the on-wire bit count the Process adapter
@@ -60,18 +53,17 @@ func (c *ControlChannel) FECMode() FECMode {
 }
 
 // ParseFECMode maps a config / user-facing string into an FECMode.
-// Recognised values (case-insensitive): "" / "off" / "false" / "0"
-// → FECOff (the default — read 328 info bits straight off the wire);
-// "on" / "true" / "1" → FECOn (full chain). Unknown strings return
-// FECOff with `ok = false` so callers can surface the
-// misconfiguration.
+// Recognised values (case-insensitive): "" / "on" / "true" / "1" →
+// FECOn (the default, the on-air format); "off" / "false" / "0" →
+// FECOff. Unknown strings return FECOn with `ok = false` so callers
+// can surface the misconfiguration.
 func ParseFECMode(s string) (FECMode, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "off", "false", "0":
-		return FECOff, true
-	case "on", "true", "1":
+	case "", "on", "true", "1":
 		return FECOn, true
+	case "off", "false", "0":
+		return FECOff, true
 	default:
-		return FECOff, false
+		return FECOn, false
 	}
 }

@@ -6,95 +6,106 @@ import "github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 // state the Process adapter holds. Lazily initialised on the first
 // Process call.
 type processState struct {
-	det *SyncDetector
-	// remaining > 0: collecting PCH header bits after a Frame Sync
-	// match; counts down to 0 as Process feeds bits forward.
+	// det / detInv find the frame sync in each polarity.
+	det, detInv *SyncDetector
+	// remaining > 0: collecting header bits after a frame sync match;
+	// counts down to 0 as Process feeds bits forward.
 	remaining int
+	// invert is the polarity of the window being collected: its bits
+	// are complemented as they are stored.
+	invert byte
 	// pch accumulates either the 328-bit raw header (under FECOff)
-	// or the 660-bit on-wire FEC-encoded stream (under FECOn).
+	// or the 660-bit on-air FEC section (under FECOn).
 	pch []byte
-	// matchScratch is reused across calls so SyncDetector.Process
-	// doesn't allocate fresh slices.
-	matchScratch []int
+	// matchScratch / invScratch are reused across calls so
+	// SyncDetector.Process doesn't allocate fresh slices.
+	matchScratch, invScratch []int
 	// captureMode is the FECMode the adapter sampled at the most
-	// recent Frame Sync match. It's latched per-window so a
-	// mid-window mode change doesn't break the byte count.
+	// recent frame sync match. It's latched per window so a mid-window
+	// mode change doesn't break the bit count.
 	captureMode FECMode
 }
 
-// HeaderBits is the information size of the D-STAR PCH header (41
-// bytes × 8 = 328 bits) — what the Process adapter collects under
-// FECOff.
+// HeaderBits is the information size of the D-STAR header (41 bytes ×
+// 8 = 328 bits) — what the Process adapter collects under FECOff.
 const HeaderBits = 41 * 8
 
+// frameSyncTolerance is MMDVM's FRAME_SYNC_ERRS: bit errors accepted in
+// the 24-bit frame sync pattern.
+const frameSyncTolerance = 2
+
 // Process consumes a window of raw bits from the D-STAR receiver
-// (the IQ → GMSK bit chain in internal/radio/dstar/receiver/), runs
-// the 32-bit Frame Sync detector, slices the following 328-bit PCH
-// header window out of the stream, packs it into 41 bytes, runs
-// CRC-CCITT verify, and forwards the parsed Header to Ingest.
+// (the IQ → GMSK bit chain in internal/radio/dstar/receiver/), finds
+// the frame sync in either polarity, collects the header that follows,
+// decodes it (framing.DecodeDStarHeaderFEC under FECOn, the default),
+// checks its CRC and forwards the parsed Header to Ingest.
 //
 // baseIdx is the absolute bit index of bits[0] across the stream
-// lifetime. The adapter's internal countdown survives across
-// Process calls so a sync match in one chunk and the payload in
-// the next still decode cleanly.
-//
-// The convolutional rate-1/2 inner code / scrambler / interleaver
-// the on-air PCH carries are documented follow-ups; this adapter
-// works on synthesized fixtures and pre-FEC-stripped inputs.
+// lifetime. The adapter's internal countdown survives across Process
+// calls so a sync match in one chunk and the header in the next still
+// decode cleanly.
 //
 // Returns baseIdx + len(bits) to match the Process contract every
 // other ControlChannel package exposes.
 func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 	if c.proc == nil {
-		// tolerance=2 tracks the JARL Header Frame Sync (0xEAA060)
-		// through up to 2 bit errors per 24-bit window. The pattern
-		// is non-periodic, so near-matches a few bits off the real
-		// position don't fire — the false-alignment problem the
-		// 0x55555555 toggle placeholder used to cause is gone.
 		c.proc = &processState{
-			det: NewSyncDetector(FrameSyncBitsSlice(), 2),
-			pch: make([]byte, 0, FECOnHeaderBits),
+			det:    NewSyncDetector(FrameSyncBitsSlice(), frameSyncTolerance),
+			detInv: NewSyncDetector(invertBits(FrameSyncBitsSlice()), frameSyncTolerance),
+			pch:    make([]byte, 0, FECOnHeaderBits),
 		}
 	}
 	p := c.proc
 
 	p.matchScratch, _ = p.det.Process(p.matchScratch[:0], bits, baseIdx)
-	matchIdx := 0
+	p.invScratch, _ = p.detInv.Process(p.invScratch[:0], bits, baseIdx)
+	mi, ii := 0, 0
 
 	for i, b := range bits {
 		absPos := baseIdx + i
-		// Collect first (this bit completes the PCH window if
-		// remaining counts down to 0). Order matters: the sync
-		// match's absolute index is the LAST bit of the 24-bit
-		// Frame Sync, so the PCH window starts at the NEXT
-		// iteration.
+		// Collect first (this bit completes the header window if
+		// remaining counts down to 0). Order matters: the sync match's
+		// absolute index is the LAST bit of the sync pattern, so the
+		// header window starts at the NEXT iteration.
 		if p.remaining > 0 {
-			p.pch = append(p.pch, b&1)
+			p.pch = append(p.pch, (b^p.invert)&1)
 			p.remaining--
 			if p.remaining == 0 {
 				if hdr, ok := c.parseHeader(p.pch, p.captureMode); ok {
+					if c.ingestHook != nil {
+						c.ingestHook(hdr)
+					}
 					c.Ingest(hdr)
 				}
 				p.pch = p.pch[:0]
 			}
 		}
-		for matchIdx < len(p.matchScratch) && p.matchScratch[matchIdx] == absPos {
-			// Skip matches that fire while we're still
-			// collecting the previous window — guards against
-			// duplicate sync detections inside a single burst.
-			if p.remaining == 0 {
-				c.mu.Lock()
-				mode := c.fecMode
-				c.mu.Unlock()
-				p.captureMode = mode
-				if mode == FECOn {
-					p.remaining = FECOnHeaderBits
-				} else {
-					p.remaining = HeaderBits
-				}
-				p.pch = p.pch[:0]
+		normal, inverted := false, false
+		for mi < len(p.matchScratch) && p.matchScratch[mi] == absPos {
+			normal = true
+			mi++
+		}
+		for ii < len(p.invScratch) && p.invScratch[ii] == absPos {
+			inverted = true
+			ii++
+		}
+		// Ignore matches that fire while a window is still being
+		// collected: a header's own bits can resemble the sync.
+		if (normal || inverted) && p.remaining == 0 {
+			c.mu.Lock()
+			mode := c.fecMode
+			c.mu.Unlock()
+			p.captureMode = mode
+			p.invert = 0
+			if inverted && !normal {
+				p.invert = 1
 			}
-			matchIdx++
+			if mode == FECOn {
+				p.remaining = FECOnHeaderBits
+			} else {
+				p.remaining = HeaderBits
+			}
+			p.pch = p.pch[:0]
 		}
 	}
 	return baseIdx + len(bits)
@@ -106,33 +117,22 @@ func (c *ControlChannel) Process(bits []byte, baseIdx int) int {
 // length is wrong, the FEC chain can't recover the info, or the
 // CRC mismatches.
 //
-//	FECOff: bits is 328 information bits MSB-first.
-//	FECOn:  bits is 660 on-wire bits (FEC-encoded); the function
-//	        runs framing.DecodeDStarHeaderFEC to recover the 41-byte
-//	        information field.
+//	FECOff: bits is the 41 header bytes unencoded, each byte LSB
+//	        first as D-STAR sends bytes (no real radio sends this).
+//	FECOn:  bits is the 660-bit on-air FEC section; the function
+//	        runs framing.DecodeDStarHeaderFEC to recover the 41 bytes.
 func (c *ControlChannel) parseHeader(bits []byte, mode FECMode) (Header, bool) {
 	var bytesOut []byte
 	switch mode {
 	case FECOn:
-		if len(bits) != FECOnHeaderBits {
-			return Header{}, false
-		}
-		recovered, ok := framing.DecodeDStarHeaderFEC(bits)
-		if !ok {
-			return Header{}, false
-		}
-		bytesOut = recovered
+		return DecodeHeaderBurst(bits)
 	default:
 		if len(bits) != HeaderBits {
 			return Header{}, false
 		}
 		bytesOut = make([]byte, 41)
-		for i := 0; i < 41; i++ {
-			var v byte
-			for j := 0; j < 8; j++ {
-				v = (v << 1) | (bits[i*8+j] & 1)
-			}
-			bytesOut[i] = v
+		for i := 0; i < HeaderBits; i++ {
+			bytesOut[i/8] |= (bits[i] & 1) << uint(i%8)
 		}
 	}
 	hdr, err := ParseHeader(bytesOut)
@@ -153,4 +153,19 @@ func (s *SyncDetector) Reset() {
 	}
 	s.primed = 0
 	s.pos = 0
+}
+
+// DecodeHeaderBurst decodes the 660-bit header FEC section that follows a
+// frame sync (bits in time order, already in MMDVM's polarity) and checks
+// its CRC. ok is true only for a header whose CRC matches.
+func DecodeHeaderBurst(fec []uint8) (Header, bool) {
+	if len(fec) != FECOnHeaderBits {
+		return Header{}, false
+	}
+	b, _ := framing.DecodeDStarHeaderFEC(fec)
+	h, err := ParseHeader(b)
+	if err != nil || h.CRC != ComputeCRC(b[:39]) {
+		return Header{}, false
+	}
+	return h, true
 }

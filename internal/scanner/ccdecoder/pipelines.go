@@ -1750,9 +1750,9 @@ func (p *mpt1327Pipeline) Close() error           { return nil }
 // tuned frequency, so the engine + recorder + composer don't need to
 // know D-STAR is conventional.
 //
-// The convolutional rate-1/2 inner FEC + scrambler + interleaver
-// the on-air PCH carries are documented follow-ups; this pipeline
-// works on synthesized fixtures and pre-FEC-stripped inputs.
+// The header is decoded in the on-air format (frame sync, K=3 FEC,
+// interleave, scrambler and CRC from the MMDVM firmware, #1261) under
+// the default dstar_fec_mode; not yet verified on a real capture.
 func newDStarPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := dstar.New(dstar.Options{
 		Bus:         opts.Bus,
@@ -1762,7 +1762,7 @@ func newDStarPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	})
 	fecMode, fecOK := dstar.ParseFECMode(opts.System.DStarFECMode)
 	if !fecOK {
-		opts.Log.Warn("ccdecoder: unrecognised dstar_fec_mode; falling back to off",
+		opts.Log.Warn("ccdecoder: unrecognised dstar_fec_mode; falling back to on",
 			"system", opts.SystemName, "value", opts.System.DStarFECMode)
 	}
 	cc.SetFECMode(fecMode)

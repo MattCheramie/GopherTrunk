@@ -2452,20 +2452,32 @@ confirmation before any close-as-completed.
   recording silence. Failing-first: `TestScannerNXDNAnalogCarrierOpensNoCall` /
   `ControlChannelOpensNoCall` open a call with the gate unwired. The gate rebuilds its receiver on
   Reset because `nxdnrx.Receiver.Reset` keeps the timing loop and filter histories.
-- **The D-STAR sync words are WRONG — D-STAR has never been able to frame real air, and its gate
-  is deliberately NOT built.** Checked 15 Nov against MMDVM firmware `DStarDefines.h`, which matches
-  ON-AIR symbols: the slow-data sync is `101010101011010001101000` (`DSTAR_DATA_SYNC_DATA 0xAAB468`)
-  and the frame sync `…0101 0111 0110 0101 0000` (`DSTAR_FRAME_SYNC_DATA 0x557650`, i.e. the 15-bit
-  `111011001010000` after the bit sync). GT's `dstar.SlowDataSyncHex 0x552D16` is MMDVMHost's BYTE
-  constant `{0x55,0x2D,0x16}`, which goes on air LSB-first per byte, unpacked MSB-first; and
-  `FrameSyncHex 0xEAA060` matches nothing (its own comment calls it 32-bit and spells a binary that
-  is not 0xEAA060). Neither matches in either polarity. Both the header path (`process.go`) and the DV
-  voice chain (`voice.go`) anchor on them, and siglab's fixtures and the dstar tests synthesise with
-  the same constants — the self-consistent trap again. So a `dstar` channel still squelches on power
-  (a gate on these syncs would block every real transmission, which is worse). The fix is a REBUILD of
-  the air format against MMDVM's code (`DStarRX.cpp`: syncs, header scrambler / interleave / K=3 FEC /
-  CRC, DV frame layout, slow-data scrambling), pinned by reference-literal tests, then a gate; a real
-  D-STAR capture is the gate for that work (#764/#771). Don't ask a reporter to test D-STAR before it.
+- **D-STAR was FABRICATED end to end and is now rebuilt to the MMDVM firmware's air format
+  (#1261, 15 Nov); still unverified on a real capture.** Wrong before: the sync words
+  (`0xEAA060` matched nothing; `0x552D16` was MMDVMHost's slow-data sync BYTES, which go on air
+  LSB first), the header FEC (an invented K=5 punctured code / PN15 / 22×30 interleave), the CRC
+  (unreflected 0x1021, stored high byte first), the voice bit schedule (a sequential placeholder),
+  AND the voice Golay: `framing.GolayDecode23_12` is a DIFFERENT (23,12) Golay code from mbelib's,
+  so it corrupted even a clean frame — D-STAR now uses DMR's mbelib Golay
+  (`dmrvoice.GolayDecode2312`). **dPMR's `voice_ambe.go` still calls `framing.GolayDecode23_12`:
+  the same defect, unfixed.** Real format: sync patterns are MMDVM's RX words in time order
+  (frame `0x557650` = preamble tail + `111011001010000` + the four zero bits before the FEC
+  section; slow-data `0xAAB468`; end `0xAAAAAAAA135E`); header = 41 bytes LSB first + 2 tail bits
+  → K=3 (g1 = d⊕d₋₁⊕d₋₂ first, g0 = d⊕d₋₂) → rows of 24 read column by column (first 12 columns
+  28 deep) → XOR x⁷+x⁴+1 from all-ones (`framing.DStarPN`; its first 24 bits are the slow-data
+  scrambler 0x70 0x4F 0x93); CRC-16/X-25 low byte first; voice = DSD `dW`/`dX` (ISC). Generators,
+  not copied tables, verified against MMDVM's tables. Pinned by `framing/testdata/
+  dstar_header_mmdvm.txt` (MMDVM's own `txHeader` + MMDVMHost `addCCITT161`, compiled outside the
+  repo; old chain fails all 8 checks) and by MMDVM's null AMBE frame decoding with zero Golay
+  corrections and re-encoding bit-exact (old schedule/Golay: 3 corrections). MMDVM reads a
+  negative sample as 1 and GT's receiver slices the other way, so every detector looks for both
+  polarities. `dstar_fec_mode` defaults to `on`. The scan-list gate
+  (`conventional.DStarCallDetector`) opens on a CRC-valid header or slow-data syncs 1-2 cycles
+  (2016 bits ±2) apart, closes on the end pattern, and runs TWO receivers half a symbol apart: from
+  the phase half a symbol off its stable point the Mueller-Müller loop hung for 1-2 sync cycles
+  (one start phase in ten, 1.15-1.57 s to open). The voice chain (`composer.dstar_voice.go`) has
+  the same single-receiver hang and can lose ~1 s of a joined call; not changed. A real D-STAR
+  capture is the gate (#764/#771).
 - **A DMR scan-list channel's squelch is now a CALL gate, not a power gate (#1261 follow-up).** A
   keyed-but-idle repeater (Idle bursts / CSBK beacons) held the conventional scanner on its channel.
   `conventional.DMRCallDetector` (`dmr_gate.go`, the NAC-gate shape) runs the production DMR receiver on

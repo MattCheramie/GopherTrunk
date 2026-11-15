@@ -582,48 +582,21 @@ func buildMPT1327AlohaStream(repeats int, prefix uint8) []byte {
 	return out
 }
 
-// buildDStarHeaderStream builds a D-STAR header stream (frame sync + 41-byte
-// header with CRC, FEC-off). Lifted from integration_cc_dstar_test.go.
+// buildDStarHeaderStream builds repeats short D-STAR transmissions in the
+// on-air format (#1261): bit-sync preamble, frame sync + FEC-encoded header,
+// 21 DV frames of the null AMBE frame, and the end pattern.
 func buildDStarHeaderStream(repeats int, ur, my1, rpt2, rpt1 string) []byte {
-	hdr := dstar.Header{
-		Flag1: 0,
-		Flag2: 0,
-		Flag3: 0,
-		RPT2:  rpt2,
-		RPT1:  rpt1,
-		UR:    ur,
-		MY1:   my1,
-		MY2:   "SUFX",
-	}
-	asm := dstar.AssembleHeader(hdr)
-	hdr.CRC = dstar.ComputeCRC(asm[:39])
-	asm = dstar.AssembleHeader(hdr)
-
-	headerBits := make([]byte, 0, 328)
-	for _, b := range asm {
-		for i := 0; i < 8; i++ {
-			headerBits = append(headerBits, (b>>uint(7-i))&1)
-		}
-	}
-
-	frame := make([]byte, 0, 32+328)
-	frame = append(frame, dstar.FrameSyncBitsSlice()...)
-	frame = append(frame, headerBits...)
-
-	out := make([]byte, 0, 256+repeats*(len(frame)+32)+100)
-	for i := 0; i < 256; i++ {
-		out = append(out, 1)
-	}
+	hdr := dstar.SealHeader(dstar.Header{RPT2: rpt2, RPT1: rpt1, UR: ur, MY1: my1, MY2: "SUFX"})
+	out := make([]byte, 0, repeats*3000)
 	for r := 0; r < repeats; r++ {
-		out = append(out, frame...)
-		for i := 0; i < 32; i++ {
-			out = append(out, 1)
+		out = append(out, dstar.BitSyncBits(256)...)
+		out = append(out, dstar.EncodeHeaderBurst(hdr)...)
+		for n := 0; n < dstar.DVFramesPerSyncCycle; n++ {
+			out = append(out, dstar.EncodeDVFrame(dstar.NullAMBEFrame(), n, [3]byte{'f', 'f', 'f'})...)
 		}
+		out = append(out, dstar.EndSyncBitsSlice()...)
 	}
-	for i := 0; i < 100; i++ {
-		out = append(out, 1)
-	}
-	return out
+	return append(out, dstar.BitSyncBits(100)...)
 }
 
 // buildDMRTier3CSBKDibits builds a DMR Tier III control-channel dibit stream

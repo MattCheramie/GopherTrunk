@@ -539,13 +539,9 @@ type System struct {
 	// connector; unknown values warn-log and fall back to the
 	// default.
 	MotorolaBandPlan string
-	// DStarFECMode enables the JARL DV-mode header FEC chain on the
-	// D-STAR Process adapter. Recognised values (case-insensitive):
-	// "" / "off" / "false" / "0" → FECOff (the default — reads 328
-	// info bits straight off the wire, matches synthesized fixtures
-	// + pre-FEC-stripped inputs); "on" / "true" / "1" → FECOn (660
-	// on-wire bits → deinterleave 22×30 → PN15 descramble →
-	// depuncture → K=5 R=1/2 Viterbi → 328 info bits → ParseHeader).
+	// DStarFECMode selects how the D-STAR header is read (see
+	// config.SystemConfig.DStarFECMode): "" / "on" → FECOn, the
+	// on-air format and the default; "off" → FECOff, unencoded bits.
 	// Forwarded into dstar.ControlChannel.SetFECMode by the
 	// ccdecoder connector after parsing via dstar.ParseFECMode.
 	DStarFECMode string

@@ -58,6 +58,10 @@ type ControlChannel struct {
 	// Process call.
 	proc *processState
 
+	// ingestHook, when set, sees every CRC-valid header Process
+	// decodes, before Ingest (tests).
+	ingestHook func(Header)
+
 	mu      sync.Mutex
 	locked  bool
 	last    LockState

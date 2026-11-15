@@ -18,10 +18,13 @@ package dstar
 // anchor after two sync-less cycles so noise after the transmission
 // ends doesn't keep emitting garbage frames.
 //
-// ⚠️ UNVERIFIED ON AIR — see voice_ambe.go. The 96-bit [72 voice |
-// 24 data] carve and the 21-frame sync cadence are transcribed from
-// the JARL DV spec and validated only synthetically; a real D-STAR
-// capture is needed to confirm them.
+// The slow-data sync is found in either polarity (the polarity it
+// matched in is applied to the frames it anchors), and the end-of-
+// transmission pattern drops the anchor at once.
+//
+// The frame layout, the syncs and the voice FEC follow the MMDVM
+// firmware and DSD and are pinned by MMDVM's own constants (#1261);
+// they are still UNVERIFIED ON A REAL D-STAR CAPTURE (#764/#771).
 
 const (
 	// DVFrameBits is one DV frame: 72 voice + 24 slow-data bits.
@@ -54,7 +57,12 @@ type DVFrame struct {
 // The bit stream + baseIdx contract matches ControlChannel.Process
 // (continuous stream, monotonic baseIdx).
 type VoiceChannel struct {
-	det *SyncDetector
+	// det / detInv find the slow-data sync in each polarity; end /
+	// endInv the end-of-transmission pattern.
+	det, detInv, end, endInv *SyncDetector
+	// inv is the polarity of the anchored cadence: 1 complements every
+	// bit before decoding.
+	inv byte
 	// recent is a rolling window of the most recent DVFrameBits bits,
 	// so a sync match can decode the voice payload of the frame the
 	// sync itself closes.
@@ -72,16 +80,19 @@ type VoiceChannel struct {
 	// Data sync's last bit lands exactly on a frame boundary — the
 	// free-run has already emitted that frame, so the sync branch
 	// must not emit it a second time from the rolling window.
-	lastFrameEnd int
-	matchScratch []int
-	sink         func(DVFrame)
+	lastFrameEnd                                        int
+	matchScratch, invScratch, endScratch, endInvScratch []int
+	sink                                                func(DVFrame)
 }
 
 // NewVoiceChannel builds a DV voice tracker. sink receives each
 // FEC-decoded voice frame.
 func NewVoiceChannel(sink func(DVFrame)) *VoiceChannel {
 	return &VoiceChannel{
-		det:          NewSyncDetector(SlowDataSyncBitsSlice(), 1),
+		det:          NewSyncDetector(SlowDataSyncBitsSlice(), slowDataSyncTolerance),
+		detInv:       NewSyncDetector(invertBits(SlowDataSyncBitsSlice()), slowDataSyncTolerance),
+		end:          NewSyncDetector(EndSyncBitsSlice(), endSyncTolerance),
+		endInv:       NewSyncDetector(invertBits(EndSyncBitsSlice()), endSyncTolerance),
 		recent:       make([]uint8, 0, DVFrameBits),
 		frame:        make([]uint8, 0, DVFrameBits),
 		lastFrameEnd: -1,
@@ -89,15 +100,29 @@ func NewVoiceChannel(sink func(DVFrame)) *VoiceChannel {
 	}
 }
 
+// slowDataSyncTolerance / endSyncTolerance are bit errors accepted in
+// the slow-data sync and the end pattern. MMDVM accepts 2 in the slow-
+// data sync while it is already locked; GT re-anchors on every match,
+// so it takes the stricter 1. The end pattern takes MMDVM's 1 of 48.
+const (
+	slowDataSyncTolerance = 1
+	endSyncTolerance      = 1
+)
+
 // Process consumes a window of raw bits (same contract as
 // ControlChannel.Process) and returns baseIdx+len(bits).
 func (v *VoiceChannel) Process(bits []byte, baseIdx int) int {
 	v.matchScratch, _ = v.det.Process(v.matchScratch[:0], bits, baseIdx)
-	matchIdx := 0
+	v.invScratch, _ = v.detInv.Process(v.invScratch[:0], bits, baseIdx)
+	v.endScratch, _ = v.end.Process(v.endScratch[:0], bits, baseIdx)
+	v.endInvScratch, _ = v.endInv.Process(v.endInvScratch[:0], bits, baseIdx)
+	mi, ii, ei, eii := 0, 0, 0, 0
 	for i, b := range bits {
 		absPos := baseIdx + i
 
-		// Rolling history for the sync-frame voice decode.
+		// Rolling history for the sync-frame voice decode (raw
+		// polarity; the sync's own polarity is applied when it is
+		// decoded).
 		if len(v.recent) == DVFrameBits {
 			copy(v.recent, v.recent[1:])
 			v.recent = v.recent[:DVFrameBits-1]
@@ -109,7 +134,7 @@ func (v *VoiceChannel) Process(bits []byte, baseIdx int) int {
 		// LAST bit of the sync, so the next frame starts one iteration
 		// later).
 		if v.anchored && v.remaining > 0 {
-			v.frame = append(v.frame, b&1)
+			v.frame = append(v.frame, (b^v.inv)&1)
 			v.remaining--
 			if v.remaining == 0 {
 				v.emitVoice(v.frame[:DVVoiceBits])
@@ -117,7 +142,7 @@ func (v *VoiceChannel) Process(bits []byte, baseIdx int) int {
 				v.frame = v.frame[:0]
 				v.framesSinceSync++
 				if v.framesSinceSync >= 2*DVFramesPerSyncCycle {
-					// Two full cycles without a Slow Data sync: the
+					// Two full cycles without a slow-data sync: the
 					// transmission is over (or we slipped hopelessly) —
 					// stop free-running until the next sync.
 					v.anchored = false
@@ -127,21 +152,55 @@ func (v *VoiceChannel) Process(bits []byte, baseIdx int) int {
 			}
 		}
 
-		for matchIdx < len(v.matchScratch) && v.matchScratch[matchIdx] == absPos {
-			// A Slow Data sync just ended here: the 96 bits in the
+		ended := false
+		for ei < len(v.endScratch) && v.endScratch[ei] == absPos {
+			ended = true
+			ei++
+		}
+		for eii < len(v.endInvScratch) && v.endInvScratch[eii] == absPos {
+			ended = true
+			eii++
+		}
+		if ended && v.anchored {
+			// The end pattern replaces the next frame: the frame being
+			// collected is not voice, and nothing follows.
+			v.anchored = false
+			v.remaining = 0
+			v.frame = v.frame[:0]
+		}
+
+		normal, inverted := false, false
+		for mi < len(v.matchScratch) && v.matchScratch[mi] == absPos {
+			normal = true
+			mi++
+		}
+		for ii < len(v.invScratch) && v.invScratch[ii] == absPos {
+			inverted = true
+			ii++
+		}
+		if normal || inverted {
+			// A slow-data sync just ended here: the 96 bits in the
 			// rolling window are the sync's own DV frame — decode its
 			// voice payload (unless the free-run already emitted this
 			// exact frame at this bit), then (re-)anchor the cadence
 			// unconditionally so a bit slip re-locks.
+			inv := byte(0)
+			if inverted && !normal {
+				inv = 1
+			}
 			if len(v.recent) == DVFrameBits && v.lastFrameEnd != absPos {
-				v.emitVoice(v.recent[:DVVoiceBits])
+				voice := make([]uint8, DVVoiceBits)
+				for k := range voice {
+					voice[k] = v.recent[k] ^ inv
+				}
+				v.emitVoice(voice)
 				v.lastFrameEnd = absPos
 			}
+			v.inv = inv
 			v.anchored = true
 			v.remaining = DVFrameBits
 			v.frame = v.frame[:0]
 			v.framesSinceSync = 0
-			matchIdx++
 		}
 	}
 	return baseIdx + len(bits)
@@ -163,6 +222,10 @@ func (v *VoiceChannel) emitVoice(voiceBits []uint8) {
 // Reset clears the sync-detection + cadence state; call on retune.
 func (v *VoiceChannel) Reset() {
 	v.det.Reset()
+	v.detInv.Reset()
+	v.end.Reset()
+	v.endInv.Reset()
+	v.inv = 0
 	v.recent = v.recent[:0]
 	v.anchored = false
 	v.remaining = 0

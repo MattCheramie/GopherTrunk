@@ -30,6 +30,25 @@ for tagged releases.
   in-channel power from the spectrum.
 
 ### Fixed
+- **D-STAR rebuilt to the on-air format (#1261).** GopherTrunk could never
+  decode a real D-STAR transmission: the frame and slow-data sync words, the
+  header FEC (code, interleaver, scrambler), the header CRC and the voice
+  frame's bit schedule were all invented, and the synthetic tests built
+  their signals from the same inventions. The decoder now follows the MMDVM
+  firmware that D-STAR hotspots and repeaters run (and DSD's voice
+  schedule), and is pinned by header bursts that firmware's own encoder
+  produced and by its null AMBE frame. The voice FEC also used the wrong
+  Golay(23,12) code. Both polarities are decoded, and the end-of-
+  transmission pattern ends the voice cadence. `dstar_fec_mode` now
+  defaults to `on` (the on-air header format; `off` reads unencoded header
+  bits). FLAG1's emergency bit is the urgent bit 0x08 (GT read 0x04, part
+  of the repeater-control code). Not yet checked on a real D-STAR capture.
+- **D-STAR scan-list channels open only on a D-STAR transmission
+  (#1261).** A `dstar` channel squelched on power alone, so any carrier
+  opened a call that recorded nothing. It now opens on a header with a
+  valid CRC or on two slow-data syncs one or two cycles apart (joining a
+  transmission under way), and closes on the end pattern. It may stay on a
+  `dstar` channel with a carrier up for up to 1.2 s while it checks.
 - **NXDN scan-list channels open only on an NXDN call (#1261).** An `nxdn`
   or `nxdn48` channel squelched on in-channel power alone, so any carrier
   on the frequency (an analog FM radio, a keyed carrier, a trunked site's

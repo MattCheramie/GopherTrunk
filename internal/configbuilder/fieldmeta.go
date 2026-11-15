@@ -245,7 +245,7 @@ var fieldMetas = map[string]FieldMeta{
 	"SystemConfig.MPT1327CWSCTolerance":    {Label: "MPT1327 CWSC tolerance", Help: "Hamming-distance threshold for the MPT1327 sync code. Empty = 2; 0/exact, or 0–15. MPT1327 only."},
 	"SystemConfig.MotorolaBCHMode":         {Label: "Motorola BCH mode", Help: "Obsolete and ignored (issue #1143): the real SmartNet OSW FEC (interleave + parity ECC + CRC-10) always runs. Safe to delete."},
 	"SystemConfig.MotorolaBandPlan":        {Label: "Motorola band plan", Help: "SmartNet channel-number → frequency table: 800_standard (default), 800_rebanded, 800_splinter, or 900. Motorola only."},
-	"SystemConfig.DStarFECMode":            {Label: "D-STAR FEC mode", Help: "JARL DV-header FEC chain. off (default) or on. D-STAR only."},
+	"SystemConfig.DStarFECMode":            {Label: "D-STAR FEC mode", Help: "How the D-STAR header is read. on (default): the on-air FEC section every radio sends. off: unencoded header bits, for input de-FEC'd elsewhere. D-STAR only."},
 
 	"P25BandPlanEntryConfig.ChannelID":       {Help: "4-bit IDEN_UP slot index (0–15)."},
 	"P25BandPlanEntryConfig.BaseHz":          {Label: "Base frequency", Hz: true, Help: "IDEN_UP base frequency for this slot."},

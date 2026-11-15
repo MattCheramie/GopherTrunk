@@ -169,33 +169,25 @@ func motorolaOSWFEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FE
 	return []FECStat{st}
 }
 
-// dstarCRCFEC tallies the D-STAR header CRC-16 over the 41-byte (FEC-off)
-// header that follows each clean frame-sync hit. Bytes are packed MSB-first;
-// the CRC sits in bytes 39..40 (big-endian) over bytes 0..38.
+// dstarCRCFEC tallies the D-STAR header CRC over the 660-bit FEC section
+// that follows each clean frame-sync hit (framing.DecodeDStarHeaderFEC, then
+// dstar.ComputeCRC, carried low byte first), in either polarity.
 func dstarCRCFEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECStat {
-	st := FECStat{Stage: "header CRC-16"}
-	const hdrBits = 328
+	st := FECStat{Stage: "header Viterbi(K=3)+CRC-16"}
 	syncLen := land.SyncLen
+	fec := make([]byte, framing.DStarHeaderChannelBits)
 	for _, pos := range land.positions {
 		start := pos + syncLen
-		if start+hdrBits > len(stream) {
+		if start+len(fec) > len(stream) {
 			continue
 		}
 		pass := false
-		for rot := uint8(0); rot < 2; rot++ {
-			var b [41]byte
-			for i := 0; i < 41; i++ {
-				var v byte
-				for j := 0; j < 8; j++ {
-					v = (v << 1) | ((stream[start+i*8+j] + rot) & 1)
-				}
-				b[i] = v
+		for rot := uint8(0); rot < 2 && !pass; rot++ {
+			for i := range fec {
+				fec[i] = (stream[start+i] ^ rot) & 1
 			}
-			got := uint16(b[39])<<8 | uint16(b[40])
-			if dstar.ComputeCRC(b[:39]) == got {
-				pass = true
-				break
-			}
+			b, _ := framing.DecodeDStarHeaderFEC(fec)
+			pass = dstar.ComputeCRC(b[:39]) == uint16(b[39])|uint16(b[40])<<8
 		}
 		st.Frames++
 		if pass {

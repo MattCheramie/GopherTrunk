@@ -1,101 +1,133 @@
 package framing
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/hex"
+	"os"
+	"strings"
 	"testing"
 )
 
-// TestDStarHeaderFECRoundTrip encodes a known 41-byte header through
-// the full FEC chain (conv + puncture + scramble + interleave) and
-// decodes it back, verifying every byte round-trips.
-func TestDStarHeaderFECRoundTrip(t *testing.T) {
-	// Sample header: FLAG1=0, callsigns padded with spaces, CRC=0
-	// (the framing package doesn't care about CRC validity — it
-	// just round-trips the byte content).
-	info := []byte{
-		0x00, 0x00, 0x00, // FLAG1..3
-		'K', 'D', '0', 'A', 'A', 'A', ' ', 'B', // RPT2
-		'K', 'D', '0', 'A', 'A', 'A', ' ', 'G', // RPT1
-		'C', 'Q', 'C', 'Q', 'C', 'Q', ' ', ' ', // UR
-		'W', 'B', '7', 'X', 'Y', 'Z', ' ', ' ', // MY1
-		'S', 'U', 'F', 'X', // MY2 (4 chars)
-		0xAB, 0xCD, // CRC trailer
+type dstarHeaderVector struct {
+	name   string
+	header []byte
+	onAir  []byte // sync + 4 zero bits + 660 FEC bits, transmission order
+}
+
+// dstarMMDVMSyncPrefix is what precedes the FEC section in every vector:
+// 0xEA 0xA6 sent LSB first, then four zero bits.
+const dstarMMDVMSyncPrefix = "0101011101100101" + "0000"
+
+func loadDStarHeaderVectors(t *testing.T) []dstarHeaderVector {
+	t.Helper()
+	f, err := os.Open("testdata/dstar_header_mmdvm.txt")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(info) != 41 {
-		t.Fatalf("test info bytes: %d, want 41", len(info))
+	defer f.Close()
+	var out []dstarHeaderVector
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 4096), 4096)
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 3 {
+			t.Fatalf("bad vector line %q", line)
+		}
+		h, err := hex.DecodeString(fields[1])
+		if err != nil || len(h) != 41 {
+			t.Fatalf("vector %s: bad header hex", fields[0])
+		}
+		v := dstarHeaderVector{name: fields[0], header: h}
+		for _, c := range fields[2] {
+			v.onAir = append(v.onAir, byte(c-'0'))
+		}
+		out = append(out, v)
 	}
-	channel := EncodeDStarHeaderFEC(info)
-	if len(channel) != DStarHeaderChannelBits {
-		t.Fatalf("encoded length = %d, want %d", len(channel), DStarHeaderChannelBits)
+	if len(out) == 0 {
+		t.Fatal("no vectors")
 	}
-	for i, b := range channel {
-		if b > 1 {
-			t.Errorf("channel[%d] = %d, want 0 or 1", i, b)
+	return out
+}
+
+func bitString(b []byte) string {
+	var sb strings.Builder
+	for _, x := range b {
+		sb.WriteByte('0' + x)
+	}
+	return sb.String()
+}
+
+// The header bursts MMDVM's own encoder produced decode to their header
+// bytes with no corrections, and GT's encoder reproduces them bit for
+// bit. The old invented chain (K=5, PN15, 22×30) fails both.
+func TestDStarHeaderFECMatchesMMDVMEncoder(t *testing.T) {
+	for _, v := range loadDStarHeaderVectors(t) {
+		if len(v.onAir) != len(dstarMMDVMSyncPrefix)+DStarHeaderChannelBits {
+			t.Fatalf("%s: %d on-air bits", v.name, len(v.onAir))
+		}
+		if got := bitString(v.onAir[:len(dstarMMDVMSyncPrefix)]); got != dstarMMDVMSyncPrefix {
+			t.Fatalf("%s: vector does not open with the sync prefix: %s", v.name, got)
+		}
+		fec := v.onAir[len(dstarMMDVMSyncPrefix):]
+		got, metric, ok := DecodeDStarHeaderFECErrors(fec)
+		if !ok || !bytes.Equal(got, v.header) || metric != 0 {
+			t.Errorf("%s: decode = % x (metric %d), want % x", v.name, got, metric, v.header)
+		}
+		if enc := EncodeDStarHeaderFEC(v.header); !bytes.Equal(enc, fec) {
+			t.Errorf("%s: GT's encoder differs from MMDVM's", v.name)
 		}
 	}
-	got, ok := DecodeDStarHeaderFEC(channel)
-	if !ok {
-		t.Fatal("DecodeDStarHeaderFEC returned ok=false on clean channel")
-	}
-	if !bytes.Equal(got, info) {
-		t.Errorf("round-trip mismatch:\n got = % x\nwant = % x", got, info)
+}
+
+// A burst of scattered errors is corrected: the interleaver spreads a
+// run of errors across the code, and the code corrects isolated ones.
+func TestDStarHeaderFECCorrectsErrors(t *testing.T) {
+	for _, v := range loadDStarHeaderVectors(t) {
+		fec := append([]byte(nil), v.onAir[len(dstarMMDVMSyncPrefix):]...)
+		// A 6-bit burst and three scattered errors.
+		for _, k := range []int{100, 101, 102, 103, 104, 105, 300, 450, 600} {
+			fec[k] ^= 1
+		}
+		got, metric, _ := DecodeDStarHeaderFECErrors(fec)
+		if !bytes.Equal(got, v.header) {
+			t.Errorf("%s: not corrected: % x", v.name, got)
+		}
+		if metric != 9 {
+			t.Errorf("%s: metric %d, want 9", v.name, metric)
+		}
 	}
 }
 
-// TestDStarHeaderFECCorrects1BitError verifies the convolutional
-// Viterbi decoder corrects a single bit error in the channel
-// stream — the practical headline for the FEC layer's value.
-func TestDStarHeaderFECCorrects1BitError(t *testing.T) {
-	info := []byte{
-		0x00, 0x00, 0x00,
-		'K', 'D', '0', 'A', 'A', 'A', ' ', 'B',
-		'K', 'D', '0', 'A', 'A', 'A', ' ', 'G',
-		'C', 'Q', 'C', 'Q', 'C', 'Q', ' ', ' ',
-		'W', 'B', '7', 'X', 'Y', 'Z', ' ', ' ',
-		'S', 'U', 'F', 'X',
-		0xAB, 0xCD,
+// The scrambling sequence is x⁷+x⁴+1 from the all-ones state, period
+// 127, and opens with the slow-data scrambler bytes 0x70 0x4F 0x93
+// (LSB first) that MMDVMHost and DSD XOR onto a DV frame's slow data.
+func TestDStarPN(t *testing.T) {
+	pn := DStarPN(127 + 24)
+	want := []byte{0x70, 0x4F, 0x93}
+	for i, w := range want {
+		var b byte
+		for k := 0; k < 8; k++ {
+			b |= pn[8*i+k] << uint(k)
+		}
+		if b != w {
+			t.Errorf("PN byte %d = %#02x, want %#02x", i, b, w)
+		}
 	}
-	channel := EncodeDStarHeaderFEC(info)
-	// Flip a single bit somewhere in the middle of the stream.
-	channel[100] ^= 1
-	got, ok := DecodeDStarHeaderFEC(channel)
-	if !ok {
-		t.Fatal("DecodeDStarHeaderFEC failed on 1-bit error (expected K=5 R=1/2 to absorb it)")
-	}
-	if !bytes.Equal(got, info) {
-		t.Errorf("1-bit-error correction failed:\n got = % x\nwant = % x", got, info)
+	if !bytes.Equal(pn[127:], pn[:24]) {
+		t.Error("PN period is not 127")
 	}
 }
 
-// TestScrambleSelfInverse confirms the PN15 scrambler is its own
-// inverse — encode and decode share the same implementation.
-func TestScrambleSelfInverse(t *testing.T) {
-	in := make([]byte, DStarHeaderChannelBits)
-	for i := range in {
-		in[i] = byte(i & 1)
+func TestDStarHeaderFECRejectsWrongLength(t *testing.T) {
+	if EncodeDStarHeaderFEC(make([]byte, 40)) != nil {
+		t.Error("encoder accepted 40 bytes")
 	}
-	orig := make([]byte, len(in))
-	copy(orig, in)
-	scrambleDStarHeader(in)
-	if bytes.Equal(in, orig) {
-		t.Error("scrambleDStarHeader was a no-op")
-	}
-	scrambleDStarHeader(in)
-	if !bytes.Equal(in, orig) {
-		t.Error("scrambleDStarHeader is not self-inverse")
-	}
-}
-
-// TestDStarInterleaveRoundTrip confirms interleave + deinterleave is
-// the identity, regardless of which bit positions actually carry
-// data.
-func TestDStarInterleaveRoundTrip(t *testing.T) {
-	in := make([]byte, DStarHeaderChannelBits)
-	for i := range in {
-		in[i] = byte(i & 1)
-	}
-	out := deinterleaveDStarHeader(interleaveDStarHeader(in))
-	if !bytes.Equal(out, in) {
-		t.Error("interleave/deinterleave is not the identity")
+	if _, ok := DecodeDStarHeaderFEC(make([]byte, 659)); ok {
+		t.Error("decoder accepted 659 bits")
 	}
 }

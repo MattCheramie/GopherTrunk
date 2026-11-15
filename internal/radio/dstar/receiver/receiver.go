@@ -10,16 +10,11 @@
 // D-STAR is GMSK at 4800 bps with BT = 0.5 per the JARL DV-mode
 // specification — same 2-level shape as EDACS but at half the symbol
 // rate and a slightly more rounded pulse. The downstream framing
-// (32-bit Frame Sync, 41-byte PCH header) lives in the parent dstar
-// package.
+// (syncs, header FEC, DV frames) lives in the parent dstar package.
 //
-// The convolutional rate-1/2 inner code + scrambler + interleaver
-// the JARL spec wraps around the PCH header are deliberately deferred
-// in this receiver — the downstream Process adapter consumes
-// pre-FEC bits, which matches the existing dstar package's stated
-// "honest deferral" for FEC. Synthesized fixtures (and operators
-// reading from a host that has already de-FEC'd) work end-to-end;
-// real-air capture-from-RF will need the inner FEC layer later.
+// The receiver emits a positive frequency deviation as bit 1. MMDVM
+// reads a negative sample as bit 1, and radios differ, so the dstar
+// package's detectors find every sync in both polarities.
 //
 // The receiver is stateful and not safe for concurrent Process
 // calls. Instantiate one per tuned frequency / per call chain.

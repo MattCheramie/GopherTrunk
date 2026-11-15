@@ -1889,12 +1889,12 @@ type SystemConfig struct {
 	// "800_reband", "800_splinter", "900". Ignored for non-Motorola
 	// protocols.
 	MotorolaBandPlan string `yaml:"motorola_band_plan"`
-	// DStarFECMode enables the JARL DV-mode header FEC chain on
-	// the D-STAR Process adapter (conv R=1/2 K=5 + PN15 scrambler
-	// + 22×30 block interleaver). Recognised values: "" / "off" /
-	// "false" / "0" (the default — 328 info bits straight off the
-	// wire) or "on" / "true" / "1" (660 on-wire bits → full FEC
-	// chain → 328 info bits → ParseHeader). Ignored for non-D-STAR
+	// DStarFECMode selects how the D-STAR header after each frame
+	// sync is read. "" / "on" / "true" / "1" (the default since
+	// #1261): the 660-bit on-air FEC section (K=3 rate-1/2 code,
+	// 24-column interleave, x^7+x^4+1 scrambler), which is what every
+	// D-STAR radio sends. "off" / "false" / "0": 328 unencoded header
+	// bits, for input de-FEC'd elsewhere. Ignored for non-D-STAR
 	// protocols.
 	DStarFECMode string `yaml:"dstar_fec_mode"`
 
