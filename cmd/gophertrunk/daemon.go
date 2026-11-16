@@ -1500,9 +1500,13 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 			continue
 		}
 		for i := 1; i <= taps; i++ {
-			d.ccVoiceSources = append(d.ccVoiceSources, ccdecoder.NewCCVoiceSource(
+			src := ccdecoder.NewCCVoiceSource(
 				func() *ccdecoder.Decoder { return d.ccDecoder },
-				fmt.Sprintf("cc:same-carrier:%d", i)))
+				fmt.Sprintf("cc:same-carrier:%d", i))
+			// The control SDR is chosen further down; a call's IQ loss
+			// includes that SDR's driver drops (issue #1363).
+			src.SetPhysicalSerial(func() string { return d.controlSerial })
+			d.ccVoiceSources = append(d.ccVoiceSources, src)
 		}
 		break
 	}

@@ -1068,8 +1068,11 @@ confirmation before any close-as-completed.
   grouping that left every earlier over marked complete and overcharged the last
   (`TestRecorderMarksEachSegmentWithItsOwnIQLoss`: old [0 0 5], fixed [2 0 3]). A sink without
   `TrackIQLoss` still gets the end-of-call `NotifyIQLoss` total; one WITH it never does (double count).
-  `fanoutSink` MUST forward both (`TestFanoutSinkForwardsIQLoss*`). Gap: same-carrier demuxes (TETRA,
-  ccdecoder) report nothing — their calls share one stream.
+  `fanoutSink` MUST forward both (`TestFanoutSinkForwardsIQLoss*`). Same-carrier calls share one stream, so loss
+  there is a time event (#1363): `ccdecoder.CCVoiceSource.StreamIQWithLoss` = fan-out drops + the control
+  SDR's driver drops (`SetPhysicalSerial`; the tap's own pseudo-serial never counts anything) + chunks the
+  decoder shed at its decode queue (`decodeDrops`), and the TETRA demux opens through `streamWithLoss`;
+  each call's reader is the demux's count minus its value at the call's start (`followTETRASameCarrier`).
 - **`soapyremote: SDR overruns … host_drops` is a DOWNSTREAM signal, not a driver bug.**
   `sendOrDrop` (`internal/sdr/soapyremote/driver.go`) only sheds when the consumer stops draining
   a ~400 ms / ~1084-chunk channel, and it drops the OLDEST queued chunk, so each event is an IQ

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"log/slog"
 	"math"
 	"sync"
@@ -204,6 +205,13 @@ func (f *voiceFanout) prerollSnapshot() []complex64 {
 // no sample is both in the pre-roll and in a later broadcast, and none is lost
 // between them.
 func (f *voiceFanout) subscribe(withPreroll bool) (<-chan []complex64, func() uint64) {
+	ch, unsub, _ := f.subscribeWithDrops(withPreroll)
+	return ch, unsub
+}
+
+// subscribeWithDrops is subscribe plus a live read of the chunks this
+// subscription has dropped so far (issue #1363).
+func (f *voiceFanout) subscribeWithDrops(withPreroll bool) (<-chan []complex64, func() uint64, func() uint64) {
 	depth := f.bufDepth
 	if depth <= 0 {
 		// Auto-size from the pipeline rate, resolved OUTSIDE f.mu (the getter
@@ -247,7 +255,7 @@ func (f *voiceFanout) subscribe(withPreroll bool) (<-chan []complex64, func() ui
 		// The counter is final once the delete above ran; safe to read on any
 		// call (a second unsubscribe is a no-op that still reports the total).
 		return sub.drops.Load()
-	}
+	}, sub.drops.Load
 }
 
 // broadcast copies chunk to every subscriber. The caller's slice is reused
@@ -294,6 +302,12 @@ func (d *Decoder) SubscribeVoiceIQWithPreroll() (<-chan []complex64, func() uint
 	return d.voiceFan.subscribe(true)
 }
 
+// SubscribeVoiceIQWithPrerollLoss is SubscribeVoiceIQWithPreroll plus a live
+// read of the chunks this subscription has dropped so far.
+func (d *Decoder) SubscribeVoiceIQWithPrerollLoss() (ch <-chan []complex64, unsub func() uint64, dropped func() uint64) {
+	return d.voiceFan.subscribeWithDrops(true)
+}
+
 // CenterFreqHz reports the frequency the active control pipeline is tuned to,
 // or 0 when idle/hunting. Gates the same-carrier voice tap.
 func (d *Decoder) CenterFreqHz() uint32 {
@@ -335,8 +349,9 @@ func (d *Decoder) TETRADMOColour() (uint32, bool) {
 // during daemon startup ahead of the control decoder) and keeps working across
 // a control-SDR reacquire that swaps the decoder. Nil-safe until then.
 type CCVoiceSource struct {
-	get    func() *Decoder
-	serial string
+	get      func() *Decoder
+	serial   string
+	physical func() string // the control SDR's serial; nil = unknown
 }
 
 // NewCCVoiceSource wraps the decoder returned by get as a same-carrier voice
@@ -416,6 +431,42 @@ func (s *CCVoiceSource) StreamIQ(ctx context.Context) (<-chan []complex64, error
 		unsub() // closes ch, ending the composer's read loop
 	}()
 	return ch, nil
+}
+
+// SetPhysicalSerial names the SDR the control decoder streams from, so a
+// call's IQ loss can include the chunks that SDR's driver dropped upstream
+// of the tap. Called once at wiring time, before any stream is opened.
+func (s *CCVoiceSource) SetPhysicalSerial(get func() string) { s.physical = get }
+
+// StreamIQWithLoss is StreamIQ plus a func reporting the IQ chunks this
+// stream has lost so far: chunks the control decoder's fan-out dropped to
+// it, plus chunks lost upstream of the fan-out since the stream opened (by
+// the control SDR's driver, or shed at the decoder's own decode queue),
+// which are missing for every call on the carrier. The composer
+// reads it to mark a recording partial (issues #1288, #1363).
+func (s *CCVoiceSource) StreamIQWithLoss(ctx context.Context) (<-chan []complex64, func() uint64, error) {
+	dec := s.get()
+	if dec == nil {
+		return nil, nil, errNoControlDecoder
+	}
+	var physical string
+	if s.physical != nil {
+		physical = s.physical()
+	}
+	driver := func() uint64 { return 0 }
+	if physical != "" {
+		base := sdr.IQDropCount(physical)
+		driver = func() uint64 { return sdr.IQDropCount(physical) - base }
+	}
+	queueBase := dec.decodeDrops.Load()
+	ch, unsub, dropped := dec.SubscribeVoiceIQWithPrerollLoss()
+	go func() {
+		<-ctx.Done()
+		unsub()
+	}()
+	return ch, func() uint64 {
+		return dropped() + driver() + (dec.decodeDrops.Load() - queueBase)
+	}, nil
 }
 
 var errNoControlDecoder = errors.New("ccdecoder: no control decoder for same-carrier voice tap")
