@@ -8,6 +8,22 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **TETRA: a lost control-channel lock is now logged, and the lock carries
+  the cell's location area (#1321).** Three things a weak cell showed:
+  - When a locked cell fell silent for 5 s the lock was dropped with no log
+    line, so the log showed `tetra cc locked` again and again with nothing
+    between. Every loss now writes `tetra cc lost` with the reason and how
+    long the cell had been silent.
+  - The lock line read `la=0` whatever the cell's location area was. On air
+    the location area arrives in SYSINFO, not in the sync burst that locks
+    the channel, and it never reached the lock. It now does, once two
+    SYSINFO broadcasts agree: a `tetra cc location area learned` line
+    follows the first lock, later lock and loss lines carry `la=`, and the
+    Systems panel shows the location area instead of 0.
+  - On a wideband SDR, the `channel iq power very low` warning told the
+    operator the carrier was probably mistuned or outside the passband even
+    after that channel had decoded. It now says the carrier is tuned
+    correctly but too weak to hold, and shows how long ago it last decoded.
 - **Removing or locking out a scan-list channel while the scanner was
   tuning to it could crash the daemon (#1321 follow-up).** The scanner
   only registered its visit to a channel once that channel's IQ stream was
