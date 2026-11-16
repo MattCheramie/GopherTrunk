@@ -141,8 +141,8 @@ func checkBlocks(raw []byte, f Format) (data []byte, blocks int, failed []int, e
 // slipped chip clock leaves the rest of a frame garbage) lands within two
 // bits of some valid block about one time in six. The search is therefore
 // restricted to the block's repairCandidates least reliable bits, which is
-// where a weak signal's errors fall once the receiver clips FM clicks (see
-// clickClipRad): repairCandidates singles plus their pairs is 136 candidate
+// where a weak signal's errors fall (the receiver's tone detector reports
+// each chip's margin, see toneStat): repairCandidates singles plus their pairs is 136 candidate
 // patterns, about the 145 a plain one-bit search of an 18-byte block tries,
 // so a garbage block passes about one time in 500. Every block of a slipped
 // frame has to, so in practice the risk is a frame with one bad block; the

@@ -8,6 +8,17 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`wmbus` decodes far more telegrams from meters near the noise
+  (#1256).** The decoder now reads each bit by comparing the energy at the
+  two FSK tones, where it used to FM-demodulate the signal first, which
+  breaks down when a meter is not well above the receiver's noise. The
+  reporter's "strong telegrams that still fail" were such meters: their
+  tuner's noise floor is high, so a telegram that looked strong had only
+  about 13 dB to spare. On their five walks (2,005 saved telegrams) the
+  CRC-valid count goes from 1,190 to 1,418 in the order heard, and from
+  947 to 1,392 decoded one at a time, with 350 different meters instead of
+  296. CPU use is about the same. Checked on saved telegrams, not yet on a
+  live walk.
 - **Same-carrier voice calls are marked partial when IQ was lost (#1363).**
   TETRA calls on a control carrier share one decode stream, and other calls
   followed on the control channel's own carrier report through a tap with no

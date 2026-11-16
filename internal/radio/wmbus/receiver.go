@@ -48,34 +48,21 @@ const (
 	// thresholdWindow is the slicing-threshold average: 32 chips. Both
 	// preambles, the access code and T mode data are DC-balanced over it.
 	thresholdWindow = 128
-	// smoothLen is the post-discriminator boxcar: half a chip.
-	smoothLen = 2
 	// sampleLoopGain and sampleLoopRateGain are the mid-chip clock's
 	// phase and period gains, per transition.
 	sampleLoopGain     = 0.15
 	sampleLoopRateGain = 0.004
-	// decideSpan is how many samples either side of a chip's centre (in
-	// total, plus the centre) its decision averages: with the half-chip
-	// boxcar that makes about a chip-long matched filter.
-	decideSpan = 2
-	// clickClipRad bounds each discriminator sample to this far either
-	// side of the carrier: 48 kHz, just above the C mode deviation
-	// (±45 kHz), so a clean C mode sample is never clipped; a T mode one
-	// (±50 kHz) is only trimmed and keeps its sign. On the issue #1256
-	// walk (156 saved telegrams) it is what makes the soft CRC repair work:
-	// without it the bit errors were mostly the decisions with the LARGEST
-	// margin (clicks), so ranking bits by margin found nothing.
-	//
-	// It was 64 kHz, picked at 8 samples per chip, where the gain was flat
-	// from 51 to 77 kHz. At 4 samples per chip (#1306) the boxcar and the
-	// decision span are half as long, so a click carries twice the weight
-	// in a chip's decision and the optimum moved down: on the reporter's
-	// 25 Oct walk (945 telegrams) 64 kHz decoded 543 in sequence, fewer
-	// than v1.3.4's 570; 48 kHz decodes 582 (and 134 / 83 on the 20 / 23
-	// Oct walks, was 133 / 78), with the T mode telegrams and rtl-wmbus's
-	// sample captures unchanged. 32–44 kHz scores a few more on that walk
-	// but cuts into clean T mode samples; 56 kHz and up loses frames.
-	clickClipRad = 2 * math.Pi * 48_000 / procRateHz
+	// corrLen is the tone correlators' length in samples: a chip and a
+	// quarter. toneDevRad is how far either side of the carrier they sit:
+	// the C mode deviation (±45 kHz); a T mode tone (±50 kHz) is 5 kHz off
+	// a correlator a hundred kHz wide. Both were swept on the issue #1256
+	// walks (see toneStat): 4 and 6 samples, and 40 / 50 kHz, each decode
+	// within 3 % of these.
+	corrLen    = 5
+	toneDevRad = 2 * math.Pi * 45_000 / procRateHz
+	// toneRefresh is how often, in samples, the correlators are re-aimed
+	// at the carrier estimate between frames.
+	toneRefresh = 16
 )
 
 // interpAt linearly interpolates h at fractional index x, clamped to h.
@@ -145,10 +132,7 @@ type Receiver struct {
 
 	mixBuf, rsBuf, afcBuf, chBuf []complex64
 
-	prev   complex64
-	smooth [smoothLen]float64
-	smIdx  int
-	smSum  float64
+	prev complex64
 
 	ring   [thresholdWindow]float64
 	ringN  int
@@ -164,9 +148,17 @@ type Receiver struct {
 	level     bool    // current sliced level
 	lastCross float64 // time of the last transition
 	vPrev     float64
-	spc       float64                 // tracked samples per chip
-	tSample   float64                 // the next chip centre
-	hist      [decideSpan + 2]float64 // recent sliced values, newest last
+	spc       float64    // tracked samples per chip
+	tSample   float64    // the next chip centre
+	hist      [4]float64 // recent detector values, newest last
+
+	// Tone-correlator detector (see toneStat): the recent channel-filtered
+	// samples, and the two tones' phasors (cos, sin) per correlator tap.
+	iq      [thresholdWindow]complex64
+	iqIdx   int
+	toneP   [corrLen][2]float64
+	toneM   [corrLen][2]float64
+	toneAge int
 
 	framers [2]*Framer // normal, inverted
 	stats   ReceiverStats
@@ -357,36 +349,33 @@ func (r *Receiver) Flush() {
 		r.n++
 		r.clock(r.ring[(r.rIdx+thresholdWindow/2+i)%thresholdWindow] - r.thr)
 	}
-	r.decide(float64(r.n) + decideSpan/2)
+	r.decide(float64(r.n))
 }
 
 func (r *Receiver) sample(x complex64) {
 	r.n++
+	r.iq[r.iqIdx] = x
+	r.iqIdx = (r.iqIdx + 1) % thresholdWindow
 	p := float64(real(x))*float64(real(x)) + float64(imag(x))*float64(imag(x))
 	r.power += (p - r.power) / 512
 
-	// FM discriminator, then a half-chip boxcar.
+	// FM discriminator. It no longer decides chips (toneStat does); it
+	// measures the carrier, as the mean frequency over the threshold
+	// window. It is deliberately not clipped: a clip around the estimate
+	// was right when the discriminator sliced the chips, but it drags a
+	// first estimate toward where the receiver started (a tuner 50 kHz
+	// off read as 26 kHz off), and the correlators need the carrier
+	// itself. Without it the issue #1256 walks decode 1349 telegrams one
+	// by one instead of 1282.
 	d := x * complex(real(r.prev), -imag(r.prev))
 	r.prev = x
 	f := math.Atan2(float64(imag(d)), float64(real(d)))
-	// Clip FM clicks: at low SNR the phase can wrap within a sample and
-	// the discriminator throws a spike of up to ±π, several times the
-	// signal's own swing, which outweighs the rest of a chip's average and
-	// flips it with a large margin. Clipped around the carrier (the
-	// slicing threshold), a clean sample keeps its sign, and a spike counts
-	// no more than a strong chip.
-	f = min(max(f, r.thr-clickClipRad), r.thr+clickClipRad)
-	r.smSum += f - r.smooth[r.smIdx]
-	r.smooth[r.smIdx] = f
-	r.smIdx = (r.smIdx + 1) % smoothLen
-	s := r.smSum / smoothLen
 
-	// Slice the sample from the middle of the threshold window against
-	// the window's mean. The mean absorbs a carrier offset of any size
-	// within the channel filter; it is frozen while a frame is being
-	// received, because C mode NRZ data is not DC-balanced.
-	r.rSum += s - r.ring[r.rIdx]
-	r.ring[r.rIdx] = s
+	// The window's mean absorbs a carrier offset of any size within the
+	// channel filter; it is frozen while a frame is being received,
+	// because C mode NRZ data is not DC-balanced.
+	r.rSum += f - r.ring[r.rIdx]
+	r.ring[r.rIdx] = f
 	r.rIdx = (r.rIdx + 1) % thresholdWindow
 	if r.ringN < thresholdWindow {
 		r.ringN++
@@ -397,8 +386,59 @@ func (r *Receiver) sample(x complex64) {
 		r.thr = r.rSum / thresholdWindow
 	}
 	r.frozen = busy
-	v := r.ring[(r.rIdx+thresholdWindow/2)%thresholdWindow] - r.thr
-	r.clock(v)
+	r.clock(r.toneStat())
+}
+
+// toneStat is the chip detector: the energy at the upper FSK tone minus
+// the energy at the lower one, each measured by correlating the last
+// corrLen samples (taken from the middle of the threshold window, where
+// the carrier estimate is centred) against that tone. Positive is a 1.
+//
+// It replaced slicing the FM discriminator (issue #1256). A discriminator
+// works on the noise in its whole input bandwidth (±100 kHz here, for
+// ±45 kHz FSK at 100 kchip/s), and when the signal is not far above that
+// its phase slips a cycle now and then: each slip is a wrong chip. Two
+// tone correlators are the textbook non-coherent FSK detector: each sees
+// only the noise in about a chip-rate bandwidth around its tone.
+//
+// The reporter's "strong telegrams that still fail" were not strong
+// against the noise: their RTL-SDR's floor in the channel is about
+// -44 dBFS, so a -28 dBFS telegram has 13 dB of signal-to-noise. On their
+// 8 Nov walk, decoded one telegram at a time, the 188 telegrams with
+// 8-16 dB went from 34 CRC-valid to 102, and the 160 with 16-28 dB from 94
+// to 138. Over all five walks (2005 saved telegrams) the CRC-valid count
+// went from 947 to 1392 one by one and from 1190 to 1418 in sequence,
+// with 350 distinct meters instead of 296; all 43 newly decoded IDs that
+// differ from the ID the live run read off a damaged header belong to
+// meters the walks also decode elsewhere. On synthetic telegrams in white
+// noise it decodes about 2 dB lower (detector_test.go).
+//
+// The value's scale follows the signal power, which is fine: the clock
+// uses its zero crossings and the CRC repair only ranks a frame's bits.
+func (r *Receiver) toneStat() float64 {
+	if r.toneAge == 0 || (!r.frozen && r.toneAge >= toneRefresh) {
+		// Aim the correlators at the carrier estimate. Held through a
+		// frame, like the estimate itself.
+		for k := 0; k < corrLen; k++ {
+			sp, cp := math.Sincos((r.thr + toneDevRad) * float64(k))
+			sm, cm := math.Sincos((r.thr - toneDevRad) * float64(k))
+			r.toneP[k] = [2]float64{cp, sp}
+			r.toneM[k] = [2]float64{cm, sm}
+		}
+		r.toneAge = 0
+	}
+	r.toneAge++
+	var pr, pi, mr, mi float64
+	m := r.iqIdx + thresholdWindow/2 // the window's middle sample, mod the ring
+	for k := 0; k < corrLen; k++ {
+		x := r.iq[(m-k)%thresholdWindow]
+		xr, xi := float64(real(x)), float64(imag(x))
+		pr += xr*r.toneP[k][0] - xi*r.toneP[k][1]
+		pi += xr*r.toneP[k][1] + xi*r.toneP[k][0]
+		mr += xr*r.toneM[k][0] - xi*r.toneM[k][1]
+		mi += xr*r.toneM[k][1] + xi*r.toneM[k][0]
+	}
+	return (pr*pr + pi*pi) - (mr*mr + mi*mi)
 }
 
 // clock is the chip clock: a timing loop that decides each chip from the
@@ -486,18 +526,14 @@ func (r *Receiver) clock(v float64) {
 	r.decide(t)
 }
 
-// decide pushes every chip whose centre lies at least decideSpan/2 samples
-// before limit. A chip's value is the sliced stream averaged over
-// decideSpan samples around its centre, which with the half-chip boxcar
-// ahead of it spans about one chip.
+// decide pushes every chip whose centre lies before limit. A chip's value
+// is the detector's output at its centre: toneStat has already integrated
+// over the chip.
 func (r *Receiver) decide(limit float64) {
 	t := float64(r.n)
-	for r.tSample+decideSpan/2 <= limit {
-		x := 0.0
-		c := r.tSample - (t - float64(len(r.hist)-1)) // the centre, as an index into hist
-		for k := -decideSpan / 2; k <= decideSpan/2; k++ {
-			x += interpAt(r.hist[:], c+float64(k))
-		}
+	for r.tSample <= limit {
+		// The centre, as an index into hist.
+		x := interpAt(r.hist[:], r.tSample-(t-float64(len(r.hist)-1)))
 		chip := uint8(0)
 		if x > 0 {
 			chip = 1
