@@ -978,7 +978,7 @@ func (p *tetraPipeline) checkPayloadResync(n int) {
 			p.log.Warn("tetra: payload drought persists across resyncs (sync bursts decoding, no SCH payload) — declaring lock lost to force a re-hunt",
 				"system", p.system, "attempts", tetraPayloadResyncMaxAttempts)
 		}
-		p.cc.MarkLost()
+		p.cc.MarkLostReason("payload drought: sync bursts decoding, no SCH payload")
 		return
 	}
 	p.rx.Reset()

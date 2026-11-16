@@ -155,7 +155,7 @@ func (t *tetraChannelReceiver) checkPayloadResync(n int) {
 			t.log.Warn("widebandt2: tetra payload drought persists across resyncs (sync bursts decoding, no SCH payload) — declaring lock lost to force a re-hunt",
 				"system", t.system, "attempts", tetraPayloadResyncMaxAttempts)
 		}
-		t.cc.MarkLost()
+		t.cc.MarkLostReason("payload drought: sync bursts decoding, no SCH payload")
 		return
 	}
 	t.rx.Reset()

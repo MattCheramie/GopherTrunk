@@ -110,6 +110,18 @@ type ControlChannel struct {
 	// mcc=996/mnc=3941 and friends). See maybeLock.
 	pendingLock      LockState
 	pendingLockVotes int
+	// sysLA is the cell's location area as broadcast in D-MLE-SYSINFO (the
+	// real-air source — a BSCH carries MCC/MNC but no location area, and the
+	// sync burst's BNCH almost never parses as a byte-aligned broadcast on air).
+	// It is folded into the lock identity so the lock line, cc.locked / cc.lost
+	// payloads and the topology snapshot carry the real LA instead of 0 (#1321).
+	// pendingLA/pendingLAVotes confirm it over lockIdentityConfirmThreshold
+	// consecutive agreeing SYSINFOs, like pendingLock: one CRC-passing but
+	// mis-corrected block must not rewrite the site identity.
+	sysLA          uint16
+	sysLAKnown     bool
+	pendingLA      uint16
+	pendingLAVotes int
 	// mainCarrier is the cell's own carrier number, learned from the
 	// broadcast SYSINFO. With the tuned control-channel frequency it lets a
 	// grant's carrier number resolve to Hz relative to this carrier, without a
@@ -957,7 +969,17 @@ func (c *ControlChannel) learnSysInfoExt(ext SysInfoExt) {
 	cckID, cckKnown := c.cckID, c.cckKnown
 	c.sysInfoExt = ext
 	c.sysInfoExtSet = true
+	laAdopted, lock := c.confirmSysInfoLALocked(ext.LocationArea)
 	c.mu.Unlock()
+	if laAdopted {
+		// The lock line was written before any SYSINFO could decode, so it
+		// carried no location area; say so once it is known, and refresh the
+		// systems API (site.update) with the completed identity.
+		c.log.Info("tetra cc location area learned",
+			"freq", lock.FrequencyHz, "mcc", lock.MCC, "mnc", lock.MNC,
+			"la", lock.LocationArea, "system", c.systemName)
+		c.publishSiteIdentity()
+	}
 	if !changed {
 		return
 	}
@@ -987,6 +1009,31 @@ func (c *ControlChannel) learnSysInfoExt(ext SysInfoExt) {
 	// BS cycles which definition each broadcast carries, and it is excluded
 	// from the change gate (sameCellParams) for the same reason.
 	c.log.Info("tetra: SYSINFO cell parameters", args...)
+}
+
+// confirmSysInfoLALocked records a location area decoded from D-MLE-SYSINFO and,
+// once lockIdentityConfirmThreshold consecutive SYSINFOs agree on it, folds it
+// into the active lock identity. It reports whether the locked identity changed
+// (and returns the new identity) so the caller can log and publish after
+// releasing the mutex. Caller holds c.mu.
+func (c *ControlChannel) confirmSysInfoLALocked(la uint16) (adopted bool, lock LockState) {
+	if c.pendingLAVotes > 0 && c.pendingLA == la {
+		c.pendingLAVotes++
+	} else {
+		c.pendingLA, c.pendingLAVotes = la, 1
+	}
+	if c.pendingLAVotes < lockIdentityConfirmThreshold {
+		return false, c.last
+	}
+	c.sysLA, c.sysLAKnown = la, true
+	if !c.locked || c.last.LocationArea == la {
+		return false, c.last
+	}
+	c.last.LocationArea = la
+	// A BSCH identity change still pending confirmation was built before the
+	// LA was known; it must not vote against the completed identity.
+	c.pendingLockVotes = 0
+	return true, c.last
 }
 
 // cellFrequencies returns the cell's absolute downlink and uplink carrier
@@ -1811,10 +1858,12 @@ func (c *ControlChannel) CheckStale(now time.Time, timeout time.Duration) {
 	if last == 0 {
 		return
 	}
-	if now.Sub(time.Unix(0, last)) <= timeout {
+	silent := now.Sub(time.Unix(0, last))
+	if silent <= timeout {
 		return
 	}
-	c.MarkLost()
+	c.markLost("no sync burst or signalling decoded",
+		"silent_for", silent.Round(100*time.Millisecond), "timeout", timeout)
 }
 
 // NeedsResync reports whether the control-channel heartbeat is older than
@@ -1861,6 +1910,15 @@ const lockIdentityConfirmThreshold = 2
 func (c *ControlChannel) maybeLock(s LockState) {
 	c.noteActivity()
 	c.mu.Lock()
+	// A real-air BSCH names the network (MCC/MNC) but carries no location
+	// area; that arrives in D-MLE-SYSINFO (confirmSysInfoLALocked). Complete an
+	// LA-less candidate for the same network with the SYSINFO-learned LA, so a
+	// steady stream of BSCHs agrees with the completed identity instead of
+	// voting to strip the LA again, and a re-lock after a loss announces it.
+	sameNetwork := c.last.MCC == 0 || (s.MCC == c.last.MCC && s.MNC == c.last.MNC)
+	if c.sysLAKnown && s.LocationArea == 0 && s.MCC != 0 && sameNetwork {
+		s.LocationArea = c.sysLA
+	}
 	if c.locked && c.last == s {
 		c.pendingLockVotes = 0 // agreement with the active identity breaks any pending streak
 		c.mu.Unlock()
@@ -1895,12 +1953,23 @@ func (c *ControlChannel) maybeLock(s LockState) {
 		}
 		c.pendingLockVotes = 0
 	}
+	// A different network on this carrier makes the SYSINFO-learned LA stale;
+	// the new cell's SYSINFO re-confirms it within a couple of multiframes.
+	if c.last.MCC != 0 && s.MCC != 0 && (s.MCC != c.last.MCC || s.MNC != c.last.MNC) {
+		c.sysLAKnown = false
+		c.pendingLAVotes = 0
+	}
 	c.locked = true
 	c.last = s
 	c.bus.Publish(events.Event{Kind: events.KindCCLocked, Payload: s})
-	c.log.Info("tetra cc locked",
-		"freq", s.FrequencyHz, "mcc", s.MCC, "mnc", s.MNC,
-		"la", s.LocationArea, "system", c.systemName)
+	// "la" is printed only once a location area has decoded: the first lock
+	// lands on a BSCH, before any SYSINFO, and printing la=0 there reads as
+	// the cell's LA (#1321). "tetra cc location area learned" follows.
+	args := []any{"freq", s.FrequencyHz, "mcc", s.MCC, "mnc", s.MNC}
+	if s.LocationArea != 0 || c.sysLAKnown {
+		args = append(args, "la", s.LocationArea)
+	}
+	c.log.Info("tetra cc locked", append(args, "system", c.systemName)...)
 	c.mu.Unlock()
 
 	// Surface the decoded single-cell identity (MCC/MNC/LA + colour) to the live
@@ -1915,6 +1984,21 @@ func (c *ControlChannel) maybeLock(s LockState) {
 // the cchunt supervisor leaves StateLocked and re-hunts. Idempotent while
 // already unlocked.
 func (c *ControlChannel) MarkLost() {
+	c.markLost("declared lost by the decode pipeline")
+}
+
+// MarkLostReason is MarkLost with the caller's reason on the "tetra cc lost"
+// log line (e.g. the pipeline's payload-drought escalation).
+func (c *ControlChannel) MarkLostReason(reason string) {
+	c.markLost(reason)
+}
+
+// markLost drops the lock, publishes cc.lost and writes the "tetra cc lost"
+// line that pairs with "tetra cc locked". The stale watchdog used to drop the
+// lock with no log line at all, so a weak cell that fell silent for a few
+// seconds and came back showed "tetra cc locked" over and over with nothing
+// between the lines to say the lock had been lost (#1321).
+func (c *ControlChannel) markLost(reason string, attrs ...any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.locked {
@@ -1925,6 +2009,12 @@ func (c *ControlChannel) MarkLost() {
 	// loss; a fresh first lock adopts immediately anyway.
 	c.pendingLockVotes = 0
 	c.bus.Publish(events.Event{Kind: events.KindCCLost, Payload: c.last})
+	args := []any{"freq", c.last.FrequencyHz, "mcc", c.last.MCC, "mnc", c.last.MNC}
+	if c.last.LocationArea != 0 || c.sysLAKnown {
+		args = append(args, "la", c.last.LocationArea)
+	}
+	args = append(args, "system", c.systemName, "reason", reason)
+	c.log.Info("tetra cc lost", append(args, attrs...)...)
 }
 
 // ResyncReset drops the dibit-domain synchronisation state so the next Process
