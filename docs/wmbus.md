@@ -194,10 +194,15 @@ bits. The CRC catches every error of up to five bits in a block, so a real
 error of up to three bits has exactly one repair. A telegram repaired this
 way prints `(CRC repaired: N bits)`, and its JSON carries `corrected_bits`.
 A badly damaged block passes this way about once in 400 tries, so skip
-telegrams with `corrected_bits` if a reading must never be wrong. The decoder also limits the clicks that FM reception
-produces at low signal levels, which are what made the strongest-looking
-bits of a weak telegram the wrong ones. On the S5's saved telegrams the two
-together took the CRC-valid count from 128 to 133.
+telegrams with `corrected_bits` if a reading must never be wrong.
+
+The decoder reads each bit by comparing the energy at the two FSK tones,
+not by FM-demodulating the signal first. That matters when a meter is not
+far above the receiver's noise: on the S5 reporter's five walks (2,005
+saved telegrams, issue #1256) it decodes 1,418 in the order they were
+heard, where the FM demodulator it replaced decoded 1,190, and it hears
+350 different meters instead of 296. Most of the gain is in telegrams that
+looked strong but were only 8 to 20 dB above that tuner's noise floor.
 
 **Gain.** `-gain` (on `wmbus` and `capture`) takes tenths of a dB: `-gain 200`
 is 20 dB, `-gain 0` the tuner's minimum, and `auto` lets the tuner's AGC
@@ -352,7 +357,8 @@ On air (issue #1256, 20 Oct 2026), a Samsung S5 with an RTL-SDR walking
 past a block of flats decoded Qundis heat cost allocators and Diehl water
 meters. Its 156 saved telegrams are the yield check for receiver changes
 (`TestWMBusRealAirSnippets`): 74 decoded with a valid CRC on v1.3.1, 97
-with the mid-chip clock, 128 with the carrier tracking, and 133 with the
-FM click limit and the CRC repair (decoded one at a time, without a carrier
-estimate carried over from earlier telegrams: 97, then 110). If you try it
+with the mid-chip clock, 128 with the carrier tracking, 133 with the
+CRC repair, and 141 with the tone-comparing detector (decoded one at a
+time, without a carrier estimate carried over from earlier telegrams: 97,
+110, then 140). If you try it
 near meters, a capture with the decoder's output is welcome on that issue.

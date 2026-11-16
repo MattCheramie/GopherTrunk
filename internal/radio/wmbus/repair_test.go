@@ -181,13 +181,11 @@ func TestReceiverRealAirWeakTelegrams(t *testing.T) {
 	}
 }
 
-// TestReceiverRealAirClickClip pins the click clip at 4 samples per chip
-// (issue #1256): a Qundis heat cost allocator from the reporter's 25 Oct
-// walk (S5 + RTL-SDR, the dongle's -50 kHz offset), decoded by a fresh
-// receiver. With the 64 kHz clip chosen at 8 samples per chip it fails its
-// CRC even with the repair; at 48 kHz it decodes. That
-// change took the walk's 945 telegrams from 543 CRC-valid in sequence
-// (fewer than v1.3.4's 570) to 582.
+// TestReceiverRealAirClickClip: a Qundis heat cost allocator from the
+// reporter's 25 Oct walk (issue #1256; S5 + RTL-SDR, the dongle's -50 kHz
+// offset), decoded by a fresh receiver. It was the pin for the FM click
+// clip the discriminator receiver needed; the tone-correlator detector has
+// no clip, and must still decode it.
 func TestReceiverRealAirClickClip(t *testing.T) {
 	iq, rate := loadIQWav(t, "testdata/issue1256_qds_29547582_clickclip.wav")
 	var ok []Telegram
@@ -214,13 +212,15 @@ func TestReceiverRealAirClickClip(t *testing.T) {
 	}
 }
 
-// A Qundis heat cost allocator from the issue #1256 reporter's 8 Nov walk
-// (S5 + RTL-SDR, -28 dBFS), decoded by a fresh receiver: one block carries
-// three bit errors among its least reliable bits, which only the three-bit
-// search repairs. The same meter decodes cleanly four more times across the
-// reporter's walks, so the repaired telegram is a real one.
+// A Qundis heat cost allocator from the issue #1256 reporter's 25 Oct walk
+// (S5 + RTL-SDR), decoded by a fresh receiver: one block carries three bit
+// errors among its least reliable bits, which only the three-bit search
+// repairs. The same meter decodes with no repair on the 8 Nov walk, so the
+// repaired telegram is a real one. (The 8 Nov telegram that pinned this
+// first, QDS 28235674, decodes with no repair at all since the receiver
+// moved to tone correlators.)
 func TestReceiverRealAirThreeBitRepair(t *testing.T) {
-	iq, rate := loadIQWav(t, "testdata/issue1256_qds_28235674_repair3bit.wav")
+	iq, rate := loadIQWav(t, "testdata/issue1256_qds_28235407_repair3bit.wav")
 	type got struct {
 		tg        Telegram
 		corrected int
@@ -244,8 +244,8 @@ func TestReceiverRealAirThreeBitRepair(t *testing.T) {
 		rx.Process(iq[j:min(j+16384, len(iq))])
 	}
 	rx.Flush()
-	if len(ok) != 1 || ok[0].tg.Manufacturer != "QDS" || ok[0].tg.ID != "28235674" || ok[0].corrected != 3 {
-		t.Fatalf("CRC-valid telegrams %+v, want QDS 28235674 repaired with 3 bits", ok)
+	if len(ok) != 1 || ok[0].tg.Manufacturer != "QDS" || ok[0].tg.ID != "28235407" || ok[0].corrected != 3 {
+		t.Fatalf("CRC-valid telegrams %+v, want QDS 28235407 repaired with 3 bits", ok)
 	}
 }
 

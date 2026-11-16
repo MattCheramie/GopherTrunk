@@ -6,8 +6,8 @@
 // The decode chain is:
 //
 //	IQ (any rate)
-//	  → Receiver: resample to 800 kS/s, channel filter, FM discriminator,
-//	    adaptive slicer, mid-chip clock recovery (receiver.go)
+//	  → Receiver: resample to 400 kS/s, channel filter, carrier estimate,
+//	    two-tone correlator detector, mid-chip clock recovery (receiver.go)
 //	  → Framer: access code 0x543D, then mode T1 (3-of-6 coded) or C1
 //	    (NRZ, frame format A or B), CRC check and strip (framer.go, link.go)
 //	  → ParseTelegram: data link header (manufacturer, ID, version, device

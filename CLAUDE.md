@@ -1416,6 +1416,23 @@ confirmation before any close-as-completed.
   `debugDecide`/`debugClock` hook in `receiver.go` + a live-vs-cold chip diff, scratch.)
   (3) Drops: both walks lose CPU ~90 s into each run (screen timeout shape); the S5 banner says
   `cpus=2` of 4 (cores offlined) — ask whether termux-wake-lock ran.
+- **wM-Bus (#1256, 16 Nov): "why does a strong on-carrier telegram carry ~3 % bit errors" is
+  ANSWERED — it was not strong against the noise, and the FM discriminator was the limit.**
+  Measure SNR, not dBFS: the reporter's RTL-SDR floor is about −44 dBFS in the 200 kHz channel
+  (`-gain 100` = 10 dB), so a −28 dBFS telegram has 13 dB; failing telegrams clustered at
+  8-16 dB. The receiver now decides chips with two tone correlators (`toneStat`: 5 samples at
+  carrier ±45 kHz, sampled at the chip centre) aimed at the carrier estimate; the discriminator
+  survives only to measure the carrier (the threshold-window mean), and its click clip is GONE
+  because a clip around the estimate drags a cold first estimate toward 0 (a 50 kHz offset read
+  as 26 kHz), which the correlators cannot tolerate. All five walks (2005 telegrams), cold / live:
+  947 / 1190 → 1392 / 1418, 296 → 350 distinct meters; 8 Nov walk by SNR, cold: 8-12 dB 2 → 42 of
+  107, 12-16 dB 32 → 60 of 81, 16-20 dB 35 → 64 of 77. Swept and flat within 3 %: correlator 4-6
+  samples, tones 40-50 kHz, clock gain 0.10-0.22. Synthetic white noise shows only ~2 dB (old 0/40
+  at 7 dB and 33/40 at 8 dB; new 37/40 at 7 dB), so the real-air gain is more than AWGN sensitivity
+  and a synthetic test alone would have undersold it. Still failing at 20+ dB SNR: mostly telegram
+  pairs tens of ms apart (collisions). Scratch instruments, not committed: per-snippet SNR (FFT
+  brick-wall ±100 kHz, top 10 % vs bottom 20 % of 100 µs blocks) and a five-walk config sweep.
+  On-air-gated: a live walk on a build with it.
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the
