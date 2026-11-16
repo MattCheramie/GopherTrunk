@@ -78,29 +78,47 @@ of the channel frequencies.
 FLEX is the higher-rate Motorola pager protocol that shares POCSAG's
 operator workflow, bus event, `pager_log` table, and `/pager` panel —
 rows are tagged with `protocol = "flex"`. The decoder
-(`internal/radio/pager/flex`) handles the **1600 bps / 2-level** mode:
+(`internal/radio/pager/flex`) follows **every FLEX mode**:
+
+| Bit rate | Symbols/s | FSK levels | Phases |
+|----------|-----------|------------|--------|
+| 1600 bps | 1600 | 2 | A |
+| 3200 bps | 3200 | 2 | A, C |
+| 3200 bps | 1600 | 4 | A, B |
+| 6400 bps | 3200 | 4 | A, B, C, D |
+
+There is no rate to configure. Every 1.875 s frame opens at 1600
+symbols/s with a sync word that names the mode of the rest of the frame,
+so the receiver reads the mode frame by frame — a network that mixes
+rates on one channel is followed as it switches. Each phase is an
+independent stream of pages, so a 6400 bps frame carries four times the
+traffic of a 1600 bps one.
 
 ```
-IQ → FM demod → resample → slicer → flex.Decoder.Push
-   → 32-bit sync marker (0xA6C6AAAA) + 16-bit mode code (0x870C)
-   → frame-info word → block de-interleave (88 codewords)
-   → BCH(31,21)+parity → BIW → address / vector / message words
-   → KindPagerMessage (Protocol="flex")
+IQ → FM discriminator → resample to 25.6 kHz
+   → frame sync search (code : 0xA6C6AAAA : ^code, all 16 timing phases)
+   → centre + deviation measured from the sync → 2- / 4-level slicer
+   → frame-info word (BCH + checksum) → second sync → 1 to 4 phases
+   → block de-interleave (88 words per phase) → BCH(31,21)
+   → BIW → address / vector / message words → KindPagerMessage
 ```
 
-- **FEC:** FLEX BCH(31,21) reuses the tested POCSAG primitive via a
-  codeword bit-reversal (`framing.FLEXBCHEncode21` /
-  `FLEXBCHDecode32`), correcting up to 2 bit errors.
-- **De-interleave:** the block transpose `idx = ((c>>5)&0xFFF8)|(c&7)`,
-  bit `(c>>3)&31` per the reference decoders.
-- **Polarity** auto-resolves (the sync hunt accepts the inverted
-  marker), like POCSAG.
-- **Scope / pending:** 3200 / 6400 bps and 4-level multi-phase modes,
-  long (2-word) addresses, and multi-frame message reassembly are
-  follow-ups. The sync framing, BCH bit order, and capcode mapping are
-  validated end-to-end against a synthetic encoder; confirming them
-  against a captured FLEX signal is the remaining real-world
-  calibration step (shared caveat with the DSC frontend).
+- **Pages:** alphanumeric and numeric, short and long (two-word)
+  addresses, and messages split across frames (reassembled before they
+  are published). Binary and secure pages are logged without a body.
+- **FEC:** BCH(31,21), two bit errors corrected per word.
+- **Polarity** auto-resolves from the sync, like POCSAG.
+- **Log line:** `flex: frame sync … bps=6400 symbol_rate=3200 levels=4`
+  at INFO the first time a channel syncs (DEBUG when it changes mode
+  afterwards) tells you what the network runs.
+- **Verification status:** the 1600 bps path is pinned on real off-air
+  frames. The 3200 and 6400 bps paths follow the same reference decoder
+  (multimon-ng) and decode synthetic signals in every mode, but have not
+  yet been confirmed on a live multi-rate network — a capture is
+  welcome (see below).
+- **Checking a recording:** discriminator audio (WAV or FLAC, e.g. from
+  `rtl_fm` or SDR#) replays through the production demodulator with
+  `GT_FLEX_AUDIO=<file> go test ./internal/radio/pager/flex/receiver -run TestFLEXAudioReplay -v`.
 
 ## Configuration
 

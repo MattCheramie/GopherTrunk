@@ -277,8 +277,8 @@ type PagingWidebandConfig struct {
 
 // PagingWidebandChannel is one paging channel inside a wideband group.
 // Protocol selects the decoder ("pocsag" or "flex"). BaudHz applies to
-// POCSAG only (defaults to 1200); FLEX is fixed at 1600 bps and ignores
-// it.
+// POCSAG only (defaults to 1200); FLEX reads its rate (1600 / 3200 /
+// 6400 bps) from each frame and ignores it.
 type PagingWidebandChannel struct {
 	Protocol    string `yaml:"protocol"`
 	FrequencyHz uint32 `yaml:"frequency_hz"`
@@ -287,8 +287,9 @@ type PagingWidebandChannel struct {
 
 // PagingFLEXConfig describes one FLEX paging channel to decode. Serial
 // picks the SDR; the daemon tunes it to FrequencyHz and runs the FLEX
-// receiver against its full IQ stream. The frontend handles the
-// 1600 bps / 2-level mode. Decoded pages publish on
+// receiver against it. Every FLEX mode is decoded — 1600 bps, 3200 bps
+// (2- or 4-level) and 6400 bps — and the mode is read from each frame's
+// sync, so there is no rate to configure. Decoded pages publish on
 // events.KindPagerMessage with protocol="flex" and share the pager_log
 // table / web panel with POCSAG.
 type PagingFLEXConfig struct {

@@ -162,8 +162,9 @@ func (c ClassifyConfig) withDefaults() ClassifyConfig {
 }
 
 // pagingBauds are the symbol rates that route a 2-level FSK carrier to the
-// paging decoders. POCSAG runs at 512/1200/2400, FLEX at 1600.
-var pagingBauds = []float64{512, 1200, 1600, 2400}
+// paging decoders. POCSAG runs at 512/1200/2400; FLEX at 1600 symbols/s, or
+// 3200 in the body of a 3200 bps (2-level) or 6400 bps frame.
+var pagingBauds = []float64{512, 1200, 1600, 2400, 3200}
 
 // Classify measures the baseband carrier in iq (already tuned to DC) with the
 // default config, measuring occupied bandwidth from iq itself.

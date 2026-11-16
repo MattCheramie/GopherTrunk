@@ -563,7 +563,7 @@ var fieldMetas = map[string]FieldMeta{
 
 	// ---- Paging ------------------------------------------------------------
 	"PagingConfig.POCSAG":               {Label: "POCSAG", Help: "POCSAG channels, each pinning one SDR to a paging frequency."},
-	"PagingConfig.FLEX":                 {Label: "FLEX", Help: "FLEX channels, each pinning one SDR to a paging frequency (1600 bps)."},
+	"PagingConfig.FLEX":                 {Label: "FLEX", Help: "FLEX channels, each pinning one SDR to a paging frequency (1600 / 3200 / 6400 bps, detected per frame)."},
 	"PagingConfig.Wideband":             {Help: "Wideband groups fanning several paging channels off one SDR via a DDC bank."},
 	"PagingPOCSAGConfig.Serial":         {Help: "SDR serial to pin to this POCSAG channel."},
 	"PagingPOCSAGConfig.FrequencyHz":    {Label: "Frequency", Hz: true, Help: "POCSAG channel frequency."},
@@ -575,7 +575,7 @@ var fieldMetas = map[string]FieldMeta{
 	"PagingWidebandConfig.Channels":     {Help: "Paging channels carved from this dongle's IQ band (any mix of POCSAG/FLEX)."},
 	"PagingWidebandChannel.Protocol":    {Help: "Decoder for this channel.", Options: opts("pocsag", "POCSAG", "flex", "FLEX")},
 	"PagingWidebandChannel.FrequencyHz": {Label: "Frequency", Hz: true, Help: "Channel frequency (must fall inside the group's IQ window)."},
-	"PagingWidebandChannel.BaudHz":      {Label: "Baud", Help: "POCSAG bit rate (FLEX ignores it).", Options: baudOpts()},
+	"PagingWidebandChannel.BaudHz":      {Label: "Baud", Help: "POCSAG bit rate (FLEX detects 1600 / 3200 / 6400 bps per frame and ignores it).", Options: baudOpts()},
 
 	// ---- APRS --------------------------------------------------------------
 	"APRSConfig.Channels":           {Help: "APRS/AX.25 AFSK channels. 144.39 MHz is the North-America primary."},
