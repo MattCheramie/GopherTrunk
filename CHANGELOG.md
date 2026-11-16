@@ -8,6 +8,13 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Removing or locking out a scan-list channel while the scanner was
+  tuning to it could crash the daemon (#1321 follow-up).** The scanner
+  only registered its visit to a channel once that channel's IQ stream was
+  open, so a remove landing during the tune found nothing to stop; the
+  scanner then measured, and could open a call on, a channel that no longer
+  existed (index out of range). The visit is now registered in the same
+  step that picks the channel.
 - **`wmbus` decodes far more telegrams from meters near the noise
   (#1256).** The decoder now reads each bit by comparing the energy at the
   two FSK tones, where it used to FM-demodulate the signal first, which

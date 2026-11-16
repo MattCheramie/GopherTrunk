@@ -887,7 +887,13 @@ func (s *Scanner) Run(ctx context.Context) error {
 			s.sleep(ctx, 100*time.Millisecond)
 			continue
 		}
-		idx, ch, ok := s.pickNextChannel()
+		// The visit is published under the same lock that picks the
+		// channel. A remove or lockout landing before the stream is open
+		// (while tuning, say) must find it and abort it: when the visit was
+		// published only after the stream opened, such a remove found no
+		// visit, and the loop went on to read and dwell on a freed index
+		// (index out of range, CI 16 Nov).
+		v, ch, ok := s.pickVisit()
 		if !ok {
 			// Empty channel list — operator has neither configured
 			// any static channels nor added a temporary one. Idle
@@ -899,6 +905,7 @@ func (s *Scanner) Run(ctx context.Context) error {
 
 		s.applyChannelGain(ch)
 		if err := s.opts.Tuner.SetCenterFreq(ch.FrequencyHz); err != nil {
+			s.endVisit(v)
 			s.log.Warn("conv: tune failed", "freq_hz", ch.FrequencyHz, "err", err)
 			s.sleep(ctx, 100*time.Millisecond)
 			continue
@@ -918,9 +925,24 @@ func (s *Scanner) Run(ctx context.Context) error {
 			stream, err = s.opts.IQ.StreamIQ(streamCtx)
 		}
 		if err != nil {
+			s.endVisit(v)
 			cancel()
 			s.log.Warn("conv: StreamIQ failed", "err", err)
 			s.sleep(ctx, 200*time.Millisecond)
+			continue
+		}
+
+		// Hand the visit its stream cancel. If an operator removed or
+		// locked out the channel while it was being tuned, the visit is
+		// already aborted (and its index may be gone): drop it here.
+		s.mu.Lock()
+		aborted := v.aborted
+		v.cancel = cancel
+		idx := v.idx
+		s.mu.Unlock()
+		if aborted {
+			s.endVisit(v)
+			cancel()
 			continue
 		}
 
@@ -943,11 +965,6 @@ func (s *Scanner) Run(ctx context.Context) error {
 		if g := s.levelFor(idx); g != nil {
 			g.startVisit()
 		}
-
-		v := &channelVisit{idx: idx, cancel: cancel}
-		s.mu.Lock()
-		s.visit = v
-		s.mu.Unlock()
 
 		// Wait for either squelch to break, the min-dwell timer to
 		// expire (advance), or ctx cancel. streamCtx, not ctx: an operator
@@ -1314,6 +1331,26 @@ func (s *Scanner) endDwell(v *channelVisit, reason trunking.EndReason) {
 func (s *Scanner) pickNextChannel() (int, Channel, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.pickNextChannelLocked()
+}
+
+// pickVisit picks the next channel and publishes the Run loop's visit to
+// it in one critical section, so no remove or lockout can fall between the
+// two. The visit's cancel is set once its stream is open.
+func (s *Scanner) pickVisit() (*channelVisit, Channel, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx, ch, ok := s.pickNextChannelLocked()
+	if !ok {
+		return nil, Channel{}, false
+	}
+	v := &channelVisit{idx: idx}
+	s.visit = v
+	return v, ch, true
+}
+
+// pickNextChannelLocked is pickNextChannel for a caller holding mu.
+func (s *Scanner) pickNextChannelLocked() (int, Channel, bool) {
 	n := len(s.channels)
 	if n == 0 {
 		return 0, Channel{}, false

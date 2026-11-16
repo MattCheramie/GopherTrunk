@@ -2,6 +2,8 @@ package conventional
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -172,6 +174,64 @@ func TestRemoveTemporaryChannelDuringScanWindowOpensNoCall(t *testing.T) {
 		t.Fatal("RemoveTemporaryChannel returned false")
 	}
 	time.Sleep(300 * time.Millisecond) // well past the silence, into the carrier
+	if n := eng.startCount(); n != 0 {
+		t.Errorf("a removed channel opened %d call(s)", n)
+	}
+}
+
+// hookTuner runs onTune (once) inside SetCenterFreq, after recording the tune.
+type hookTuner struct {
+	fakeTuner
+	once   sync.Once
+	onTune func()
+}
+
+func (h *hookTuner) SetCenterFreq(hz uint32) error {
+	err := h.fakeTuner.SetCenterFreq(hz)
+	h.once.Do(h.onTune)
+	return err
+}
+
+// TestRemoveTemporaryChannelWhileTuningOpensNoCall: a temp channel removed
+// while the Run loop is tuning to it (before its IQ stream is open) must not
+// be visited at all. The visit used to be published only after the stream
+// opened, so such a remove found nothing to abort, and the loop went on to
+// read and dwell on the freed index: an index-out-of-range panic in
+// beginDwell (TestRemoveTemporaryChannelDuringScanWindowOpensNoCall hit it
+// at random in CI on 16 Nov). This test lands the remove in that gap every
+// time.
+func TestRemoveTemporaryChannelWhileTuningOpensNoCall(t *testing.T) {
+	const hz = 150_000_000
+	var s *Scanner
+	var removed atomic.Bool
+	idx := -1
+	tuner := &hookTuner{}
+	tuner.onTune = func() { removed.Store(s.RemoveTemporaryChannel(idx)) }
+	iq := &fakeIQ{tuner: &tuner.fakeTuner, chunks: map[uint32][][]complex64{hz: loudRun(5000)}}
+	eng := &fakeEngine{}
+	var err error
+	s, err = New(Options{
+		Tuner: tuner, IQ: iq, Engine: eng, Recorder: fakeRecorder{},
+		DeviceSerial: "CONV-1", MinDwellPerChannel: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx = s.AddTemporaryChannel(Channel{Label: "VFO", FrequencyHz: hz, SquelchDbFS: -10})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { _ = s.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+
+	if !waitFor(time.Second, func() bool { return len(tuner.tuned()) >= 1 }) {
+		t.Fatal("temp channel never tuned")
+	}
+	time.Sleep(300 * time.Millisecond) // a carrier is on the air the whole time
+	if !removed.Load() {
+		t.Fatal("RemoveTemporaryChannel returned false")
+	}
 	if n := eng.startCount(); n != 0 {
 		t.Errorf("a removed channel opened %d call(s)", n)
 	}
