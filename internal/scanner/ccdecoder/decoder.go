@@ -436,6 +436,10 @@ type Decoder struct {
 	// subscribers (see voicetap.go). Independent lock; nil-safe via newVoiceFanout
 	// in New. A no-op on the hot path when nothing is subscribed.
 	voiceFan *voiceFanout
+	// decodeDrops counts the chunks forwardIQ shed at the decode queue. They
+	// never reach the voice fan-out, so a same-carrier call's IQ loss
+	// includes them (issue #1363).
+	decodeDrops atomic.Uint64
 
 	// dmoColour is the DM traffic colour code the active TETRA DMO pipeline
 	// has recovered (or was configured with), encoded colour<<1|1 so an
@@ -737,6 +741,7 @@ func (d *Decoder) forwardIQ(ctx context.Context, in <-chan []complex64, out chan
 		// iq_underruns_total, so "CPU can't keep up" is attributable rather than
 		// looking like an RF fault.
 		dropped++
+		d.decodeDrops.Add(1)
 		if d.metrics != nil {
 			d.metrics.RecordDecodeOverrun()
 		}

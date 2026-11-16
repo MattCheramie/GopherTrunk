@@ -8,6 +8,15 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Same-carrier voice calls are marked partial when IQ was lost (#1363).**
+  TETRA calls on a control carrier share one decode stream, and other calls
+  followed on the control channel's own carrier report through a tap with no
+  loss count, so a recording made across dropped IQ was announced as
+  complete. Each such call is now charged the stream's loss during its own
+  span (`iq_lost_chunks`, `partial`, `recordings_partial_total`): chunks its
+  tap dropped, chunks the SDR's driver dropped, and chunks the control
+  decoder shed when it fell behind. A call that starts after the loss is not
+  charged. Checked with tests only, not on a live rig.
 - **D-STAR: joining a call under way no longer loses its first second
   (#1261).** From one start timing in ten the voice receiver took one or two
   sync cycles to lock, so 1.0–1.7 s of a call the scanner had just opened

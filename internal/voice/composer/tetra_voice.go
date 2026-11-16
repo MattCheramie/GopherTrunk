@@ -289,6 +289,10 @@ type tetraSlotDemux struct {
 	trafficLMS bool
 	cancel     context.CancelFunc
 	done       chan struct{}
+	// lost reports the IQ chunks the demux's shared stream has lost since it
+	// opened (streamWithLoss); set once before the demux runs. Each call on
+	// the carrier takes its own span's share (followTETRASameCarrier).
+	lost func() uint64
 
 	mu     sync.Mutex
 	owners map[uint8]*tetraSlotOwner // usage marker (>=DLUsageTraffic) -> current owner

@@ -879,13 +879,22 @@ func (c *Composer) cancelAll() {
 // marker and unregisters on call end. The chain does no IQ work of its own — the
 // demux delivers its marker's decoded speech frames.
 func (c *Composer) followTETRASameCarrier(parent context.Context, src IQSource, key string, cs trunking.CallStart) {
-	d := c.ensureTETRADemux(parent, key, src, cs.Grant.TETRAColourExt, cs.Grant.TETRATrafficLMS)
+	d := c.ensureTETRADemux(parent, key, src, cs.DeviceSerial, cs.Grant.TETRAColourExt, cs.Grant.TETRATrafficLMS)
 	if d == nil {
 		c.log.Warn("composer: could not start TETRA voice demux", "serial", cs.DeviceSerial, "key", key)
 		return
 	}
 	chainCtx, cancel := context.WithCancel(parent)
 	ch := &chain{cancel: cancel, done: make(chan struct{})}
+	// The call has no stream of its own, so its IQ loss is the shared demux
+	// stream's loss since the call began (issue #1363).
+	if demuxLost := d.lost; demuxLost != nil {
+		base := demuxLost()
+		ch.lost = func() uint64 { return demuxLost() - base }
+		if lt, ok := c.sink.(iqLossTrackerSink); ok {
+			lt.TrackIQLoss(cs.DeviceSerial, cs.Grant.CallID, ch.lost)
+		}
+	}
 	c.mu.Lock()
 	c.chains[cs.DeviceSerial] = ch
 	c.mu.Unlock()
@@ -897,7 +906,7 @@ func (c *Composer) followTETRASameCarrier(parent context.Context, src IQSource, 
 // SB anchor + AACH state stay warm across calls, so a new call never re-anchors
 // from scratch) until Close/cancelAll or the control decoder's IQ stream closes.
 // Only ever called from the single Run goroutine, so the create is race-free.
-func (c *Composer) ensureTETRADemux(parent context.Context, key string, src IQSource, colourExt uint32, trafficLMS bool) *tetraSlotDemux {
+func (c *Composer) ensureTETRADemux(parent context.Context, key string, src IQSource, serial string, colourExt uint32, trafficLMS bool) *tetraSlotDemux {
 	c.mu.Lock()
 	if d := c.tetraDemuxes[key]; d != nil {
 		c.mu.Unlock()
@@ -916,7 +925,11 @@ func (c *Composer) ensureTETRADemux(parent context.Context, key string, src IQSo
 
 	demuxCtx, cancel := context.WithCancel(parent)
 	d.cancel = cancel
-	iqCh, err := src.StreamIQ(demuxCtx)
+	// Opened with a loss reader (issue #1363): a chunk the shared stream
+	// loses is missing for every call on the carrier at that moment, so each
+	// call charges its recording with the loss during its own span.
+	iqCh, lost, err := streamWithLoss(demuxCtx, src, serial)
+	d.lost = lost
 	if err != nil {
 		cancel()
 		c.mu.Lock()
