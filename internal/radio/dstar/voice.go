@@ -50,6 +50,10 @@ type DVFrame struct {
 	// sub-vectors — a decode-quality signal to feed the vocoder's
 	// error-aware smoothing.
 	Errors int
+	// LateEntry marks a frame decoded from history when the cadence was
+	// first anchored (see retroFrames): it was on the air before the
+	// frames delivered ahead of it in real time.
+	LateEntry bool
 }
 
 // VoiceChannel tracks the DV voice cadence on the raw bit stream, in
@@ -80,7 +84,14 @@ type VoiceChannel struct {
 	// Data sync's last bit lands exactly on a frame boundary — the
 	// free-run has already emitted that frame, so the sync branch
 	// must not emit it a second time from the rolling window.
-	lastFrameEnd                                        int
+	lastFrameEnd int
+	// hist is the raw bits (as received) of up to one sync cycle before
+	// the current bit, hist[0] at absolute index histBase; retroFloor is
+	// the first absolute index a late-entry decode may reach back to. See
+	// retroFrames.
+	hist                                                []uint8
+	histBase                                            int
+	retroFloor                                          int
 	matchScratch, invScratch, endScratch, endInvScratch []int
 	sink                                                func(DVFrame)
 }
@@ -94,6 +105,7 @@ func NewVoiceChannel(sink func(DVFrame)) *VoiceChannel {
 		end:          NewSyncDetector(EndSyncBitsSlice(), endSyncTolerance),
 		endInv:       NewSyncDetector(invertBits(EndSyncBitsSlice()), endSyncTolerance),
 		recent:       make([]uint8, 0, DVFrameBits),
+		hist:         make([]uint8, 0, 2*retroHistoryBits),
 		frame:        make([]uint8, 0, DVFrameBits),
 		lastFrameEnd: -1,
 		sink:         sink,
@@ -108,6 +120,62 @@ const (
 	slowDataSyncTolerance = 1
 	endSyncTolerance      = 1
 )
+
+// Late entry (#1261). The cadence can only be anchored on a slow-data
+// sync, which comes once per 21 frames, so a receiver that joins a
+// transmission under way used to throw away up to 0.42 s of speech it had
+// already demodulated. On a fresh anchor the frames before the sync frame
+// are decoded from history, newest first, for as long as each is
+// plausibly voice: re-encoding a real frame's payload gives back the
+// received bits but for the few its two Golay words corrected, while
+// arbitrary bits (noise, a header, a receiver still pulling in) land
+// within retroMaxErrors of a codeword pair about once in 4000 frames.
+// (DecodeDVVoiceBits' own count is of corrected DATA bits, mbelib's
+// convention, which a third of random frames pass.) The walk stops at the first
+// frame that fails, at the last frame already emitted, and at an end
+// pattern.
+const (
+	retroHistoryBits = (DVFramesPerSyncCycle - 1) * DVFrameBits
+	retroMaxErrors   = 2
+)
+
+// retroFrames returns the voice frames that precede the sync frame ending
+// at absPos, oldest first.
+func (v *VoiceChannel) retroFrames(absPos int, inv byte) []DVFrame {
+	var out []DVFrame
+	voice := make([]uint8, DVVoiceBits)
+	floor := max(v.histBase, v.retroFloor, v.lastFrameEnd+1)
+	for k := 1; k < DVFramesPerSyncCycle; k++ {
+		start := absPos - DVFrameBits + 1 - k*DVFrameBits
+		if start < floor {
+			break
+		}
+		src := v.hist[start-v.histBase:]
+		for i := range voice {
+			voice[i] = src[i] ^ inv
+		}
+		payload, errs, err := DecodeDVVoiceBits(voice)
+		if err != nil {
+			break
+		}
+		again, err := EncodeDVVoiceBits(payload)
+		if err != nil {
+			break
+		}
+		dist := 0
+		for i := range voice {
+			dist += int(voice[i] ^ again[i])
+		}
+		if dist > retroMaxErrors {
+			break
+		}
+		out = append(out, DVFrame{Payload: payload, Errors: errs, LateEntry: true})
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
 
 // Process consumes a window of raw bits (same contract as
 // ControlChannel.Process) and returns baseIdx+len(bits).
@@ -128,6 +196,15 @@ func (v *VoiceChannel) Process(bits []byte, baseIdx int) int {
 			v.recent = v.recent[:DVFrameBits-1]
 		}
 		v.recent = append(v.recent, b&1)
+		if len(v.hist) == cap(v.hist) {
+			n := copy(v.hist, v.hist[len(v.hist)-retroHistoryBits-DVFrameBits:])
+			v.histBase += len(v.hist) - n
+			v.hist = v.hist[:n]
+		}
+		if len(v.hist) == 0 {
+			v.histBase = absPos
+		}
+		v.hist = append(v.hist, b&1)
 
 		// Free-run collection (before the sync check, for the same
 		// reason as the other Process adapters: a match's index is the
@@ -168,6 +245,9 @@ func (v *VoiceChannel) Process(bits []byte, baseIdx int) int {
 			v.remaining = 0
 			v.frame = v.frame[:0]
 		}
+		if ended {
+			v.retroFloor = absPos + 1
+		}
 
 		normal, inverted := false, false
 		for mi < len(v.matchScratch) && v.matchScratch[mi] == absPos {
@@ -187,6 +267,11 @@ func (v *VoiceChannel) Process(bits []byte, baseIdx int) int {
 			inv := byte(0)
 			if inverted && !normal {
 				inv = 1
+			}
+			if !v.anchored && v.sink != nil {
+				for _, f := range v.retroFrames(absPos, inv) {
+					v.sink(f)
+				}
 			}
 			if len(v.recent) == DVFrameBits && v.lastFrameEnd != absPos {
 				voice := make([]uint8, DVVoiceBits)
@@ -232,4 +317,7 @@ func (v *VoiceChannel) Reset() {
 	v.frame = v.frame[:0]
 	v.framesSinceSync = 0
 	v.lastFrameEnd = -1
+	v.hist = v.hist[:0]
+	v.histBase = 0
+	v.retroFloor = 0
 }

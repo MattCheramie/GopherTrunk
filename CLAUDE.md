@@ -2475,9 +2475,13 @@ confirmation before any close-as-completed.
   (`conventional.DStarCallDetector`) opens on a CRC-valid header or slow-data syncs 1-2 cycles
   (2016 bits ±2) apart, closes on the end pattern, and runs TWO receivers half a symbol apart: from
   the phase half a symbol off its stable point the Mueller-Müller loop hung for 1-2 sync cycles
-  (one start phase in ten, 1.15-1.57 s to open). The voice chain (`composer.dstar_voice.go`) has
-  the same single-receiver hang and can lose ~1 s of a joined call; not changed. A real D-STAR
-  capture is the gate (#764/#771).
+  (one start phase in ten, 1.15-1.57 s to open). The voice chain had the same hang (measured:
+  1.0-1.7 s of a joined call lost from that phase, 0.04 s from the others) and now runs the same pair
+  (`dstarVoiceLanes`: frames settled per 10 ms block, first lane to decode owns the output, hand-over
+  after 5 owner-less frames). `dstar.VoiceChannel` also decodes the frames BEFORE its first slow-data
+  sync from history (late entry, up to 0.42 s per join), gated on re-encode distance ≤ 2: do NOT
+  gate on `DecodeDVVoiceBits`' error count, which is mbelib's corrected-DATA-bit count and passes a
+  third of random frames. A real D-STAR capture is the gate (#764/#771).
 - **A DMR scan-list channel's squelch is now a CALL gate, not a power gate (#1261 follow-up).** A
   keyed-but-idle repeater (Idle bursts / CSBK beacons) held the conventional scanner on its channel.
   `conventional.DMRCallDetector` (`dmr_gate.go`, the NAC-gate shape) runs the production DMR receiver on

@@ -7,6 +7,20 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **D-STAR: joining a call under way no longer loses its first second
+  (#1261).** From one start timing in ten the voice receiver took one or two
+  sync cycles to lock, so 1.0–1.7 s of a call the scanner had just opened
+  was never decoded. The voice chain now runs two receivers half a symbol
+  apart, as the scan-list gate does, and decodes from every timing within
+  0.04 s. It also recovers the speech it had already received before the
+  first slow-data sync (up to 0.42 s per join), which used to be dropped.
+  The `composer: dstar voice chain ended` line reports `lane_switches`.
+  Measured on synthetic transmissions; not yet checked on a real D-STAR
+  capture.
+
+## [v1.4.0] — 2026-11-14
+
 ### Added
 - **`wmbus` repairs three-bit CRC errors (#1256).** The soft repair now also
   tries every triple of a C mode block's 8 least reliable bits, after the
