@@ -133,6 +133,16 @@ func TestWMBusRepairedTelegramIsMarked(t *testing.T) {
 	if s := wmbusStatusLine(30, st, 0, false); !strings.Contains(s, "14 frames (12 CRC-valid of which 2 repaired, 2 CRC-failed)") {
 		t.Errorf("status %s", s)
 	}
+	// With the burst gate, the line counts the bursts; without it (-no-gate)
+	// there is no such count to show.
+	st.Framer.Syncs, st.Bursts = 16, 9
+	if s := wmbusStatusLine(30, st, 0, false); strings.Contains(s, "bursts") {
+		t.Errorf("ungated status mentions bursts: %s", s)
+	}
+	st.Gated = true
+	if s := wmbusStatusLine(30, st, 0, false); !strings.Contains(s, "16 access codes in 9 bursts, 0 dropped chunks") {
+		t.Errorf("status %s", s)
+	}
 }
 
 // Once a CRC-valid frame has located the meters' carrier, the progress

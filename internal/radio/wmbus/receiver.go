@@ -87,6 +87,9 @@ type ReceiverOptions struct {
 	OffsetHz float64
 	// OnFrame receives every framed packet, including CRC failures.
 	OnFrame func(Frame, FrameInfo)
+	// NoBurstGate runs the demodulator on every sample, as the receiver
+	// did before the burst gate (gate.go). For tests and A/B measurements.
+	NoBurstGate bool
 }
 
 // FrameInfo is receiver-side metadata for a frame.
@@ -115,6 +118,15 @@ type ReceiverStats struct {
 	// it has one (and is running the narrow channel filter).
 	CarrierOffsetHz float64
 	CarrierLocked   bool
+	// Bursts counts the times the channel's power rose above its noise
+	// floor (a telegram, another transmitter in the channel, or now and
+	// then the noise itself), and Demodulated the input samples the
+	// demodulator ran on: with the burst gate that is the IQ around those
+	// bursts, not all of it (see gate.go).
+	Bursts      int64
+	Demodulated int64
+	// Gated reports that the burst gate is on.
+	Gated bool
 }
 
 // Receiver turns IQ into wM-Bus frames.
@@ -171,6 +183,12 @@ type Receiver struct {
 	afcLocked bool
 	narrow    bool
 	afcAt     int64
+
+	// gate, when set, keeps the demodulator off the IQ between bursts
+	// (gate.go); skipFrac carries the fraction of a processed sample left
+	// over when skipped input is counted into n.
+	gate     *burstGate
+	skipFrac float64
 }
 
 // NewReceiver builds a Receiver.
@@ -195,6 +213,9 @@ func NewReceiver(o ReceiverOptions) (*Receiver, error) {
 	}
 	r.ratio = o.SampleRateHz / procRateHz
 	r.chf = channelFilter(channelCutoffHz)
+	if !o.NoBurstGate {
+		r.gate = newBurstGate(o.SampleRateHz)
+	}
 	for i := range r.framers {
 		inv := i == 1
 		r.framers[i] = NewFramer(func(f Frame) {
@@ -282,6 +303,7 @@ func (r *Receiver) Stats() ReceiverStats {
 	s := r.stats
 	s.Samples = r.samples
 	s.CarrierOffsetHz, s.CarrierLocked = r.afcHz, r.afcLocked
+	s.Gated = r.gate != nil
 	for _, f := range r.framers {
 		fs := f.Stats()
 		s.Framer.Syncs += fs.Syncs
@@ -301,23 +323,31 @@ const processBlock = 8192
 
 // Process feeds IQ samples at the configured rate.
 func (r *Receiver) Process(iq []complex64) {
+	r.samples += int64(len(iq))
+	if r.nco != nil {
+		// The burst gate measures the channel, so the channel is moved to
+		// DC first.
+		r.mixBuf = r.nco.Mix(r.mixBuf, iq)
+		iq = r.mixBuf
+	}
+	if r.gate != nil {
+		r.gate.feed(r, iq)
+		return
+	}
 	for len(iq) > 0 {
 		n := min(len(iq), processBlock)
-		r.processBlock(iq[:n])
+		r.demod(iq[:n])
 		iq = iq[n:]
 	}
 }
 
-func (r *Receiver) processBlock(iq []complex64) {
-	r.samples += int64(len(iq))
+// demod runs the demodulator on one block of input, the channel at DC.
+func (r *Receiver) demod(iq []complex64) {
+	r.stats.Demodulated += int64(len(iq))
 	// The correction this block is mixed with: a frame decoded from it
 	// measures its residual offset against this, even if a frame earlier
 	// in the block has already moved the NCO for the next one.
 	r.appliedHz = r.afcHz
-	if r.nco != nil {
-		r.mixBuf = r.nco.Mix(r.mixBuf, iq)
-		iq = r.mixBuf
-	}
 	if r.rs != nil {
 		r.rsBuf = r.rs.Process(r.rsBuf[:0], iq)
 		iq = r.rsBuf
@@ -342,6 +372,9 @@ func (r *Receiver) processBlock(iq []complex64) {
 // decides the chips after them, so a frame that ends the input is
 // delivered. Call it once, at the end of the input.
 func (r *Receiver) Flush() {
+	if r.gate != nil {
+		r.gate.flush(r)
+	}
 	if r.ringN < thresholdWindow {
 		return
 	}

@@ -6,6 +6,8 @@
 // The decode chain is:
 //
 //	IQ (any rate)
+//	  → burst gate: a power detector that lets through only the IQ around
+//	    a rise out of the channel's noise (gate.go)
 //	  → Receiver: resample to 400 kS/s, channel filter, carrier estimate,
 //	    two-tone correlator detector, mid-chip clock recovery (receiver.go)
 //	  → Framer: access code 0x543D, then mode T1 (3-of-6 coded) or C1

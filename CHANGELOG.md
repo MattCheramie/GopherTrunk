@@ -7,7 +7,29 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+- **`wmbus` takes about a fifteenth of the CPU on a quiet channel
+  (#1256).** A meter is on the air for a few milliseconds every few
+  minutes, and the decoder demodulated everything in between as well. It
+  now watches the channel's power and demodulates only the IQ around a
+  burst that rises out of the noise, starting 1.3 ms before it: 0.004 of a
+  desktop core at 1.6 MS/s where it took 0.06. That is for the reporter's
+  phone, which dropped IQ for minutes at a time whenever it slowed the
+  process down. On their 16 Nov walk the same 602 of 770 saved telegrams
+  decode one by one with and without the gate, and 605 against 606 in
+  sequence; the weakest that decodes is 4.6 dB over the noise where the
+  gate opens at 1.5 dB. The progress line now says `5 access codes in 41
+  bursts`: the trickle of access codes found in noise is gone, and the
+  burst count is what shows the receiver hears the channel. `-no-gate`
+  runs the decoder on all of the IQ, as before. Not yet run on a phone.
+- **`wmbus` rings the terminal bell with every dropped-IQ warning
+  (#1256)**, which Termux turns into a vibration, so a warning is noticed
+  with the phone in a pocket.
+
 ### Fixed
+- **`wmbus` printed a date a meter has not set as `invalid date FFFF`
+  (#1256).** All ones is the standard's "no value", for example the day of
+  an error that never happened. It now prints `not set`.
 - **TETRA: a lost control-channel lock is now logged, and the lock carries
   the cell's location area (#1321).** Three things a weak cell showed:
   - When a locked cell fell silent for 5 s the lock was dropped with no log
