@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.4.1] — 2026-11-17
+
 ### Fixed
 - **`power` showed a carrier at the centre of every hop that was not on the
   air (#1230).** A tuner leaks a little of its own oscillator into its
