@@ -24,6 +24,9 @@ func TestAccumulatorMatchesFloat64Reference(t *testing.T) {
 			iq[i] = complex(float32(0.3*math.Cos(ph)+r.NormFloat64()*0.01), float32(0.3*math.Sin(ph)+r.NormFloat64()*0.01))
 		}
 		a := newAccumulator(n)
+		// The raw periodogram is what is compared here; the DC line removal
+		// has its own tests (dcline_test.go).
+		a.keepDC = true
 		a.add(iq)
 		got := a.dB(0, n)
 

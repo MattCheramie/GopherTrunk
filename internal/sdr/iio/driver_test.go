@@ -173,6 +173,40 @@ func TestActualSampleRateReadsRXCore(t *testing.T) {
 	assertCommands(t, f.commands()[n:], []string{"READ iio:device3 INPUT voltage0 sampling_frequency\r\n"})
 }
 
+// TestActualSampleRateIgnoresTheDriversTruncation is the #1230 regression
+// for the PlutoSky sweep whose hop edges crept a hertz per hop. The board
+// was asked for 4.8 MS/s and reads back 4799999: the AD9361 driver cutting
+// the fraction off a rate that is within a fraction of a hertz of the one
+// written. That is the written rate. A readback that is really different
+// (a rate the board could not make) is still reported as it is.
+func TestActualSampleRateIgnoresTheDriversTruncation(t *testing.T) {
+	f := newFakeIIOD(t)
+	dev := openFake(t, f, Spec{})
+	if err := dev.SetSampleRate(4_800_000); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		readback string
+		want     uint32
+	}{
+		{"4799999", 4_800_000},
+		{"4800001", 4_800_000},
+		{"4800000", 4_800_000},
+		{"4799000", 4_799_000},
+	} {
+		f.mu.Lock()
+		f.attrs["iio:device3 voltage0 sampling_frequency"] = tc.readback
+		f.mu.Unlock()
+		got, err := dev.ActualSampleRate()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tc.want {
+			t.Errorf("the board reads back %s after 4800000 was written: ActualSampleRate = %d, want %d", tc.readback, got, tc.want)
+		}
+	}
+}
+
 func TestOpenRefusesNonPlutoContext(t *testing.T) {
 	f := newFakeIIOD(t)
 	f.xml = []byte(`<?xml version="1.0"?><context name="x"><device id="iio:device0" name="adm1177"/></context>`)

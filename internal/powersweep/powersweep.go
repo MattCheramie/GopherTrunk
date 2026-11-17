@@ -203,12 +203,16 @@ type Integration struct {
 	Budget time.Duration
 	// Now is the clock Budget is measured on; nil means time.Now.
 	Now func() time.Time
+	// KeepDC leaves the tuner's own DC line in each hop's centre bins
+	// (see accumulator). The default removes it.
+	KeepDC bool
 }
 
 // Sweep runs one pass of p over src, integrating each hop as in says. stamp
 // is the time written on every row of the pass, as rtl_power does.
 func Sweep(ctx context.Context, src Source, p Plan, in Integration, stamp time.Time) ([]Row, error) {
 	acc := newAccumulator(p.FFTSize)
+	acc.keepDC = in.KeepDC
 	frames := (in.Samples + p.FFTSize - 1) / p.FFTSize
 	if frames < 1 {
 		frames = 1
@@ -262,6 +266,27 @@ func Sweep(ctx context.Context, src Source, p Plan, in Integration, stamp time.T
 // phones the gonum (complex128) backend could not keep up with a 2.4 MS/s
 // dongle. The window step writes each sample straight into the FFT's
 // bit-reversed input slot, so there is no separate permutation pass.
+//
+// # The tuner's DC line
+//
+// A zero-IF tuner leaks its own local oscillator into the output as a
+// constant offset, which a spectrum shows as a line at exactly the tuned
+// frequency: with the Hann window, the centre bin and, 6 dB down, the bin on
+// each side. A sweep retunes for every hop, so the line appears once per
+// hop, as a carrier that is not on the air. The #1230 reporter's PlutoSky
+// (AD9361) sweep of the FM band had one every 3.6 MHz, 11 dB over the noise
+// around it; rtl_power overwrites its DC bin with the bin beside it for the
+// same reason.
+//
+// The line differs from everything received in one way: it is the same
+// complex value in every FFT frame, where a signal off the air, or noise,
+// turns from frame to frame. So for the three centre bins the accumulator
+// keeps the frames' complex sum next to their power sum, in blocks of
+// dcBlock frames, and takes the power of what varied: sum|X|² − |sum X|²/m,
+// scaled by m/(m−1) so that noise still reads its true power. What goes
+// with the line is anything else standing still for a block: an unmodulated
+// carrier within about a sixteenth of a bin of the hop's centre. Blocks,
+// not the whole hop, because the offset moves when the tuner's gain does.
 type accumulator struct {
 	n      int
 	plan   *fft.Radix2
@@ -271,7 +296,20 @@ type accumulator struct {
 	buf    []complex64
 	sum    []float64 // FFT-shifted linear power
 	frames int
+
+	// keepDC switches the DC line removal off.
+	keepDC bool
+	// The centre bins (FFT bins n−1, 0, 1): the current block's complex
+	// and power sums, and the finished blocks' line-free power and frames.
+	dcSum    [3]complex128
+	dcPow    [3]float64
+	dcN      int
+	dcOut    [3]float64
+	dcFrames int
 }
+
+// dcBlock is how many FFT frames the DC line is taken to stand still for.
+const dcBlock = 16
 
 func newAccumulator(n int) *accumulator {
 	hann := window.Hann(n)
@@ -299,6 +337,25 @@ func newAccumulator(n int) *accumulator {
 func (a *accumulator) reset() {
 	clear(a.sum)
 	a.frames = 0
+	a.dcSum, a.dcPow, a.dcN = [3]complex128{}, [3]float64{}, 0
+	a.dcOut, a.dcFrames = [3]float64{}, 0
+}
+
+// closeDCBlock folds the current block of the centre bins into dcOut,
+// without the part that stood still. A block of one frame has nothing to
+// compare with and is left out.
+func (a *accumulator) closeDCBlock() {
+	if m := float64(a.dcN); a.dcN >= 2 {
+		for i := range a.dcOut {
+			re, im := real(a.dcSum[i]), imag(a.dcSum[i])
+			varied := a.dcPow[i] - (re*re+im*im)*a.norm/m
+			if varied > 0 {
+				a.dcOut[i] += varied * m / (m - 1)
+			}
+		}
+		a.dcFrames += a.dcN
+	}
+	a.dcSum, a.dcPow, a.dcN = [3]complex128{}, [3]float64{}, 0
 }
 
 // add folds every whole FFT frame of iq into the average.
@@ -324,14 +381,53 @@ func (a *accumulator) add(iq []complex64) {
 			highSum[i] += (re*re + im*im) * a.norm
 		}
 		a.frames++
+		if !a.keepDC {
+			for i, k := range [3]int{a.n - 1, 0, 1} {
+				v := complex128(buf[k])
+				a.dcSum[i] += v
+				a.dcPow[i] += (real(v)*real(v) + imag(v)*imag(v)) * a.norm
+			}
+			if a.dcN++; a.dcN == dcBlock {
+				a.closeDCBlock()
+			}
+		}
 	}
+}
+
+// centrePower returns the line-free mean power of the three centre bins
+// (FFT-shifted indices n/2−1, n/2, n/2+1) and whether it could be measured.
+// A hop of a single frame cannot tell the line from a signal; its centre
+// bins are then filled in from the bins either side of them.
+func (a *accumulator) centrePower() (p [3]float64, ok bool) {
+	a.closeDCBlock()
+	if a.dcFrames > 0 {
+		for i := range p {
+			p[i] = a.dcOut[i] / float64(a.dcFrames)
+		}
+		return p, true
+	}
+	if a.frames == 0 {
+		return p, false
+	}
+	half := a.n / 2
+	side := (a.sum[half-2] + a.sum[half+2]) / 2 / float64(a.frames)
+	return [3]float64{side, side, side}, true
 }
 
 // dB returns the averaged power of FFT-shifted bins [first, first+n) in dBFS.
 func (a *accumulator) dB(first, n int) []float32 {
 	out := make([]float32, n)
+	var centre [3]float64
+	haveCentre := false
+	if !a.keepDC {
+		centre, haveCentre = a.centrePower()
+	}
+	half := a.n / 2
 	for j := range out {
 		p := a.sum[first+j] / float64(max(a.frames, 1))
+		if k := first + j - (half - 1); haveCentre && k >= 0 && k < 3 {
+			p = centre[k]
+		}
 		if p < 1e-30 {
 			p = 1e-30
 		}
