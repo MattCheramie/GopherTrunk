@@ -75,10 +75,11 @@ Silicon and Intel. Full per-OS recipes at
   the `pager_log` table / `/pager` panel (tagged by `protocol`).
   POCSAG (CCIR 584): BCH(31,21) FEC, batch carve-up, numeric
   (5 BCD/codeword) + alphanumeric (7-bit packed ASCII), 512 /
-  1200 / 2400 bps. FLEX: 1600 bps / 2-level mode — 32-bit sync +
-  mode code → frame-info word → block de-interleave → BCH(31,21)
-  → BIW / address / vector / message-word walk → alphanumeric /
-  numeric pages. Pin SDRs via `paging.pocsag` / `paging.flex`.
+  1200 / 2400 bps. FLEX: 1600 / 3200 / 6400 bps (2- and 4-level FSK,
+  one to four phases), detected per frame — frame sync → frame-info
+  word → block de-interleave → BCH(31,21) → BIW / address / vector /
+  message-word walk → alphanumeric / numeric pages, long addresses
+  and multi-frame messages included. Pin SDRs via `paging.pocsag` / `paging.flex`.
   Foundation for fire / EMS dispatch text alongside the
   trunked-voice pipeline. See [docs/pocsag.md](docs/pocsag.md).
 - **APRS / AX.25 packet** — end-to-end pipeline for the

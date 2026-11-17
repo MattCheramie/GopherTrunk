@@ -1161,6 +1161,33 @@ confirmation before any close-as-completed.
   from ~200 Hz. Both now run `EnableAFC` (CoarseAFC on the discriminator, ahead of the timing loop) + `EnableChannelFilter`
   (±4 kHz / ±6.25 kHz) via `newDStarVoiceReceiver` / `newYSFVoiceReceiver`; either fix alone still decodes 0 of a
   400 Hz-off transmission with a same-power neighbour (`dstar_ysf_offset_test.go`). The CC paths are unchanged.
+- **The FLEX pager framing was FABRICATED too, and is rebuilt on multimon-ng's with all four
+  modes (Discord request for 3200 / 6400 bps).** The old decoder looked for the mode code AFTER
+  the 0xA6C6AAAA marker (on air it is code : marker : ^code, 64 bits, then 16 more sync bits),
+  read the FIW with no BCH, used an invented page-type table, and `FLEXBCHEncode21` left the 21
+  information bits REVERSED; its encoder shared all of it, so it had never decoded a real frame at
+  any rate. Facts (multimon-ng `demod_flex.c` / `demod_flex_next.c`, GPL, read only): every frame
+  opens at 1600 sym/s 2-level; the code names the rest (0x870C 1600/2 → phase A; 0x7B18 3200/2 →
+  A,C; 0xB068 1600/4 → A,B; 0xDEA0 and 0x4C7C 3200/4 → A,B,C,D); sync bits are MSB first with
+  1 = LOW deviation, FIW/data bits LSB first with 1 = HIGH; 4-level symbols are Gray (first bit =
+  sign, second = inner levels); at 3200 sym/s symbols alternate A/B and C/D; the FIW, BIW and
+  vector words carry a nibble checksum (sum = 0xF). The 1600 bps path is REAL-AIR pinned:
+  `flex/testdata/p2000_1600x2_frames.hex` is five frames sliced from the P2000 recording in
+  multimon-ng's test suite, decoding to the pages that suite expects (fragment reassembly
+  included); the recording itself is GPL repo content and is not committed.
+  `GT_FLEX_AUDIO=<wav|flac> go test ./internal/radio/pager/flex/receiver -run TestFLEXAudioReplay -v`
+  replays discriminator audio through the production demodulator. The 3200 / 6400 bps paths are
+  reference-derived and synthetic-verified ONLY (the phase demux is the one part no capture has
+  touched, and multimon-ng's generator is 1600/2 only, so there is no independent encoder
+  either): a capture of a 929–932 MHz multi-rate channel is the on-air gate (#764/#771). Receiver
+  lessons: hunt the sync at all 16 sample phases and take the middle of the matching run (no
+  loop to pull in; a 1600 sym/s loop is dragged off by a missed frame's 3200 sym/s body);
+  measure centre + deviation from the 64 sync symbols; and time the frame on EVERY level
+  transition (crossing of the two levels' midpoint) — using only centre crossings, a frame's idle
+  tail (0,0,2,2… with all phases idle) has none for thousands of symbols and a 60 ppm clock walks
+  the slicer a third of a symbol off, after which mis-sliced pairs feed the loop and it runs
+  away. The old BCH decode was a 2^21-codeword search (ms per word; 352 words per 6400 bps
+  frame); it is a syndrome table now (~45 ns).
 - **The LoRa bit layer was FABRICATED (#586) and is now the Semtech air format.** Whitening,
   CRC, header, Hamming layout, interleaver and the chip mapping were all invented, and the
   modulator shared them, so every round trip passed while a real frame's header checksum failed

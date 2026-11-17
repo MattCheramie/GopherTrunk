@@ -27,8 +27,8 @@ func TestReceiverNewSetsUpDecoder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if r.decoder == nil {
-		t.Error("decoder = nil, want non-nil")
+	if r.demod == nil {
+		t.Error("demod = nil, want non-nil")
 	}
 }
 

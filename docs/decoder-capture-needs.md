@@ -201,7 +201,9 @@ calibrates timing/deviation/level constants or confirms bit order.
 - **What to capture:** A FLEX paging channel.
 - **Format:** complex float32 `.cfile` under `samples/flex/`.
 - **Sample rate:** ≥ 48 kHz.
-- **Modulation:** 1600 bps / 2-level mode (sync `0xA6C6AAAA`, mode `0x870C`).
+- **Modulation:** a 3200 or 6400 bps channel (the 929–932 MHz US nationwide
+  networks). 1600 bps is already pinned on real air; the faster modes are
+  reference-derived and synthetic-verified only.
 - **Duration:** ≥ 30 s.
 - **Purpose:** confirm sync framing, BCH(31,21) bit order, and capcode
   mapping on air (3200/6400 bps and 4-level modes are out of scope).

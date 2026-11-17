@@ -1,24 +1,23 @@
 package survey
 
 import (
+	"math"
+
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/pager/flex"
+	flexrx "github.com/MattCheramie/GopherTrunk/internal/radio/pager/flex/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/pager/pocsag"
 )
 
 // oversample is the resampled samples per bit the integrate-and-dump slicer
-// expects. It mirrors the live pager receivers (pocsag/flex receiver.Oversample
-// = 8) so a buffer decoded here behaves identically to the streaming path.
+// expects. It mirrors the live POCSAG receiver (receiver.Oversample = 8) so a
+// buffer decoded here behaves identically to the streaming path.
 const oversample = 8
 
 // pocsagBauds are the POCSAG signalling rates tried, fastest-first is not
 // important — the syncer rejects a wrong-rate stream (no sync codewords found),
 // so the rate that actually yields pages wins.
 var pocsagBauds = []uint32{1200, 512, 2400}
-
-// flexBaud is the single FLEX rate the decoder supports (1600 bps, 2-level).
-const flexBaud = 1600
 
 // PageRef is a protocol-neutral summary of one decoded pager message, suitable
 // for the survey inventory and JSON. It flattens the pocsag.Page / flex.Message
@@ -71,23 +70,26 @@ func DecodePOCSAG(iq []complex64, inputRateHz uint32) []PageRef {
 	return best
 }
 
-// DecodeFLEX runs the FLEX (1600 bps) decode pipeline over a baseband IQ buffer
-// and returns the decoded messages. It reuses the live FLEX receiver's pipeline
-// (internal/radio/pager/flex/receiver) over a fixed buffer.
+// DecodeFLEX runs the FLEX decode pipeline over a baseband IQ buffer and
+// returns the decoded messages. It is the live FLEX receiver's front end
+// (internal/radio/pager/flex/receiver) over a fixed buffer, so every mode —
+// 1600, 3200 and 6400 bps — is followed; BaudHz reports the bit rate of the
+// frame a page came in. A frame is 1.875 s long and only complete frames
+// decode, so a buffer shorter than two frames may hold none.
 func DecodeFLEX(iq []complex64, inputRateHz uint32) []PageRef {
-	bits := demodBits(iq, inputRateHz, flexBaud)
-	if bits == nil {
+	dm, err := flexrx.NewIQDemod(inputRateHz)
+	if err != nil || len(iq) == 0 {
 		return nil
 	}
-	dec := flex.NewDecoder()
 	var refs []PageRef
-	for _, b := range bits {
-		for _, m := range dec.Push(b) {
-			refs = append(refs, PageRef{
-				Protocol: "flex", BaudHz: flexBaud, Capcode: m.Capcode,
-				Encoding: m.Type.TypeName(), Text: m.Text, Corrected: m.Corrected,
-			})
+	for _, m := range dm.ProcessIQ(iq) {
+		if m.Capcode > math.MaxUint32 {
+			continue
 		}
+		refs = append(refs, PageRef{
+			Protocol: "flex", BaudHz: uint32(m.Mode.BitRate()), Capcode: uint32(m.Capcode),
+			Encoding: m.Type.TypeName(), Text: m.Text, Corrected: m.Corrected,
+		})
 	}
 	return refs
 }
