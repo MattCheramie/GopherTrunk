@@ -7,6 +7,24 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **`power` showed a carrier at the centre of every hop that was not on the
+  air (#1230).** A tuner leaks a little of its own oscillator into its
+  output, and a sweep retunes for every hop, so the leak appeared as a
+  three-bin spike in the middle of every CSV line: 11 dB over the noise
+  every 3.6 MHz on the reporter's PlutoSky. It is now removed. The spike is
+  identical in every FFT a hop averages, so the three centre bins report
+  only what changed between FFTs; noise and real signals there read as
+  before. An unmodulated carrier within about a sixteenth of a bin of a
+  hop's centre (or exactly one bin either side) goes with it. `-keep-dc`
+  leaves the spike in. Checked on synthetic IQ and on real RTL-SDR IQ, not
+  yet on a PlutoSky.
+- **Pluto / PlutoSky: a sample rate read back one hertz low is no longer
+  taken as a different rate (#1230).** The AD9361 driver reports 4 800 000
+  as 4 799 999. `power` then laid its bins out on that, so each hop started
+  a hertz further off (91599999, 95199999, 98799998 …), and every start
+  printed a note that the SDR had "quantized" its rate.
+
 ### Changed
 - **`wmbus` takes about a fifteenth of the CPU on a quiet channel
   (#1256).** A meter is on the air for a few milliseconds every few

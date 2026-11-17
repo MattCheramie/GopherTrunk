@@ -2614,6 +2614,25 @@ confirmation before any close-as-completed.
   NOT the algorithm: **Go evaluates a `complex64` product in float64** (widen/narrow around every
   multiply), so the butterfly is spelled out in float32 — the plain radix-2 with complex64 `*` was only
   1.5× on 386. Keep that in mind for any hot complex64 loop. Not verified on an ARM phone yet.
+- **`power` (#1230, 17 Nov): the three-bin spike at every hop's centre is the tuner's DC line, and
+  it is removed by what it IS, not by overwriting bins.** The reporter's PlutoSky CSV (4.8 MS/s,
+  512-point FFT) had it in every row, centre +11 dB with the neighbours 6 dB under it: exactly a
+  constant offset through the Hann window (W(±1) = −½). A DC offset is the same complex value in
+  every FFT frame; anything off the air turns. So for FFT bins −1, 0, +1 the accumulator keeps the
+  frames' complex sum beside the power sum, in blocks of `dcBlock` = 16 frames, and reports
+  `(Σ|X|² − |ΣX|²/m)·m/(m−1)`: noise stays unbiased (no notch dip; a per-frame mean subtraction
+  would dip the centre bin 4.8 dB), and blocks follow an AGC gain step (whole-hop: 4.6 dB left,
+  blockwise 0.4). On real RTL-SDR IQ (the 16 Nov wM-Bus snippets' leading noise, 4096-point): centre
+  −58.8 → −67.4 against a −67.8 floor. Blind spots, stated in the docs: an unmodulated carrier within
+  ~bin/16 of the hop centre, AND of centre ± one bin (a tone on an exact bin frequency has the same
+  phase every frame too: this is what failed `TestAccumulatorMatchesFloat64Reference` at n=8, whose
+  tone sits 0.013 bin off bin 1; that test now keeps the DC line). `-keep-dc` is the A/B; one-frame
+  hops fall back to rtl_power's fill-in. Same report: the AD9361 kernel driver reads a rate back with
+  its fraction cut off (4800000 → 4799999; the clock chain is within a fraction of a hertz), and
+  `iio.ActualSampleRate` now takes ±1 Hz of the written rate as the written rate, or every `power`
+  hop edge crept a hertz. NOT checked on a PlutoSky (#764/#771). The "FFT speed not verified on an
+  ARM phone" line in the Android note below is out of date: docs/power-sweep.md records the S5
+  keeping up at 2.4 MS/s.
 - **A detector threshold in radians-per-sample is a SAMPLE-RATE trap (#1184 CTCSS).** The
   conventional scanner's CTCSS gate never opened on air: its Goertzel threshold was calibrated
   on 48 kHz unit tests, but the scanner feeds 2.4 MS/s, where the same deviation is 50x smaller

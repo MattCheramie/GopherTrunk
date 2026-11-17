@@ -50,6 +50,7 @@ func runPower(args []string) {
 	rtlTCP := fs.String("rtltcp", "", "host:port of an rtl_tcp server to sweep instead of a local SDR")
 	iioAddr := fs.String("iio", "", "address of a Pluto / PlutoSky board's iiod (e.g. 192.168.2.1) to sweep instead of a local SDR")
 	settle := fs.Duration("settle", 0, "samples discarded after each retune (default 50ms local, 250ms rtl_tcp)")
+	keepDC := fs.Bool("keep-dc", false, "leave the tuner's own DC line in the output: a spike at the centre of every hop that is not on the air, removed by default (which also takes out an unmodulated carrier within a sixteenth of a bin of a hop's centre)")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk power — rtl_power-style sweep logger (CSV) for a local or rtl_tcp SDR.
@@ -62,6 +63,8 @@ USAGE:
 OUTPUT (rtl_power's CSV layout, one line per hop):
   date, time, Hz low, Hz high, Hz step, samples, dB, dB, ...
   Bin k of a line is at Hz low + k·Hz step. Levels are uncalibrated dBFS.
+  The tuner's own DC line, which would show as a carrier at the centre of
+  every hop, is removed (-keep-dc leaves it in).
 
 EXAMPLES:
   # FM broadcast band in 10 kHz bins, one sweep every 10 s, to a file
@@ -187,6 +190,7 @@ FLAGS:`)
 	defer bw.Flush()
 
 	integ := powerIntegration(every, uint32(*rate), len(plan.Hops), settleFor)
+	integ.KeepDC = *keepDC
 	fmt.Fprint(os.Stderr, powerPlanSummary(name, r, plan, every))
 
 	// IQ dropped anywhere between the dongle and the FFT: by the driver (its

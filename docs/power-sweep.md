@@ -101,6 +101,7 @@ your dongle runs that rate without dropping samples.
 | `-rate` | `2400000` | Sample rate. Each hop covers `rate × (1 − crop)` Hz. |
 | `-crop` | `0.25` | Fraction of each FFT dropped at the edges, where the tuner's filter rolls off. |
 | `-settle` | 50 ms local, 250 ms rtl_tcp / iio | Samples discarded after each retune. |
+| `-keep-dc` | off | Leave the tuner's DC spike at the centre of every hop in the output (see below). |
 | `-bias-tee` | off | Power an LNA through the antenna port. |
 
 Each sweep's lines are flushed as soon as the sweep finishes, so you can
@@ -126,8 +127,25 @@ Each sweep's lines are flushed as soon as the sweep finishes, so you can
   retune command crosses the network, so samples from the previous frequency
   are still in flight. If a strong carrier shows up one hop away from where
   it belongs, raise `-settle`.
-- **The centre of each hop carries the tuner's DC spike.** rtl_power has the
-  same artefact. A larger `-crop` narrows each hop but does not move the spike.
+- **The tuner's DC spike is removed.** A tuner leaks a little of its own
+  local oscillator into its output, which a spectrum shows as a narrow
+  carrier at exactly the tuned frequency. A sweep retunes for every hop, so
+  that carrier used to appear at the centre of every line, three bins wide,
+  although nothing was transmitting there: a PlutoSky sweep of the FM band
+  in #1230 had one every 3.6 MHz, 11 dB over the noise.
+
+  `power` now removes it. The spike is the same value in every FFT it
+  averages, where anything received changes from one FFT to the next, so
+  for the three centre bins it reports only the part that changed. Noise and
+  real signals there read as before.
+
+  Two things it also takes out, because they look the same: an unmodulated
+  carrier that sits within about a sixteenth of a bin of a hop's centre
+  frequency, or exactly one bin either side of it. A modulated signal is
+  not affected. `-keep-dc` leaves the spike in if you need to check. With
+  an `-i` so short that a hop averages a single FFT, the three centre bins
+  are filled in from the bins beside them, as rtl_power does with its DC
+  bin.
 - **A slow CPU averages fewer samples; it doesn't slow the sweeps.** Each hop
   gets its share of the interval. If the FFT can't keep up with the sample
   rate, as on older phones, the hop stops at that time limit with whatever
