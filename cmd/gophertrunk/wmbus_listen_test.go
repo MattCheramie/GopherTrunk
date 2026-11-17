@@ -56,9 +56,10 @@ func TestListenWMBusReportsProgressDropsAndSaves(t *testing.T) {
 	}
 	close(stream)
 	var drops uint64
-	chunks := 0
+	chunks, bells := 0, 0
 	ended := listenWMBus(context.Background(), stream, rx, saver, wmbusListenOptions{
 		RateHz: rate, Status: 500 * time.Millisecond,
+		Bell: func() { bells++ },
 		Drops: func() uint64 {
 			chunks++
 			if chunks > 2 {
@@ -84,6 +85,20 @@ func TestListenWMBusReportsProgressDropsAndSaves(t *testing.T) {
 	}
 	if !strings.Contains(text, "3 dropped chunks") {
 		t.Error("progress lines do not carry the drop count")
+	}
+	// The bell goes with the warning: on a walk the phone is in a pocket
+	// and the warning scrolls past unseen (#1256, 16 Nov).
+	if bells != 1 {
+		t.Errorf("the bell rang %d times, want once, with the one drop warning", bells)
+	}
+	// The demodulator ran on the telegram and not on the 2 s of noise
+	// around it, and the progress line says how often the channel rose
+	// out of that noise.
+	if !strings.Contains(text, " access codes in 1 bursts, ") {
+		t.Error("the final summary does not report the one burst the telegram was")
+	}
+	if st := rx.Stats(); st.Demodulated > st.Samples/10 {
+		t.Errorf("the demodulator ran on %d of %d samples of a stream that is 2 %% telegram", st.Demodulated, st.Samples)
 	}
 	if strings.Count(text, "wmbus: saved ") != 1 || saver.saved != 1 {
 		t.Errorf("saved %d snippets, want the one telegram announced as it was written", saver.saved)

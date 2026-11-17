@@ -1446,6 +1446,30 @@ confirmation before any close-as-completed.
   pairs tens of ms apart (collisions). Scratch instruments, not committed: per-snippet SNR (FFT
   brick-wall ±100 kHz, top 10 % vs bottom 20 % of 100 µs blocks) and a five-walk config sweep.
   On-air-gated: a live walk on a build with it.
+- **wM-Bus (#1256, 17 Nov): the 16 Nov walk (770 snippets, v1.4.0 on the phone) and the burst gate.**
+  Replay: v1.4.0 live 506 (the phone logged 505), main with the tone correlators 606 live / 602 cold;
+  cold through the real `wmbus -in`, 405 telegrams / 229 meters → 605 / 292, none lost. The walk's
+  drops are NOT a decoder a little too slow: the counter stands still for 4-10 minutes at a time
+  (while 30 frames a minute decode) and then the decoder gets 26-51 % of real time for 1-4 minutes,
+  wake lock on. Nothing in the logs says why (screen off is the guess). `gate.go` now keeps the
+  demodulator off the IQ between bursts: boxcar to ~400 kS/s, DC removed, mean power of 64-sample
+  blocks (0.16 ms), open on 2 consecutive blocks 1.5 dB over a tracked floor, 8 blocks of lookback
+  replayed first, held while a framer is Busy. Measured: 0.06 → 0.004 of a core on noise (15x; 33x as
+  GOARCH=386), cold 602 = 602 with none lost, live 605 vs 606 (the one is a 3-bit-repair telegram
+  whose bit errors depend on the clock state at the preamble). The weakest decoded telegram is 4.6 dB
+  over the detector floor, the weakest framed one 3.2 dB. Traps: (1) `skip()` must zero the threshold
+  ring, not only its counters: `rSum` subtracts the value each new sample replaces, so stale contents
+  biased the threshold for good and lost half of a synthetic 7 dB stream (37 → 20 of 40) while
+  demodulating every sample. (2) The floor must rise SLOWLY while blocks are hot (×2 in 1.8 s): at
+  ×2 in 0.11 s a transmitter elsewhere in the span became the floor within its own transmission and
+  hid a 9 dB telegram (`TestBurstGateStaysOpenThroughAnotherTransmission`). (3) A fast-drop rule
+  (floor = p when p < 0.6·floor) fires on noise about twice a second and then holds the gate open:
+  removed, the EMA follows a drop in 10 ms. (4) A single hot block opens on noise 0.15 % of the
+  time, and each false sync then holds the gate through a phantom frame: two blocks are required.
+  Known limit: a transmitter that stays on for many seconds elsewhere in the 1.6 MHz span (the boxcar
+  is only -12 dB there) does become the floor; `-no-gate` is the A/B. `wm.2.log` in the archive DOES
+  end with its "stopped after" line: the reporter's "no final message" was a copy taken earlier, not
+  a bug. Not run on a phone (#764/#771).
 - **SoapyRemote RPC opcodes are an upstream enum, and a fake server cannot check them.**
   `callSetAntenna` was **600**, which is `HAS_DC_OFFSET_MODE`; `SET_ANTENNA` is **501**
   (`pothosware/SoapyRemote common/SoapyRemoteDefs.hpp`). The wire carries no schema, so the

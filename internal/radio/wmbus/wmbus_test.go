@@ -161,7 +161,9 @@ func TestParseRecordsWMBusmetersVectors(t *testing.T) {
 				{"date", 1, 0, "2018-12-31"},
 				{"heat cost allocation", 17, 79, ""},
 				{"date", 17, 0, "2019-01-31"},
-				{"date", 0, 0, "invalid date FFFF"},
+				// The error date (DIF function "error"), never set on this
+				// meter: all ones, the standard's "no value".
+				{"date", 0, 0, "not set"},
 				{"date time", 0, 0, "2019-02-20 11:32"},
 			},
 		},

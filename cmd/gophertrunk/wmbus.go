@@ -42,8 +42,9 @@ func runWMBus(args []string) {
 	asJSON := fs.Bool("json", false, "print one JSON object per telegram")
 	all := fs.Bool("all", false, "also print frames whose CRC failed")
 	saveFrames := fs.String("save-frames", "", "write the IQ around each telegram to this directory (an IQ .wav plus a .metadata.json per telegram; a few hundred KB each, small enough to share), live or from -in; CRC-valid telegrams only unless -all is set")
-	status := fs.Duration("status", 30*time.Second, "live: print a progress line (frames, CRC-valid / CRC-failed, access codes, dropped chunks) this often; 0 = only at the end")
+	status := fs.Duration("status", 30*time.Second, "live: print a progress line (frames, CRC-valid / CRC-failed, access codes, bursts, dropped chunks) this often; 0 = only at the end")
 	logPath := fs.String("log", "", "also append every telegram, progress line, warning and the reason a live run stopped to this file, written as it happens (survives Ctrl-C, a closed terminal or a killed `| tee`)")
+	noGate := fs.Bool("no-gate", false, "run the demodulator on all of the IQ, not only around the bursts that rise out of the channel's noise (as the decoder ran up to v1.4.0, at about 15 times the CPU; for comparing the two)")
 	reconnect := fs.Bool("reconnect", true, "live: when the SDR disappears mid-run (a USB disconnect, the rtl_tcp server hanging up), wait for it to come back and keep listening; false = stop with the reason")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
@@ -87,10 +88,11 @@ EXAMPLES:
   gophertrunk wmbus -gain 0 -all -save-frames meters/ -log wm.log -status 1m
 
 A live run prints a progress line every -status (default 30s): frames heard,
-how many passed / failed their CRC, access codes (sync words; many with no
-frames means noise or overload), and IQ chunks the SDR dropped (any at all
-means the decoder is not keeping up). Meters send every 2 minutes to a few
-hours, so expect long quiet stretches.
+how many passed / failed their CRC, access codes (sync words) and the bursts
+they were found in (every time something rose out of the channel's noise:
+a meter, or any other transmitter there), and IQ chunks the SDR dropped (any
+at all means the decoder is not keeping up). Meters send every 2 minutes to
+a few hours, so expect long quiet stretches.
 
 FLAGS:`)
 		fs.PrintDefaults()
@@ -173,6 +175,7 @@ FLAGS:`)
 		rx, err := wmbus.NewReceiver(wmbus.ReceiverOptions{
 			SampleRateHz: rateHz,
 			OffsetHz:     *offset,
+			NoBurstGate:  *noGate,
 			OnFrame: func(f wmbus.Frame, info wmbus.FrameInfo) {
 				if !f.CRCOK && !*all {
 					return
@@ -289,6 +292,7 @@ FLAGS:`)
 	opts := wmbusListenOptions{
 		RateHz: float64(*rate), Status: *status, Drops: drops.count,
 		Statusf: statusf, Clock: time.Now, Reconnect: *reconnect, Gaps: gaps,
+		Bell: wmbusBell,
 	}
 	for {
 		if !listenWMBus(ctx, stream, rx, saver, opts) {
@@ -446,6 +450,12 @@ type wmbusListenOptions struct {
 	// Gaps, when set, is told where each run of dropped chunks fell, and
 	// the progress lines say how many CRC-failed telegrams one cut.
 	Gaps *wmbusGapLog
+	// Bell, when set, is rung with every drop warning, so an operator
+	// walking with the phone in a pocket notices the decoder is being
+	// starved (Termux vibrates on the terminal bell) and can wake the
+	// screen: on the #1256 walks the warnings scrolled past unseen while
+	// minutes of air went unheard. Nil rings nothing.
+	Bell func()
 }
 
 // wmbusThrottleShare is the fraction of real time below which a drop
@@ -510,6 +520,9 @@ func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Recei
 		if d > warnedDrops {
 			newDrops := d - warnedDrops
 			warnedDrops = d
+			if o.Bell != nil {
+				o.Bell()
+			}
 			o.Statusf(wmbusDropWarning(d, newDrops, wall, stream))
 		}
 	}
@@ -592,9 +605,16 @@ func wmbusStatusLine(seconds float64, st wmbus.ReceiverStats, drops uint64, fina
 	if st.Framer.Repaired > 0 {
 		repaired = fmt.Sprintf(" of which %d repaired", st.Framer.Repaired)
 	}
-	s := fmt.Sprintf("wmbus: %s %s: %d frames (%d CRC-valid%s, %d CRC-failed), %d access codes, %d dropped chunks",
+	// With the burst gate the demodulator runs only around bursts, so noise
+	// no longer trickles access codes: the burst count is what shows the
+	// receiver is hearing the channel.
+	bursts := ""
+	if st.Gated {
+		bursts = fmt.Sprintf(" in %d bursts", st.Bursts)
+	}
+	s := fmt.Sprintf("wmbus: %s %s: %d frames (%d CRC-valid%s, %d CRC-failed), %d access codes%s, %d dropped chunks",
 		what, time.Duration(seconds*float64(time.Second)).Round(time.Second).String(), st.Framer.Frames, st.Framer.CRCOK,
-		repaired, st.Framer.Frames-st.Framer.CRCOK, st.Framer.Syncs, drops)
+		repaired, st.Framer.Frames-st.Framer.CRCOK, st.Framer.Syncs, bursts, drops)
 	return s + wmbusCarrierNote(st)
 }
 

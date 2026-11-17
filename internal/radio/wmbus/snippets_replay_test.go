@@ -50,7 +50,7 @@ func loadIQWav(t *testing.T, path string) ([]complex64, float64) {
 // that yield a CRC-valid frame: the yield metric for receiver changes.
 // Skip-guarded:
 //
-//	GT_WMBUS_SNIPPETS=<dir> [GT_WMBUS_OFFSET=<Hz>] [GT_WMBUS_MIN=<n>]
+//	GT_WMBUS_SNIPPETS=<dir> [GT_WMBUS_OFFSET=<Hz>] [GT_WMBUS_MIN=<n>] [GT_WMBUS_NOGATE=1]
 //	go test ./internal/radio/wmbus -run RealAirSnippets -v
 //
 // It counts two ways. "cold" gives every snippet a fresh receiver, so
@@ -86,8 +86,10 @@ func TestWMBusRealAirSnippets(t *testing.T) {
 	}
 
 	// run feeds the given snippets through one receiver and returns which
-	// of them a CRC-valid frame ended in.
-	run := func(idx []int) map[int]bool {
+	// of them a CRC-valid frame ended in. noGate runs the demodulator on
+	// every sample, the receiver before the burst gate.
+	var demodShare float64 // of the last gated run
+	run := func(idx []int, noGate bool) map[int]bool {
 		var ends []int64 // cumulative sample index where each snippet ends
 		var total int64
 		for _, i := range idx {
@@ -95,7 +97,7 @@ func TestWMBusRealAirSnippets(t *testing.T) {
 			ends = append(ends, total)
 		}
 		ok := map[int]bool{}
-		rx, err := NewReceiver(ReceiverOptions{SampleRateHz: rate, OffsetHz: offHz, OnFrame: func(f Frame, info FrameInfo) {
+		rx, err := NewReceiver(ReceiverOptions{SampleRateHz: rate, OffsetHz: offHz, NoBurstGate: noGate, OnFrame: func(f Frame, info FrameInfo) {
 			if !f.CRCOK {
 				return
 			}
@@ -112,23 +114,60 @@ func TestWMBusRealAirSnippets(t *testing.T) {
 			}
 		}
 		rx.Flush()
-		if st := rx.Stats(); st.CarrierLocked {
+		st := rx.Stats()
+		if len(idx) > 1 && st.CarrierLocked {
 			t.Logf("carrier estimate %.0f Hz", st.CarrierOffsetHz)
+		}
+		if !noGate {
+			demodShare = float64(st.Demodulated) / float64(st.Samples)
 		}
 		return ok
 	}
 
-	cold := 0
+	// The burst gate must cost nothing: every snippet the ungated receiver
+	// decodes, the gated one decodes too (GT_WMBUS_NOGATE=1 skips the
+	// comparison and its second pass).
+	compare := os.Getenv("GT_WMBUS_NOGATE") == ""
+	cold, coldNoGate, coldLost := 0, 0, 0
 	for i := range snippets {
-		if run([]int{i})[i] {
+		ok := run([]int{i}, false)[i]
+		if ok {
 			cold++
+		}
+		if compare {
+			if run([]int{i}, true)[i] {
+				coldNoGate++
+				if !ok {
+					coldLost++
+					t.Logf("the burst gate lost %s", filepath.Base(paths[i]))
+				}
+			}
 		}
 	}
 	all := make([]int, len(snippets))
 	for i := range all {
 		all[i] = i
 	}
-	liveOK := run(all)
+	liveOK := run(all, false)
+	// Each snippet is one telegram with 15 ms of the channel's own noise
+	// around it, so in sequence this is how much of a stream of back-to-back
+	// telegrams the gate lets through; a live run is mostly noise.
+	t.Logf("in sequence the demodulator ran on %.1f%% of the snippets' IQ", 100*demodShare)
+	if compare {
+		liveNoGate := run(all, true)
+		lost := 0
+		for i := range liveNoGate {
+			if !liveOK[i] {
+				lost++
+				t.Logf("in sequence, the burst gate lost %s", filepath.Base(paths[i]))
+			}
+		}
+		t.Logf("without the burst gate: cold %d, live %d; decoded there but not with the gate: cold %d, live %d",
+			coldNoGate, len(liveNoGate), coldLost, lost)
+		if coldLost > 0 {
+			t.Errorf("the burst gate lost %d snippets the ungated receiver decodes on their own", coldLost)
+		}
+	}
 	for i, p := range paths {
 		if !liveOK[i] && testing.Verbose() {
 			t.Logf("no CRC-valid frame: %s", filepath.Base(p))

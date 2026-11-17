@@ -366,6 +366,17 @@ func padTo8(d []byte) []byte {
 // decodeDate renders EN 13757-3 date types G (2 bytes: date), F (4 bytes:
 // date and time) and I (6 bytes: date and time with seconds).
 func decodeDate(b []byte) string {
+	// All ones is the standard's "no value": a meter sends it for a date it
+	// has not set, such as the day of an error that never happened (the
+	// issue #1256 Qundis water meters' error-date record). It printed as
+	// "invalid date FFFF", which read as a decoding failure.
+	unset := len(b) > 0
+	for _, v := range b {
+		unset = unset && v == 0xFF
+	}
+	if unset {
+		return "not set"
+	}
 	date := func(hi, lo byte) (string, bool) {
 		day := int(lo & 0x1F)
 		month := int(hi & 0x0F)

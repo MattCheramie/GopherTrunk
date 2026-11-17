@@ -59,12 +59,13 @@ wmbusmeters' simulation set, modulated and decoded by GopherTrunk):
     date [storage 1] 2018-12-31
     heat cost allocation [storage 17] 79
     date [storage 17] 2019-01-31
-    date (error) invalid date FFFF
+    date (error) not set
     date time 2019-02-20 11:32
 ```
 
 Storage 0 is the current value, and higher storage numbers are historic
-values. Here, storage 1 is the reading at the last set day. A capture file
+values. Here, storage 1 is the reading at the last set day. `date (error)
+not set` is the day of the meter's last error, and this meter has had none. A capture file
 prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 
 - `-json` prints one JSON object per telegram instead. Its `frame` field is
@@ -138,15 +139,21 @@ prints the time into the capture (`t=   2.802s`) instead of the wall clock.
 a live run can be quiet for a long time. The progress line shows it is alive:
 
 ```
-wmbus: listening 5m0s (14:02:39): 3 frames (1 CRC-valid, 2 CRC-failed), 412 access codes, 0 dropped chunks, carrier -50.1 kHz (-58 ppm)
+wmbus: listening 5m0s (14:02:39): 3 frames (1 CRC-valid, 2 CRC-failed), 5 access codes in 41 bursts, 0 dropped chunks, carrier -50.1 kHz (-58 ppm)
 ```
 
 The first time is *stream time*, how much IQ the decoder has worked
 through; the time in brackets is the time of day, so the line lines up with
 the telegram timestamps. The two drift apart whenever IQ is dropped.
 
-- *Access codes* are sync words. They also appear by chance in noise, so a
-  steady trickle with no frames is normal.
+- *Bursts* counts the times something rose out of the channel's noise: a
+  meter, or any other transmitter on the channel. The decoder only works on
+  the IQ around a burst (see **CPU** below), so this number moving is the
+  sign that the receiver is hearing the channel. A few bursts with no
+  frames is normal.
+- *Access codes* are the sync words found in those bursts. Up to v1.4.0
+  the decoder also ran on the noise between bursts and found a steady
+  trickle of them there by chance; that trickle is gone.
 - *CRC-failed* frames are telegrams that were heard but damaged: the
   signal is there but weak, clipped or interfered with. Add `-all` to see them.
 - *Dropped chunks* must stay at 0. Any drop means the computer did not keep
@@ -165,7 +172,24 @@ the telegram timestamps. The two drift apart whenever IQ is dropped.
   1 Nov 2026 walk in issue #1256 about 10 of 21 minutes went unheard that
   way. Keep the screen on (Termux's "keep screen on" option), run
   `termux-wake-lock` before starting, and exempt Termux from battery
-  optimisation.
+  optimisation. Every drop warning rings the terminal bell, which Termux
+  turns into a vibration, so you notice it with the phone in a pocket.
+
+**CPU.** A meter is on the air for a few milliseconds every few minutes, so
+nearly all of the IQ is noise. After v1.4.0 the decoder watches the
+channel's power and demodulates only the IQ around a burst that rises out
+of the noise, starting 1.3 ms before it. On noise that takes about a
+fifteenth of the CPU the decoder took before (0.004 of a desktop core at
+1.6 MS/s, where it took 0.06), which is what a slow or throttled phone
+needs. The burst detector opens 1.5 dB over the noise; on the 16 Nov 2026
+walk in issue #1256 the weakest telegram that decoded was 4.6 dB over it,
+and the same 602 of 770 saved telegrams decode with and without the gate.
+
+One case where it can cost reception: a strong transmitter that stays on
+for many seconds elsewhere in the dongle's 1.6 MHz span raises what the
+detector takes for noise, and a weak telegram may then not open it.
+`-no-gate` runs the decoder on all of the IQ, as before, if you want to
+compare.
 
 - *Repaired* (`12 CRC-valid of which 2 repaired`) counts telegrams that
   passed only after a CRC repair; see **Weak telegrams** below.
