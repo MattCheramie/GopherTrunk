@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math/bits"
 
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
+	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
 )
 
 // AMBE+2 on-air forward-error-correction for dPMR TCH voice frames.
@@ -16,9 +16,13 @@ import (
 // C0/C1 sub-vectors, the C0-seeded pseudo-random descramble of C1, and
 // the C0:12 + C1:12 + C2:11 + C3:14 = 49-bit assembly) is a property of
 // the AMBE+2 codec, not of the radio protocol, so it is identical to
-// internal/radio/dmr/voice/ambefec.go and
-// internal/radio/nxdn/voice_ambe.go, reusing the shared
-// framing.Golay23_12 primitives.
+// internal/radio/dmr/voice/ambefec.go and uses the mbelib Golay(23,12)
+// that file carries. Until #1374 this file used framing.GolayDecode23_12 /
+// GolayEncode23_12, a different (23,12) Golay code: even a clean frame
+// decoded to the wrong vocoder parameters, and the round-trip test stayed
+// green because encoder and decoder shared the wrong code (the D-STAR
+// defect fixed in #1365). TestTCHFrameDecodesDMRSilenceWithMbelibGolay
+// pins it to MMDVMHost's DMR_SILENCE frame.
 //
 // The ONE protocol-specific piece is how the 72 on-air bits are
 // interleaved into the four C0..C3 sub-vectors. DMR uses the
@@ -112,9 +116,8 @@ func dpmrC1Keystream(c0data uint16) [24]uint8 {
 // DecodeTCHFrame decodes one 72-bit on-air AMBE+2 TCH voice frame (72
 // bits, one bit per byte MSB-first) into the 49-bit vocoder payload
 // (one bit per byte). It returns the payload and the number of Golay
-// errors corrected across C0 and C1 (negative counts from an
-// uncorrectable sub-vector are clamped to 0). Pack the payload MSB-first
-// to 7 bytes (framing.PackBitsMSB) and hand it to the ambe2 decoder.
+// errors corrected across C0 and C1. Pack the payload MSB-first to 7
+// bytes (framing.PackBitsMSB) and hand it to the ambe2 decoder.
 func DecodeTCHFrame(frame []byte) ([]byte, int, error) {
 	if len(frame) != dpmrAMBEOnAirBits {
 		return nil, 0, fmt.Errorf("dpmr: TCH AMBE frame must be %d bits, got %d", dpmrAMBEOnAirBits, len(frame))
@@ -127,7 +130,7 @@ func DecodeTCHFrame(frame []byte) ([]byte, int, error) {
 	for j := 0; j < 23; j++ {
 		c0cw |= uint32(fr[0][j+1]) << uint(j)
 	}
-	c0data, c0errs := framing.GolayDecode23_12(c0cw)
+	c0data, c0errs := dmrvoice.GolayDecode2312(c0cw)
 
 	// C1: descramble with the C0-seeded keystream, then Golay(23,12).
 	ks := dpmrC1Keystream(c0data)
@@ -138,7 +141,7 @@ func DecodeTCHFrame(frame []byte) ([]byte, int, error) {
 	for j := 0; j < 23; j++ {
 		c1cw |= uint32(fr[1][j]) << uint(j)
 	}
-	c1data, c1errs := framing.GolayDecode23_12(c1cw)
+	c1data, c1errs := dmrvoice.GolayDecode2312(c1cw)
 
 	// Assemble ambe_d: C0(12) + C1(12) + C2(11) + C3(14).
 	out := make([]byte, dpmrAMBEInfoBits)
@@ -152,16 +155,7 @@ func DecodeTCHFrame(frame []byte) ([]byte, int, error) {
 	for k := 0; k < 14; k++ {
 		out[35+k] = fr[3][13-k]
 	}
-	return out, clampGolayErrs(c0errs) + clampGolayErrs(c1errs), nil
-}
-
-// clampGolayErrs turns a Golay decoder's -1 (uncorrectable) into 0 so
-// the returned corrected-bit count stays a non-negative sum.
-func clampGolayErrs(e int) int {
-	if e < 0 {
-		return 0
-	}
-	return e
+	return out, c0errs + c1errs, nil
 }
 
 // EncodeTCHFrame is the inverse of DecodeTCHFrame: it wraps a 49-bit
@@ -179,13 +173,13 @@ func EncodeTCHFrame(info []byte) ([]byte, error) {
 		c1data |= uint16(info[12+k]&1) << uint(11-k)
 	}
 
-	c0cw := framing.GolayEncode23_12(c0data)
+	c0cw := dmrvoice.GolayEncode2312(c0data)
 	for j := 0; j < 23; j++ {
 		fr[0][j+1] = uint8((c0cw >> uint(j)) & 1)
 	}
 	fr[0][0] = uint8(bits.OnesCount32(c0cw) & 1) // ext-Golay overall parity
 
-	c1cw := framing.GolayEncode23_12(c1data)
+	c1cw := dmrvoice.GolayEncode2312(c1data)
 	for j := 0; j < 23; j++ {
 		fr[1][j] = uint8((c1cw >> uint(j)) & 1)
 	}
