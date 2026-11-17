@@ -7,6 +7,17 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **dPMR voice decoded every AMBE+2 frame to the wrong vocoder parameters
+  (#1374).** The dPMR voice FEC corrected the C0 and C1 sub-vectors with
+  `framing.GolayDecode23_12`, a different (23,12) Golay code from the
+  mbelib one AMBE+2 uses, so even a clean frame came out wrong in its 24
+  most important bits and was reported as needing no correction. It now
+  uses the mbelib Golay the DMR decoder carries (the same defect D-STAR had
+  until #1365), pinned against MMDVMHost's DMR silence frame. dPMR audio is
+  still unverified on air: the frame's on-air interleave remains a
+  placeholder until a dPMR voice capture confirms it.
+
 ## [v1.4.1] — 2026-11-17
 
 ### Fixed
