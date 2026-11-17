@@ -1565,6 +1565,13 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 					// a stronger site is clipping the shared ADC and burying
 					// this one (issue #749). Reduce gain, don't raise it.
 					hint = "wideband front end is overloaded (clipping) — a stronger co-channel is burying this site; reduce gain or add attenuation, do NOT raise gain"
+				case !ec.lastDecodeAt.IsZero():
+					// This tap has decoded the carrier, so it is on frequency
+					// and inside the passband by construction; decodes merely
+					// stopped for longer than the grace. Blaming the tuning
+					// here sent an operator with a weak indoor antenna after
+					// the wrong fault (#1321).
+					hint = "this carrier has decoded on this tap, so it is tuned correctly, but it is now too weak to hold; improve the antenna or its position, or raise this site's level (on a shared front end 'gain: auto' lets a weaker site clear the ADC floor)"
 				case wbHealthy:
 					// The shared capture is healthy and other taps may be
 					// decoding, yet this one sits at the floor. Most often the
@@ -1574,9 +1581,12 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 					// the front end runs hot enough for it to clear (issue #749).
 					hint = "wideband input is healthy — this carrier is likely outside the captured passband or tuned to the wrong frequency; if other taps on this dongle decode, try 'gain: auto' (AGC) so a weaker co-tenant site can clear the shared ADC floor"
 				}
-				e.log.Warn("widebandt2: channel iq power very low — "+hint,
-					"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag,
-					"dbfs", dbfs, "wideband_input_dbfs", wbDbFS)
+				args := []any{"freq_hz", ec.freqHz, "system", ec.sysName, "proto", ec.protoTag,
+					"dbfs", dbfs, "wideband_input_dbfs", wbDbFS}
+				if !ec.lastDecodeAt.IsZero() {
+					args = append(args, "last_decode_ago", now.Sub(ec.lastDecodeAt).Round(time.Second))
+				}
+				e.log.Warn("widebandt2: channel iq power very low — "+hint, args...)
 				ec.pwLowLogAt = now
 				ec.lowPowerWarned = true
 			}

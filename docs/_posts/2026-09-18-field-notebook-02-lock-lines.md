@@ -150,8 +150,13 @@ TETRA's line carries more identity:
 INF tetra cc locked freq=467912500 mcc=250 mnc=13 la=1 system=250_013
 ```
 
-`mcc`/`mnc` are the Mobile Network Identity; `la` is the location area. Once
-this prints, a steady lock is silent — but the identity fields are protected.
+`mcc`/`mnc` are the Mobile Network Identity; `la` is the location area. The
+sync burst that locks the channel names the network but not the location
+area, so the first lock line of a session has no `la=`; a
+`tetra cc location area learned … la=` line follows a couple of seconds
+later, once two SYSINFO broadcasts agree on it, and every later lock or loss
+line carries it. Once this prints, a steady lock is silent — but the identity
+fields are protected.
 An identity *change* on an already-locked channel needs
 `lockIdentityConfirmThreshold` (2) consecutive agreeing BSCH decodes before
 it is adopted, logging `tetra: cc identity change pending confirmation` in
@@ -178,6 +183,9 @@ own watchdog, and the mechanism differs by protocol. TETRA runs
 `ControlChannel.CheckStale`, which calls `MarkLost` when a locked channel has
 decoded nothing for `tetraLockStaleTimeout` (5 s, about five missed
 multiframes at the ~1 s BSCH cadence); a healthy carrier never trips it.
+Each loss writes `tetra cc lost … reason= silent_for=`, the line that pairs
+with `tetra cc locked`; a weak cell that keeps dropping out shows the two
+alternating.
 [TETRA End to End Part 10]({{ '/blog/deep-dives/tetra-end-to-end-10-control-channel-sync-loss/' | relative_url }})
 walks a real one-hour session with eleven of these, and its escape from the
 "locked but deaf" state — the payload-drought resync that ends in

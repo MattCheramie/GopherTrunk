@@ -1268,6 +1268,19 @@ confirmation before any close-as-completed.
   receiver's channel + matched filters run `filter.FIR.EnableFolded` (symmetric taps, opt-in so the shared FIR stays
   bit-exact). Folding is worth only ~1.2x in scalar Go: a float32 multiply costs what an add does, so a tap PAIR is 10
   ops vs 12 — don't expect 2x from it. What remains: the folded channel FIR (~33 %) and the DDC resamplers (~37 %).
+- **A TETRA lock's location area comes from D-MLE-SYSINFO, never from the sync burst (#1321).** On
+  real air the BSCH names MCC/MNC only and the sync burst's BNCH does not parse as the byte-aligned
+  broadcast the fixtures use, so `LockState.LocationArea` (the lock line, cc.locked / cc.lost, `Topology()`,
+  the Systems panel) read 0 on every real cell while `SYSINFO cell parameters` printed the true LA.
+  `confirmSysInfoLALocked` folds it in after two agreeing SYSINFOs and `maybeLock` completes an LA-less
+  BSCH candidate with it (or the steady BSCH stream would vote the LA away again). Pinned on real air by
+  `ccdecoder.TestTETRACCRealAirLockCarriesLocationArea` (la=1052; old code logs la=0). Same report: the
+  stale watchdog (`CheckStale`) dropped a lock with NO log line, so a weak cell showed `tetra cc locked`
+  repeating with nothing between; every loss now writes `tetra cc lost reason= silent_for=`. That the
+  reporter's 19 repeats were stale losses is inferred from the code (it is the one silent loss path), not
+  seen in their log: if a new log shows repeats with no `tetra cc lost` between, look for an alternating
+  identity instead. The wideband `channel iq power very low` hint no longer says "mistuned" for a channel
+  that has decoded (`last_decode_ago`). The supervisor's cached NAC stays 0 until the next lock edge.
 - **The NXDN "scrambler" (SACCH VCALL cipher type 1, 15-bit key) IS DECODED and capture-pinned
   (#1261, 26 Oct): the reporter's two known-key captures (Kenwood, keys 32767 / 12345 on 447.100 MHz
   NXDN96, `nxdn/testdata/scrambler_key*_frames.json`) descramble to speech (AMBE b0 pitch continuity
