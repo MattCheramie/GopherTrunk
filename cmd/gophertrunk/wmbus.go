@@ -289,6 +289,7 @@ FLAGS:`)
 	opts := wmbusListenOptions{
 		RateHz: float64(*rate), Status: *status, Drops: drops.count,
 		Statusf: statusf, Clock: time.Now, Reconnect: *reconnect, Gaps: gaps,
+		Bell: wmbusBell,
 	}
 	for {
 		if !listenWMBus(ctx, stream, rx, saver, opts) {
@@ -446,6 +447,12 @@ type wmbusListenOptions struct {
 	// Gaps, when set, is told where each run of dropped chunks fell, and
 	// the progress lines say how many CRC-failed telegrams one cut.
 	Gaps *wmbusGapLog
+	// Bell, when set, is rung with every drop warning, so an operator
+	// walking with the phone in a pocket notices the decoder is being
+	// starved (Termux vibrates on the terminal bell) and can wake the
+	// screen: on the #1256 walks the warnings scrolled past unseen while
+	// minutes of air went unheard. Nil rings nothing.
+	Bell func()
 }
 
 // wmbusThrottleShare is the fraction of real time below which a drop
@@ -510,6 +517,9 @@ func listenWMBus(ctx context.Context, stream <-chan []complex64, rx *wmbus.Recei
 		if d > warnedDrops {
 			newDrops := d - warnedDrops
 			warnedDrops = d
+			if o.Bell != nil {
+				o.Bell()
+			}
 			o.Statusf(wmbusDropWarning(d, newDrops, wall, stream))
 		}
 	}
