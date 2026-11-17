@@ -408,6 +408,15 @@ func (d *device) SetSampleRate(hz uint32) error {
 
 // ActualSampleRate reads the rate the RX core delivers back from the board
 // (the AD9361 driver rounds), so the pool can warn on a mismatch.
+//
+// A readback one hertz off the rate that was written is the written rate.
+// The AD9361's clock chain lands within a fraction of a hertz of what is
+// asked (its baseband PLL steps in 19 Hz, ahead of a divider of 100 or
+// more), and the kernel driver reports that rate with the fraction cut
+// off: 4 800 000 reads back as 4 799 999. Taken at its word, that hertz
+// laid a power sweep out on bins of 9374.998 Hz, so each hop of the #1230
+// PlutoSky sweep started a hertz further off (91599999, 95199999,
+// 98799998 …), and every start-up noted a rate the board had "quantized".
 func (d *device) ActualSampleRate() (uint32, error) {
 	var out uint32
 	err := d.control(func(c *client) error {
@@ -424,6 +433,9 @@ func (d *device) ActualSampleRate() (uint32, error) {
 			return fmt.Errorf("iio: %s: unparseable rate %q", attrRate, v)
 		}
 		out = uint32(n)
+		if d.rate != 0 && (out == d.rate-1 || out == d.rate+1) {
+			out = d.rate
+		}
 		return nil
 	})
 	return out, err
