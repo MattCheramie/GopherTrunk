@@ -334,9 +334,10 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 		}
 		f.GroupID = uint32(n)
 	}
-	// source_id narrows to calls FROM one radio (call_log.source_id): the
-	// per-RID view of the call log, so an operator can find and play a radio's
-	// recordings rather than only a talkgroup's.
+	// source_id narrows to the calls one radio was heard in: the per-RID view
+	// of the call log, so an operator can find and play a radio's recordings
+	// rather than only a talkgroup's. A call matches on its own source (its
+	// last talker) or on the talker of any of its recording files (#1379).
 	if v := q.Get("source_id"); v != "" {
 		n, err := strconv.ParseUint(v, 10, 32)
 		if err != nil {

@@ -475,6 +475,13 @@ func (d *DB) migrate() error {
 	}); err != nil {
 		return err
 	}
+	// The history filter looks a radio up by the files it was heard in
+	// (#1379). Created here, not in the schema block: on a database written
+	// before the column existed that block runs first, and an index on a
+	// missing column would fail the open.
+	if _, err := d.sql.Exec(`CREATE INDEX IF NOT EXISTS idx_call_recordings_source ON call_recordings(source_id)`); err != nil {
+		return fmt.Errorf("storage: index call_recordings.source_id: %w", err)
+	}
 	// Stamp the current schema version; future migrations check this
 	// row before running.
 	_, _ = d.sql.Exec(`INSERT OR IGNORE INTO schema_version(version) VALUES (2)`)

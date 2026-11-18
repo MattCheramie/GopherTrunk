@@ -865,6 +865,10 @@ type CallRow struct {
 	// unresolved. Snapshotted onto the row at call time, so renaming a radio
 	// later does not retro-fix history.
 	SourceAlpha string `json:"source_alpha,omitempty"`
+	// Talkers lists every radio heard in the call, in the order each first
+	// spoke, when there was more than one. SourceID is only the call's last
+	// talker (#1379). Omitted for a single-radio call.
+	Talkers []uint32 `json:"talkers,omitempty"`
 	// SignalDbFS is the call's mean received channel power in dBFS
 	// (channel power, not calibrated RSSI or SNR). nil when unmeasured.
 	SignalDbFS *float64 `json:"signal_dbfs,omitempty"`

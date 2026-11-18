@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -259,9 +260,13 @@ SELECT id, ?, ?, ?, ?, ?, ? FROM call_log WHERE device_serial = ? AND started_at
 
 // HistoryFilter narrows a History query.
 type HistoryFilter struct {
-	System    string
-	GroupID   uint32 // 0 = no filter (filters call_log.group_id)
-	SourceID  uint32 // 0 = no filter (filters call_log.source_id — RID)
+	System  string
+	GroupID uint32 // 0 = no filter (filters call_log.group_id)
+	// SourceID keeps the calls this radio (RID) was heard in: the call row's
+	// own source (its last talker) or the talker of any of its recording
+	// files, so a radio that spoke first and was answered is still found
+	// (#1379). 0 = no filter.
+	SourceID  uint32
 	Since     time.Time
 	Until     time.Time
 	Limit     int
@@ -313,6 +318,14 @@ type CallRow struct {
 	// the operator RID catalogue + live-decoded talker aliases; "" when
 	// unresolved.
 	SourceAlpha string `json:"source_alpha,omitempty"`
+	// Talkers lists every radio heard in the call, in the order each first
+	// spoke, when there was more than one: the talkers of the call's
+	// recording files (call_recordings.source_id), then SourceID if no file
+	// names it. SourceID alone is the call's LAST talker, so a reply that
+	// keyed inside the hangtime hid the radio that opened the call (#1379).
+	// nil for a single-radio call and for a call recorded before the files
+	// carried their talker.
+	Talkers []uint32 `json:"talkers,omitempty"`
 	// SignalDbFS is the call's mean received channel power in dBFS
 	// (channel power, not calibrated RSSI or SNR). nil when unmeasured.
 	SignalDbFS *float64 `json:"signal_dbfs,omitempty"`
@@ -349,8 +362,10 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		args = append(args, f.GroupID)
 	}
 	if f.SourceID != 0 {
-		q += " AND source_id = ?"
-		args = append(args, f.SourceID)
+		// The row's source is only the call's last talker; the files name
+		// the radio of each over (idx_call_recordings_source).
+		q += " AND (source_id = ? OR id IN (SELECT call_id FROM call_recordings WHERE source_id = ?))"
+		args = append(args, f.SourceID, f.SourceID)
 	}
 	if !f.Since.IsZero() {
 		q += " AND started_at >= ?"
@@ -461,7 +476,72 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		}
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := d.attachTalkers(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// talkerQueryChunk bounds the call ids in one attachTalkers query, well
+// under SQLite's bound-parameter limit.
+const talkerQueryChunk = 500
+
+// attachTalkers fills CallRow.Talkers from the per-file talkers in
+// call_recordings (see CallRow.Talkers).
+func (d *DB) attachTalkers(ctx context.Context, calls []CallRow) error {
+	if len(calls) == 0 {
+		return nil
+	}
+	heard := make(map[int64][]uint32)
+	for lo := 0; lo < len(calls); lo += talkerQueryChunk {
+		chunk := calls[lo:min(lo+talkerQueryChunk, len(calls))]
+		args := make([]any, len(chunk))
+		for i, c := range chunk {
+			args[i] = c.ID
+		}
+		if err := d.collectTalkers(ctx, args, heard); err != nil {
+			return err
+		}
+	}
+	for i := range calls {
+		t := heard[calls[i].ID]
+		if len(t) == 0 {
+			continue
+		}
+		if src := calls[i].SourceID; src != 0 && !slices.Contains(t, src) {
+			t = append(t, src)
+		}
+		if len(t) > 1 {
+			calls[i].Talkers = t
+		}
+	}
+	return nil
+}
+
+// collectTalkers appends, per call id in ids, the distinct non-zero talkers
+// of its recording files in over order.
+func (d *DB) collectTalkers(ctx context.Context, ids []any, heard map[int64][]uint32) error {
+	rows, err := d.sql.QueryContext(ctx,
+		`SELECT call_id, source_id FROM call_recordings
+		  WHERE source_id != 0 AND call_id IN (?`+strings.Repeat(",?", len(ids)-1)+`)
+		  ORDER BY call_id, seq, started_at, id`, ids...)
+	if err != nil {
+		return fmt.Errorf("storage: call talkers: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, src int64
+		if err := rows.Scan(&id, &src); err != nil {
+			return err
+		}
+		if t := heard[id]; !slices.Contains(t, uint32(src)) {
+			heard[id] = append(t, uint32(src))
+		}
+	}
+	return rows.Err()
 }
 
 // RecordingPathByID returns the on-disk recording path for one call row, or

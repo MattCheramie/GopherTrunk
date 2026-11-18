@@ -132,6 +132,7 @@ func (s *storageHistory) History(ctx context.Context, f HistoryFilter) ([]CallRo
 			EndReason:      r.EndReason,
 			TalkgroupAlpha: r.TalkgroupAlpha,
 			SourceAlpha:    r.SourceAlpha,
+			Talkers:        r.Talkers,
 			SignalDbFS:     r.SignalDbFS,
 			EVMPct:         r.EVMPct,
 			SNRDb:          r.SNRDb,

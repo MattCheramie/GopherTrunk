@@ -74,6 +74,31 @@ describe("History panel", () => {
     expect(screen.queryByText(/No calls in the daemon's call log/)).toBeNull();
   });
 
+  // #1379: a call's source_id is its LAST talker. A reply inside the hangtime
+  // used to leave the row showing only the radio that answered.
+  it("lists every radio heard in a call, in the order they spoke", async () => {
+    vi.mocked(api.history).mockResolvedValue([
+      { ...row, source_id: 315529, source_alpha: "Unit 29", talkers: [3200460, 315529] },
+    ]);
+    renderPanel();
+    const first = await screen.findByRole("link", { name: "3200460" });
+    const last = screen.getByRole("link", { name: "Unit 29" });
+    expect(first).toHaveAttribute("href", "/rids/3200460");
+    expect(last).toHaveAttribute("href", "/rids/315529");
+    // Document order is speaking order.
+    expect(
+      first.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows the one source of a single-radio call", async () => {
+    vi.mocked(api.history).mockResolvedValue([row]);
+    renderPanel();
+    const link = await screen.findByRole("link", { name: "1005736" });
+    expect(link).toHaveAttribute("href", "/rids/1005736");
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+  });
+
   it("seeds the filter from ?system= and ?group_id=", async () => {
     vi.mocked(api.history).mockResolvedValue([]);
     renderPanel("/history?system=250_013&group_id=1020545");
