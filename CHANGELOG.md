@@ -8,6 +8,24 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Every recording of a multi-radio call was attributed to the call's last
+  radio (#1379).** A reply that keys inside `voice_hangtime_ms` stays in the
+  same call, and with `voice_call_grouping: transmission` each over gets its
+  own file. The call row's `source_id` is updated as each radio keys, so it
+  ends as the last talker, and the recording files carried no radio of their
+  own: on a two-over call both files were presented as the second radio.
+  Each file now stores the radio heard in it.
+  - `GET /api/v1/recordings` carries `source_id` per file.
+  - A call row with more than one radio lists them in `talkers`, in the order
+    each first spoke, and the web History panel shows them all.
+    `source_id` keeps its meaning (the last talker).
+  - `GET /api/v1/calls/history?source_id=` and `/api/v1/rids/{id}/history`
+    also find a call through its files' radios, so a radio that opened a call
+    another radio answered is no longer missing from its own history.
+
+  Recordings made before this change have no per-file radio. If an over's own
+  radio ID never decodes, its file keeps the previous over's radio. Thanks to
+  @Damien0505 for the report and the storage change (#1380).
 - **HackRF and AirspyHF: a decoder that fell behind stopped the radio being
   read, and the lost IQ was never counted (#1375).** Both drivers handed each
   USB transfer to the stream through an 8-chunk buffer and waited when it was

@@ -572,6 +572,10 @@ export interface CallRow {
   // Resolved alias/name of the source radio (RID), from the operator RID
   // catalogue + live-decoded talker aliases; absent when unresolved.
   source_alpha?: string;
+  // Every radio heard in the call, in the order each first spoke, when there
+  // was more than one. source_id is only the call's LAST talker, so a reply
+  // inside the hangtime hid the radio that opened the call (#1379).
+  talkers?: number[];
   // Mean received channel power in dBFS (front-end level, not calibrated
   // RSSI/SNR); absent when unmeasured.
   signal_dbfs?: number;

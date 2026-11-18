@@ -114,6 +114,11 @@ CREATE TABLE IF NOT EXISTS call_recordings (
     ended_at    INTEGER,
     -- IQ chunks the call's stream lost; > 0 marks the file PARTIAL (#1288)
     iq_lost_chunks INTEGER NOT NULL DEFAULT 0,
+    -- The radio (RID) heard in THIS file. A per-transmission roll gives each
+    -- over its own talker, while call_log.source_id keeps only the call's
+    -- last one, so a reply merged into the call was attributed to the wrong
+    -- radio. 0 when the grant carried no source.
+    source_id   INTEGER NOT NULL DEFAULT 0,
     UNIQUE(call_id, path)
 );
 CREATE INDEX IF NOT EXISTS idx_call_recordings_call ON call_recordings(call_id, seq);
@@ -461,12 +466,21 @@ func (d *DB) migrate() error {
 	}); err != nil {
 		return err
 	}
-	// call_recordings gained the partial-recording marker (#1288): a
-	// database created before it lacks the column.
+	// call_recordings gained the partial-recording marker (#1288) and then
+	// the per-segment talker: a database created before either lacks the
+	// column.
 	if err := d.ensureColumns("call_recordings", []columnAdd{
 		{"iq_lost_chunks", `ALTER TABLE call_recordings ADD COLUMN iq_lost_chunks INTEGER NOT NULL DEFAULT 0`},
+		{"source_id", `ALTER TABLE call_recordings ADD COLUMN source_id INTEGER NOT NULL DEFAULT 0`},
 	}); err != nil {
 		return err
+	}
+	// The history filter looks a radio up by the files it was heard in
+	// (#1379). Created here, not in the schema block: on a database written
+	// before the column existed that block runs first, and an index on a
+	// missing column would fail the open.
+	if _, err := d.sql.Exec(`CREATE INDEX IF NOT EXISTS idx_call_recordings_source ON call_recordings(source_id)`); err != nil {
+		return fmt.Errorf("storage: index call_recordings.source_id: %w", err)
 	}
 	// Stamp the current schema version; future migrations check this
 	// row before running.

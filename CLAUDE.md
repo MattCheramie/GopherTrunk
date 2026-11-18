@@ -1088,6 +1088,21 @@ confirmation before any close-as-completed.
   SDR's driver drops (`SetPhysicalSerial`; the tap's own pseudo-serial never counts anything) + chunks the
   decoder shed at its decode queue (`decodeDrops`), and the TETRA demux opens through `streamWithLoss`;
   each call's reader is the demux's count minus its value at the call's start (`followTETRASameCarrier`).
+- **A recording file's talker is the session grant's source AT FINALIZE, never the session's
+  first `srcs` entry (#1379).** `call_log.source_id` is the call's LAST talker (`UpdateSource`
+  as each radio keys), so every per-over file of a multi-radio call was attributed to it;
+  `call_recordings.source_id` now stores `CallComplete.Grant.SourceID`. That is the over's
+  radio because the roll precedes the next talker's update (P25 Phase 1: terminator →
+  `onTransmissionEnd`; TETRA: the engine emits `KindCallSegment` before the source update).
+  `srcs[0]` would be wrong: a rolled file opens on its first audio still carrying the previous
+  over's radio and is corrected while it is written (measured: file 2 opens `srcs=[A]`, ends
+  `[A, B]`; `TestRecorderSegmentCompleteCarriesItsOwnTalker`). Limits: an over whose own ID
+  never decodes keeps the previous radio, and a missed terminator leaves two radios in one
+  file stamped with the later one. `CallRow.Talkers` (distinct, in order, only when > 1) and
+  the `source_id` history filter read the files' talkers; `RIDSummaries` still counts last
+  talkers only. `idx_call_recordings_source` is created AFTER `ensureColumns`, not in the
+  schema block: on a legacy database that block runs first, and an index on a missing column
+  fails the open.
 - **`soapyremote: SDR overruns … host_drops` is a DOWNSTREAM signal, not a driver bug.**
   `sendOrDrop` (`internal/sdr/soapyremote/driver.go`) only sheds when the consumer stops draining
   a ~400 ms / ~1084-chunk channel, and it drops the OLDEST queued chunk, so each event is an IQ

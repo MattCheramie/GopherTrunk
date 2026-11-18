@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -250,18 +251,22 @@ UPDATE call_log
 		endedAt = cc.EndedAt.UnixNano()
 	}
 	const ins = `
-INSERT OR IGNORE INTO call_recordings (call_id, seq, path, started_at, ended_at, iq_lost_chunks)
-SELECT id, ?, ?, ?, ?, ? FROM call_log WHERE device_serial = ? AND started_at = ?`
+INSERT OR IGNORE INTO call_recordings (call_id, seq, path, started_at, ended_at, iq_lost_chunks, source_id)
+SELECT id, ?, ?, ?, ?, ?, ? FROM call_log WHERE device_serial = ? AND started_at = ?`
 	_, err := c.db.sql.Exec(ins, cc.Segment, cc.AudioPath, cc.StartedAt.UnixNano(), endedAt,
-		int64(cc.IQLostChunks), cc.DeviceSerial, callKey)
+		int64(cc.IQLostChunks), int64(cc.Grant.SourceID), cc.DeviceSerial, callKey)
 	return err
 }
 
 // HistoryFilter narrows a History query.
 type HistoryFilter struct {
-	System    string
-	GroupID   uint32 // 0 = no filter (filters call_log.group_id)
-	SourceID  uint32 // 0 = no filter (filters call_log.source_id — RID)
+	System  string
+	GroupID uint32 // 0 = no filter (filters call_log.group_id)
+	// SourceID keeps the calls this radio (RID) was heard in: the call row's
+	// own source (its last talker) or the talker of any of its recording
+	// files, so a radio that spoke first and was answered is still found
+	// (#1379). 0 = no filter.
+	SourceID  uint32
 	Since     time.Time
 	Until     time.Time
 	Limit     int
@@ -313,6 +318,14 @@ type CallRow struct {
 	// the operator RID catalogue + live-decoded talker aliases; "" when
 	// unresolved.
 	SourceAlpha string `json:"source_alpha,omitempty"`
+	// Talkers lists every radio heard in the call, in the order each first
+	// spoke, when there was more than one: the talkers of the call's
+	// recording files (call_recordings.source_id), then SourceID if no file
+	// names it. SourceID alone is the call's LAST talker, so a reply that
+	// keyed inside the hangtime hid the radio that opened the call (#1379).
+	// nil for a single-radio call and for a call recorded before the files
+	// carried their talker.
+	Talkers []uint32 `json:"talkers,omitempty"`
 	// SignalDbFS is the call's mean received channel power in dBFS
 	// (channel power, not calibrated RSSI or SNR). nil when unmeasured.
 	SignalDbFS *float64 `json:"signal_dbfs,omitempty"`
@@ -349,8 +362,10 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		args = append(args, f.GroupID)
 	}
 	if f.SourceID != 0 {
-		q += " AND source_id = ?"
-		args = append(args, f.SourceID)
+		// The row's source is only the call's last talker; the files name
+		// the radio of each over (idx_call_recordings_source).
+		q += " AND (source_id = ? OR id IN (SELECT call_id FROM call_recordings WHERE source_id = ?))"
+		args = append(args, f.SourceID, f.SourceID)
 	}
 	if !f.Since.IsZero() {
 		q += " AND started_at >= ?"
@@ -461,7 +476,72 @@ func (d *DB) History(ctx context.Context, f HistoryFilter) ([]CallRow, error) {
 		}
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := d.attachTalkers(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// talkerQueryChunk bounds the call ids in one attachTalkers query, well
+// under SQLite's bound-parameter limit.
+const talkerQueryChunk = 500
+
+// attachTalkers fills CallRow.Talkers from the per-file talkers in
+// call_recordings (see CallRow.Talkers).
+func (d *DB) attachTalkers(ctx context.Context, calls []CallRow) error {
+	if len(calls) == 0 {
+		return nil
+	}
+	heard := make(map[int64][]uint32)
+	for lo := 0; lo < len(calls); lo += talkerQueryChunk {
+		chunk := calls[lo:min(lo+talkerQueryChunk, len(calls))]
+		args := make([]any, len(chunk))
+		for i, c := range chunk {
+			args[i] = c.ID
+		}
+		if err := d.collectTalkers(ctx, args, heard); err != nil {
+			return err
+		}
+	}
+	for i := range calls {
+		t := heard[calls[i].ID]
+		if len(t) == 0 {
+			continue
+		}
+		if src := calls[i].SourceID; src != 0 && !slices.Contains(t, src) {
+			t = append(t, src)
+		}
+		if len(t) > 1 {
+			calls[i].Talkers = t
+		}
+	}
+	return nil
+}
+
+// collectTalkers appends, per call id in ids, the distinct non-zero talkers
+// of its recording files in over order.
+func (d *DB) collectTalkers(ctx context.Context, ids []any, heard map[int64][]uint32) error {
+	rows, err := d.sql.QueryContext(ctx,
+		`SELECT call_id, source_id FROM call_recordings
+		  WHERE source_id != 0 AND call_id IN (?`+strings.Repeat(",?", len(ids)-1)+`)
+		  ORDER BY call_id, seq, started_at, id`, ids...)
+	if err != nil {
+		return fmt.Errorf("storage: call talkers: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, src int64
+		if err := rows.Scan(&id, &src); err != nil {
+			return err
+		}
+		if t := heard[id]; !slices.Contains(t, uint32(src)) {
+			heard[id] = append(t, uint32(src))
+		}
+	}
+	return rows.Err()
 }
 
 // RecordingPathByID returns the on-disk recording path for one call row, or
@@ -496,6 +576,10 @@ type RecordingSegment struct {
 	// next's start is the silence between overs the files do not contain.
 	StartedAt time.Time
 	EndedAt   time.Time
+	// SourceID is the radio heard in THIS file, which is what makes a
+	// multi-over call attributable: call_log.source_id holds only the last
+	// talker of the whole call. 0 when the grant carried no source.
+	SourceID uint32
 }
 
 // RecordingSegmentsByID returns every recording file attached to one call, in
@@ -505,7 +589,7 @@ type RecordingSegment struct {
 // the call has no recording or the id is unknown.
 func (d *DB) RecordingSegmentsByID(ctx context.Context, id int64) ([]RecordingSegment, error) {
 	rows, err := d.sql.QueryContext(ctx,
-		`SELECT seq, path, started_at, ended_at FROM call_recordings
+		`SELECT seq, path, started_at, ended_at, source_id FROM call_recordings
 		  WHERE call_id = ? ORDER BY seq, started_at, id`, id)
 	if err != nil {
 		return nil, fmt.Errorf("storage: recording segments for call %d: %w", id, err)
@@ -514,11 +598,12 @@ func (d *DB) RecordingSegmentsByID(ctx context.Context, id int64) ([]RecordingSe
 	var out []RecordingSegment
 	for rows.Next() {
 		var seg RecordingSegment
-		var startNs int64
+		var startNs, src int64
 		var endNs sql.NullInt64
-		if err := rows.Scan(&seg.Seq, &seg.Path, &startNs, &endNs); err != nil {
+		if err := rows.Scan(&seg.Seq, &seg.Path, &startNs, &endNs, &src); err != nil {
 			return nil, err
 		}
+		seg.SourceID = uint32(src)
 		seg.StartedAt = time.Unix(0, startNs).UTC()
 		if endNs.Valid {
 			seg.EndedAt = time.Unix(0, endNs.Int64).UTC()
@@ -696,6 +781,8 @@ type FinalizedRecording struct {
 	// IQLostChunks is how many IQ chunks the call's stream lost; > 0 means
 	// the file is partial (its audio has gaps), issue #1288.
 	IQLostChunks uint64
+	// SourceID is the radio heard in this file — see RecordingSegment.
+	SourceID uint32
 }
 
 // RecordingFeed returns up to limit finalized recordings with an id above
@@ -712,7 +799,7 @@ func (d *DB) RecordingFeed(ctx context.Context, afterID int64, limit int) ([]Fin
 		limit = 100
 	}
 	rows, err := d.sql.QueryContext(ctx,
-		`SELECT id, call_id, seq, path, started_at, ended_at, iq_lost_chunks FROM call_recordings
+		`SELECT id, call_id, seq, path, started_at, ended_at, iq_lost_chunks, source_id FROM call_recordings
 		  WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("storage: recording feed: %w", err)
@@ -721,11 +808,12 @@ func (d *DB) RecordingFeed(ctx context.Context, afterID int64, limit int) ([]Fin
 	var out []FinalizedRecording
 	for rows.Next() {
 		var r FinalizedRecording
-		var startNs, lost int64
+		var startNs, lost, src int64
 		var endNs sql.NullInt64
-		if err := rows.Scan(&r.ID, &r.CallID, &r.Seq, &r.Path, &startNs, &endNs, &lost); err != nil {
+		if err := rows.Scan(&r.ID, &r.CallID, &r.Seq, &r.Path, &startNs, &endNs, &lost, &src); err != nil {
 			return nil, err
 		}
+		r.SourceID = uint32(src)
 		r.StartedAt = time.Unix(0, startNs).UTC()
 		if endNs.Valid {
 			r.EndedAt = time.Unix(0, endNs.Int64).UTC()

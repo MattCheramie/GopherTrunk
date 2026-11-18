@@ -132,6 +132,7 @@ func (s *storageHistory) History(ctx context.Context, f HistoryFilter) ([]CallRo
 			EndReason:      r.EndReason,
 			TalkgroupAlpha: r.TalkgroupAlpha,
 			SourceAlpha:    r.SourceAlpha,
+			Talkers:        r.Talkers,
 			SignalDbFS:     r.SignalDbFS,
 			EVMPct:         r.EVMPct,
 			SNRDb:          r.SNRDb,
@@ -192,6 +193,7 @@ func (s *storageHistory) RecordingFeed(ctx context.Context, afterID int64, limit
 			ID: r.ID, CallID: r.CallID, Segment: r.Seq,
 			StartedAt: r.StartedAt, EndedAt: r.EndedAt, path: r.Path,
 			Partial: r.IQLostChunks > 0, IQLostChunks: r.IQLostChunks,
+			SourceID: r.SourceID,
 		}
 		if c, ok := byID[r.CallID]; ok {
 			c := c

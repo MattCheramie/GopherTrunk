@@ -59,6 +59,36 @@ function selectLastCallEnd(s: { events: { kind: string; timestamp: string }[] })
   return null;
 }
 
+// callRadios lists the radios to show for a call: every radio heard in it
+// when the daemon reports more than one (talkers), else its one source.
+// source_id alone is the call's LAST talker, so showing only that hid the
+// radio that opened a call another radio answered (#1379).
+function callRadios(r: CallRow): number[] {
+  if (r.talkers && r.talkers.length > 0) return r.talkers;
+  return r.source_id ? [r.source_id] : [];
+}
+
+// CallRadios renders a call's radios in the order they spoke, each a link to
+// its Radio IDs page. The row carries an alias only for its last talker
+// (source_alpha); the others show their ID.
+function CallRadios({ call, className }: { call: CallRow; className?: string }) {
+  const radios = callRadios(call);
+  return (
+    <>
+      {radios.map((rid, i) => (
+        <span key={rid}>
+          {i > 0 && <span className="text-muted">, </span>}
+          <RIDLink
+            rid={rid}
+            alias={rid === call.source_id ? call.source_alpha : undefined}
+            className={className}
+          />
+        </span>
+      ))}
+    </>
+  );
+}
+
 // History reads /api/v1/calls/history with the same filter shape the
 // daemon accepts: limit, system, group_id, source_id. The response envelope is
 // {"calls":[...]} — reading any other key yields a silently empty table.
@@ -271,12 +301,8 @@ export function History() {
         key: "source",
         header: "Source",
         render: (r) =>
-          r.source_id ? (
-            <RIDLink
-              rid={r.source_id}
-              alias={r.source_alpha}
-              className="text-xs text-accent hover:underline"
-            />
+          callRadios(r).length > 0 ? (
+            <CallRadios call={r} className="text-xs text-accent hover:underline" />
           ) : (
             <span className="text-muted text-xs">—</span>
           ),
@@ -526,7 +552,7 @@ export function History() {
         pageSize={50}
         searchable
         searchAccessor={(r) =>
-          [r.group_id, r.talkgroup_alpha, r.system, r.source_id]
+          [r.group_id, r.talkgroup_alpha, r.system, ...callRadios(r)]
             .filter(Boolean)
             .join(" ")
         }
@@ -545,13 +571,9 @@ export function History() {
             <DetailField label="Row ID" mono value={selected.id} />
             <DetailField label="TGID" mono value={selected.group_id} />
             <DetailField
-              label="Source"
+              label={callRadios(selected).length > 1 ? "Sources" : "Source"}
               mono
-              value={
-                selected.source_id ? (
-                  <RIDLink rid={selected.source_id} alias={selected.source_alpha} />
-                ) : null
-              }
+              value={callRadios(selected).length > 0 ? <CallRadios call={selected} /> : null}
             />
             <DetailField
               label="Frequency"
