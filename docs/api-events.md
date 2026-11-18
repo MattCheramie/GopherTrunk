@@ -232,6 +232,7 @@ GET /api/v1/recordings?after=<id>&limit=<n>      (limit default 100, max 1000)
       "ended_at": "2026-10-25T14:02:15.880Z",
       "format": "wav",
       "partial": false,
+      "source_id": 3200460,
       "audio_url": "/api/v1/recordings/4182/audio",
       "call": { "id": 90311, "system": "scanner", "protocol": "fm-conv", "frequency_hz": 460100000,
                 "device_serial": "wb:00000008:conv:460100000", "talkgroup_alpha": "Fire Dispatch",
@@ -252,6 +253,14 @@ GET /api/v1/recordings?after=<id>&limit=<n>      (limit default 100, max 1000)
   entries with the same ids, so duplicates are recognisable: key on `id`.
 - A call recorded in per-transmission grouping has one entry per file
   (`segment` 0, 1, …), all with the same `call_id`.
+- `source_id` is the radio heard in **that file**; it is omitted when the
+  radio never resolved. Use it, not `call.source_id`, to say who is speaking:
+  the call row's source is the call's **last** talker, so when a second radio
+  answers inside the hangtime, both files share a call row that names the
+  second one. `call.talkers` lists every radio of such a call in the order
+  each first spoke. A recording made before the field existed has no `source_id`. If an
+  over's own radio ID never decodes, its file keeps the previous over's
+  radio, as its file name and sidecar do.
 - `audio_url` serves the **original file** as recorded (WAV, FLAC or MP3,
   with range support); `/api/v1/calls/{id}/audio` instead joins a call's
   segments into one WAV for playback.
