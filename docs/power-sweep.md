@@ -102,6 +102,8 @@ your dongle runs that rate without dropping samples.
 | `-crop` | `0.25` | Fraction of each FFT dropped at the edges, where the tuner's filter rolls off. |
 | `-settle` | 50 ms local, 250 ms rtl_tcp / iio | Samples discarded after each retune. |
 | `-keep-dc` | off | Leave the tuner's DC spike at the centre of every hop in the output (see below). |
+| `-fill-dc` | off | When part of that spike is still at a hop's centre after the removal, fill those three bins in from the bins beside them, as rtl_power does. It also hides a narrowband signal that sits exactly on a hop's centre (see below). |
+| `-dc-report` | off | Print, on stderr, what each hop measured of the tuner's DC spike. |
 | `-bias-tee` | off | Power an LNA through the antenna port. |
 
 Each sweep's lines are flushed as soon as the sweep finishes, so you can
@@ -146,6 +148,43 @@ Each sweep's lines are flushed as soon as the sweep finishes, so you can
   an `-i` so short that a hop averages a single FFT, the three centre bins
   are filled in from the bins beside them, as rtl_power does with its DC
   bin.
+- **If the spike is still there, the tuner's offset moved.** The removal
+  takes out what holds still from one FFT to the next. On a tuner whose
+  offset jumps while a hop is being measured, part of the spike stays. An
+  AGC that keeps changing its gain does this: a PlutoSky in #1230 came out
+  clean in hops with one strong station and kept the whole spike, 7 dB
+  over the noise, in a hop with two equally strong ones. That it was the
+  AGC is inferred from the sweep, not confirmed on the board.
+
+  `power` tells you when it happens, once per run:
+
+  ```
+  power: note — sweep 1: after the tuner's DC line was removed, a line of its shape is still at the centre of 1 of 6 hops (100.6000 MHz; up to 7.3 dB over the bins beside it). …
+  ```
+
+  There are two ways to get rid of it:
+
+  - **A fixed gain**, for example `-gain 400`. The gain no longer moves, so
+    the offset holds still and the removal takes all of it. This also makes
+    the hops comparable with each other: with `auto`, every hop is measured
+    at whatever gain the AGC chose for it.
+  - **`-fill-dc`.** The three bins at the centre of such a hop are filled in
+    from the bins beside them, as rtl_power does with its DC bin.
+
+  `-fill-dc` is not the default because it cannot tell the leftover spike
+  from a **narrowband signal that sits exactly on a hop's centre**: both are
+  narrow, both are alike from one FFT to the next, and neither turns. A
+  recording in this repository has such a signal, 12 dB over the bins beside
+  it, and `-fill-dc` erases it. A carrier off the centre turns from one FFT
+  to the next and is left alone: from about a hundredth of a bin for a
+  steady carrier on a hop of a few thousand FFTs, and from about a tenth of
+  a bin for a modulated one. Anything wider than the spike, such as a
+  broadcast station, is left alone too.
+
+  `-dc-report` prints one line per hop with the measurements: how much held
+  still and was removed, how far the centre still stands over the bins
+  beside it, and whether what is left turns. Post those lines with a report
+  and the cause can usually be read from them.
 - **A slow CPU averages fewer samples; it doesn't slow the sweeps.** Each hop
   gets its share of the interval. If the FFT can't keep up with the sample
   rate, as on older phones, the hop stops at that time limit with whatever

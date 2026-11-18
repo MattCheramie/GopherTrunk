@@ -1089,8 +1089,9 @@ confirmation before any close-as-completed.
   decoder shed at its decode queue (`decodeDrops`), and the TETRA demux opens through `streamWithLoss`;
   each call's reader is the demux's count minus its value at the call's start (`followTETRASameCarrier`).
 - **A recording file's talker is the session grant's source AT FINALIZE, never the session's
-  first `srcs` entry (#1379).** `call_log.source_id` is the call's LAST talker (`UpdateSource`
-  as each radio keys), so every per-over file of a multi-radio call was attributed to it;
+  first `srcs` entry (#1379).** `call_log.source_id` is the call's LAST talker (the engine's
+  grant follows each radio that keys, and the row takes it at call END, not from the source
+  updates between: a test that reads it must wait for the end, not for the last recording), so every per-over file of a multi-radio call was attributed to it;
   `call_recordings.source_id` now stores `CallComplete.Grant.SourceID`. That is the over's
   radio because the roll precedes the next talker's update (P25 Phase 1: terminator →
   `onTransmissionEnd`; TETRA: the engine emits `KindCallSegment` before the source update).
@@ -2691,6 +2692,28 @@ confirmation before any close-as-completed.
   hop edge crept a hertz. NOT checked on a PlutoSky (#764/#771). The "FFT speed not verified on an
   ARM phone" line in the Android note below is out of date: docs/power-sweep.md records the S5
   keeping up at 2.4 MS/s.
+- **`power` (#1230, 18 Nov retest on v1.4.1): the DC line survived in the busy hops, and the
+  fix for that is NOT an automatic fill.** Per hop of the reporter's CSV: clean where one
+  station dominates (−17 / −19 dBFS, the next 7 dB or more down), the whole line left (7.3 dB over the bins
+  beside it, shape 0.27 where an offset through the Hann window gives 0.25, its old level) where two are nearly equal (−24 / −25 dBFS). So
+  the offset moved inside the 16-frame blocks there. An AGC hunting under a beating envelope
+  fits; that cause is INFERRED from the CSV, not seen on the board. The frame is the finest time
+  step a bin has, so a moving line cannot be subtracted, only recognised: over a flat floor, in
+  the offset's shape (bins ±1 at a quarter of the centre's excess), and not turning (lag-one
+  product of the centre bin's block residuals; a carrier f Hz off turns 2π·f·n/rate a frame).
+  Read the capture before trusting that: `samples/mmr` is centred on a C4FM channel (the CC's
+  spectrum, 19 dB weaker) that is all three at 2.3 kHz bins, and a fill erased it
+  (`TestRealAirChannelOnTheCentreIsWhyFillIsNotTheDefault`). A narrowband signal on a hop's
+  centre IS a moving offset as far as three bins can tell. So the default CSV is unchanged:
+  `Row.DC` reports (`DCLineLeft` / `DCCarrier` / `DCSignal`), `power` notes it once per run,
+  `-fill-dc` fills in on request, `-dc-report` prints each hop's numbers (the no-capture
+  instrument), and a fixed `-gain` is the remedy that costs nothing. Two estimator traps on the
+  way: subtracting an unwindowed per-frame mean would leak strong off-centre stations into the
+  centre through the rectangular window's sidelobes (worked out on paper, so not built), and
+  taking a block's mean out makes unrelated frames look opposed (−|r|²/(m−1) a pair: it read as
+  "turning" on an incoherent line at 44k frames until corrected). A strong
+  jumping line also spreads 1–3.5 % of itself to bins ±2 (`dcSkirtMax`). If `-gain` confirms
+  the AGC, the real fix is holding the gain per hop in the iio driver. Not run on a PlutoSky.
 - **A detector threshold in radians-per-sample is a SAMPLE-RATE trap (#1184 CTCSS).** The
   conventional scanner's CTCSS gate never opened on air: its Goertzel threshold was calibrated
   on 48 kHz unit tests, but the scanner feeds 2.4 MS/s, where the same deviation is 50x smaller

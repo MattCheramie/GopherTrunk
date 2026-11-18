@@ -8,6 +8,28 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **`power`: a tuner's DC spike that survives the removal is reported, and
+  `-fill-dc` takes it out (#1230).** v1.4.1 removes the spike at the centre
+  of every hop by taking out what holds still from one FFT to the next. On
+  the reporter's PlutoSky retest that cleared the hops with one strong
+  station and left the whole spike, 7 dB over the noise, in a hop with two
+  equally strong ones, and `power` said nothing: the offset had moved
+  during the hop, as it does when an AGC keeps changing its gain (inferred
+  from the sweep, not confirmed on the board).
+  - `power` now prints a note, once per run, naming the hops where a spike
+    of the tuner's shape is left and the two remedies.
+  - **A fixed `-gain`** keeps the offset still, so the removal takes all of
+    it.
+  - **`-fill-dc`** (new) fills the three centre bins of such a hop in from
+    the bins beside them, as rtl_power does. It is off by default because it
+    also hides a narrowband signal that sits exactly on a hop's centre; a
+    real capture in the repository has one, and a test pins that it is kept
+    by default.
+  - **`-dc-report`** (new) prints what each hop measured, so a field run
+    shows whether an offset moved or a carrier sits near the centre.
+
+  The default CSV is unchanged. Checked on a modelled jumping offset and on
+  real RTL-SDR noise; not checked on a PlutoSky.
 - **Every recording of a multi-radio call was attributed to the call's last
   radio (#1379).** A reply that keys inside `voice_hangtime_ms` stays in the
   same call, and with `voice_call_grouping: transmission` each over gets its
