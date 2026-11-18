@@ -256,6 +256,11 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		}
 	}
 	rx := p25p2rx.New(rxOpts)
+	// The chain starts at the grant, at an arbitrary sub-symbol phase of a
+	// carrier that is already up, and MAC_PTT (the call's source radio) rides
+	// the key-up bursts: seed the timing loop feed-forward instead of waiting
+	// up to a second for it to pull in (issue #1364).
+	rx.ArmTimingAcquisition()
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()

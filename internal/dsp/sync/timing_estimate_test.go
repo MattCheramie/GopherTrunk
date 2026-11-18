@@ -172,3 +172,147 @@ func TestSetPhaseSeedsNextInstant(t *testing.T) {
 		t.Fatalf("zero mu=%v want 10", got)
 	}
 }
+
+// matchedPSK renders random π/4-DQPSK-style unit symbols through an RRC pulse
+// and back through the matched RRC filter, with optional complex noise and a
+// carrier offset, and returns the stream and the index of its first symbol
+// instant.
+func matchedPSK(rng *rand.Rand, symbols, sps int, noise, offsetCyclesPerSample float64) (mf []complex64, instant int) {
+	taps := filter.RootRaisedCosine(sps, 8, 0.20)
+	up := make([]complex64, symbols*sps)
+	phase := 0.0
+	for k := 0; k < symbols; k++ {
+		phase += math.Pi/4 + float64(rng.Intn(4))*math.Pi/2
+		up[k*sps] = complex64(complex(math.Cos(phase), math.Sin(phase)))
+	}
+	shape := func(x []complex64) []complex64 {
+		y := make([]complex64, len(x))
+		for n := range y {
+			var acc complex64
+			for t, h := range taps {
+				if i := n - t; i >= 0 {
+					acc += complex(h, 0) * x[i]
+				}
+			}
+			y[n] = acc
+		}
+		return y
+	}
+	sig := shape(up)
+	var e float64
+	for _, v := range sig {
+		e += float64(real(v)*real(v) + imag(v)*imag(v))
+	}
+	rms := math.Sqrt(e / float64(len(sig)) / 2)
+	for i := range sig {
+		s, c := math.Sincos(2 * math.Pi * offsetCyclesPerSample * float64(i))
+		sig[i] = sig[i]*complex64(complex(c, s)) +
+			complex64(complex(rng.NormFloat64()*noise*rms, rng.NormFloat64()*noise*rms))
+	}
+	return shape(sig), len(taps) - 1
+}
+
+// TestEstimateSymbolPhaseCMRecoversKnownInstants: over hundreds of 96-symbol
+// windows at every sub-symbol offset, clean and at ~10 dB SNR with a 150 Hz
+// carrier offset at 48 kHz (the statistic reads only |y|), the estimate must
+// point at the true symbol instants to within one sample.
+func TestEstimateSymbolPhaseCMRecoversKnownInstants(t *testing.T) {
+	const sps = 8
+	for _, noise := range []float64{0, 0.3} {
+		rng := rand.New(rand.NewSource(1364))
+		mf, instant := matchedPSK(rng, 3000, sps, noise, 150.0/48000)
+		const L = 96 * sps
+		var within, total, declined int
+		for start := 200; start+L < len(mf); start += 37 {
+			tau, ok := EstimateSymbolPhaseCM(mf[start:start+L], sps)
+			total++
+			if !ok {
+				declined++
+				continue
+			}
+			want := math.Mod(float64(instant-start)+100*sps, sps)
+			d := math.Abs(tau - want)
+			if d > sps/2 {
+				d = sps - d
+			}
+			if d <= 1.0 {
+				within++
+			} else if d > 2.5 {
+				t.Errorf("noise=%.1f start=%d: tau=%.2f want %.2f (err %.2f samples)", noise, start, tau, want, d)
+			}
+		}
+		t.Logf("noise=%.1f: %d of %d windows within 1 sample, %d declined", noise, within, total, declined)
+		if within*100 < total*95 {
+			t.Errorf("noise=%.1f: only %d of %d windows within 1 sample", noise, within, total)
+		}
+		if declined*100 > total*3 {
+			t.Errorf("noise=%.1f: %d of %d windows declined", noise, declined, total)
+		}
+	}
+}
+
+// TestEstimateSymbolPhaseCMRejectsNoise: band-limited complex Gaussian noise
+// has E[|y|⁴]/E[|y|²]² ≈ 2 at every phase, so the estimator must decline
+// rather than return a random phase; so must a window too short to trust.
+func TestEstimateSymbolPhaseCMRejectsNoise(t *testing.T) {
+	rng := rand.New(rand.NewSource(7))
+	taps := filter.RootRaisedCosine(8, 8, 0.20)
+	rejected := 0
+	const trials = 200
+	for trial := 0; trial < trials; trial++ {
+		raw := make([]complex64, 768+len(taps))
+		for i := range raw {
+			raw[i] = complex64(complex(rng.NormFloat64(), rng.NormFloat64()))
+		}
+		nb := make([]complex64, 768)
+		for n := range nb {
+			var acc complex64
+			for t, h := range taps {
+				acc += complex(h, 0) * raw[n+len(taps)-1-t]
+			}
+			nb[n] = acc
+		}
+		if _, ok := EstimateSymbolPhaseCM(nb, 8); !ok {
+			rejected++
+		}
+	}
+	if rejected < trials*99/100 {
+		t.Fatalf("only %d of %d noise windows rejected", rejected, trials)
+	}
+	if _, ok := EstimateSymbolPhaseCM(make([]complex64, 200), 8); ok {
+		t.Fatal("short window accepted")
+	}
+}
+
+// TestGardnerSetPhaseSeedsNextInstant: after SetPhase(mu) the Gardner loop
+// emits its next symbol exactly mu samples after the last processed sample,
+// with the same wrapping as MuellerMuller.SetPhase.
+func TestGardnerSetPhaseSeedsNextInstant(t *testing.T) {
+	g := NewGardner(8, 0.005)
+	g.Process(nil, make([]complex64, 21))
+	g.SetPhase(3.5)
+	if got := g.Mu(); got != 3.5 {
+		t.Fatalf("mu=%v", got)
+	}
+	ramp := make([]complex64, 30)
+	for i := range ramp {
+		ramp[i] = complex(float32(i), 0)
+	}
+	out := g.Process(nil, ramp)
+	if len(out) == 0 {
+		t.Fatal("no symbol")
+	}
+	// Instant 3.5 samples past the previous chunk's last sample: between
+	// ramp[2] (=2) and ramp[3] (=3) at frac 0.5 → 2.5.
+	if math.Abs(float64(real(out[0]))-2.5) > 1e-5 {
+		t.Fatalf("first symbol = %v, want 2.5", out[0])
+	}
+	g.SetPhase(-3)
+	if got := g.Mu(); got != 5 {
+		t.Fatalf("wrapped mu=%v want 5", got)
+	}
+	g.SetPhase(0)
+	if got := g.Mu(); got != 8 {
+		t.Fatalf("zero mu=%v want 8", got)
+	}
+}

@@ -262,6 +262,10 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 		rxOpts.DibitSink = drainBursts
 	}
 	rx := p25p2rx.New(rxOpts)
+	// Started at a grant on a carrier that is already up: seed the timing
+	// loop feed-forward rather than let a bad start phase cost up to a
+	// second of the call's signalling (issue #1364).
+	rx.ArmTimingAcquisition()
 
 	m.log.Info("sigfollow: p25p2 signalling follow started",
 		"system", g.System, "serial", vt.Serial(),
