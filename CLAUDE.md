@@ -1289,8 +1289,9 @@ confirmation before any close-as-completed.
   `sdr.input_sample_rate` (the systemwide pre-decimator) was missing from config.example.yaml (the 4 Sep
   rule) — added. Pi 4 confirmed (28 Oct): 2 cells 513 → 7 drops/10 min. The 4-cell residual (~9/min, cores mostly idle) was the depth-8
   class AGAIN, in the Airspy driver: `out` held 8 URBs of 16 KiB = ~11 ms at 3 MS/s; both stream channels are now
-  time-sized (400 ms, `streamDepthFor`, pinned by `stream_depth_test.go`). HackRF and AirspyHF still have a fixed
-  8-deep `out` AND a BLOCKING send in onPacket (the shape the Airspy reaper-freeze fix removed, `airspy_overrun_test.go`) — not changed, separate fix.
+  time-sized (400 ms, `streamDepthFor`, pinned by `stream_depth_test.go`). HackRF and AirspyHF had a fixed 8-deep `out`
+  AND a BLOCKING send in onPacket (the shape the Airspy reaper-freeze fix removed); fixed the same way in #1375
+  (`stream_overrun_test.go` in each driver). Every USB SDR driver now sizes its stream by time and sheds + counts.
   The reporter's 1 Nov "still dropping on v1.3.6" (40–97/10 min, spread evenly, 0 cells locked, 57 % idle) tested a
   build WITHOUT that fix: v1.3.6 was cut 29 Oct, #1335 merged 31 Oct. Before reading a field result as "the fix didn't
   work", run `git merge-base --is-ancestor <fix> <tag>` on the build they ran. `TestEngineTETRAPumpStalls`
@@ -2558,8 +2559,8 @@ confirmation before any close-as-completed.
   (unreflected 0x1021, stored high byte first), the voice bit schedule (a sequential placeholder),
   AND the voice Golay: `framing.GolayDecode23_12` is a DIFFERENT (23,12) Golay code from mbelib's,
   so it corrupted even a clean frame — D-STAR now uses DMR's mbelib Golay
-  (`dmrvoice.GolayDecode2312`). **dPMR's `voice_ambe.go` still calls `framing.GolayDecode23_12`:
-  the same defect, unfixed.** Real format: sync patterns are MMDVM's RX words in time order
+  (`dmrvoice.GolayDecode2312`). dPMR's `voice_ambe.go` had the same defect; fixed in #1376 (#1374),
+  pinned by MMDVMHost's DMR_SILENCE sub-vectors; its on-air interleave is still a placeholder. Real format: sync patterns are MMDVM's RX words in time order
   (frame `0x557650` = preamble tail + `111011001010000` + the four zero bits before the FEC
   section; slow-data `0xAAB468`; end `0xAAAAAAAA135E`); header = 41 bytes LSB first + 2 tail bits
   → K=3 (g1 = d⊕d₋₁⊕d₋₂ first, g0 = d⊕d₋₂) → rows of 24 read column by column (first 12 columns
