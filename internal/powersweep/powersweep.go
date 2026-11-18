@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/cmplx"
 	"strconv"
 	"strings"
 	"time"
@@ -182,6 +183,75 @@ type Row struct {
 	StepHz  float64
 	Samples int
 	DB      []float32
+	// DC is what the hop's centre bins showed of the tuner's own DC line
+	// (zero when the line was kept, or the hop's centre is not in DB).
+	DC DCLine
+}
+
+// DCFinding is what a hop's centre bins showed once the part of the
+// tuner's DC line that stood still had been removed.
+type DCFinding int
+
+const (
+	// DCClean: nothing stands over the bins beside the centre.
+	DCClean DCFinding = iota
+	// DCLineLeft: a line with the shape of the tuner's own is left, on a
+	// flat floor, and it does not turn. Either the tuner's offset moved
+	// during the hop faster than the removal follows, or a narrowband
+	// signal sits on the hop's centre (to within about a hundredth of a
+	// bin for a steady carrier, a tenth for a modulated one, more on a
+	// short hop). The spectrum cannot tell the two apart;
+	// Integration.FillDC decides what to do with it.
+	DCLineLeft
+	// DCCarrier: what is left turns from frame to frame, as a carrier off
+	// the hop's centre does and the tuner's line cannot. It is a signal.
+	DCCarrier
+	// DCSignal: what is left is wider than the tuner's line, or sits on a
+	// slope (a station through the hop's centre). It is a signal.
+	DCSignal
+)
+
+func (f DCFinding) String() string {
+	switch f {
+	case DCLineLeft:
+		return "a line like the tuner's is left"
+	case DCCarrier:
+		return "a carrier off the centre (it turns)"
+	case DCSignal:
+		return "a signal (wider than the tuner's line, or on a slope)"
+	}
+	return "clean"
+}
+
+// DCLine is the tuner's DC line as one hop saw it. See accumulator.
+type DCLine struct {
+	// Measured is false when the hop could not look (the line was kept, the
+	// hop had one frame, or the FFT is too small to have bins beside the
+	// centre).
+	Measured bool
+	// StillDB is the centre-bin power that stood still within blocks of
+	// frames and was removed, in dBFS (−Inf when there was none): the line
+	// while the tuner's offset holds.
+	StillDB float64
+	// LeftDB is how far the centre bin then stood over the bins two either
+	// side of it, in dB.
+	LeftDB float64
+	// Shape is the excess of the bins one either side of the centre over
+	// that of the centre bin: 0.25 for an offset through the Hann window.
+	// Zero when nothing was left.
+	Shape float64
+	// Coherence and PhaseRad are the lag-one correlation of the centre
+	// bin's frames, each less its block's mean: how alike consecutive
+	// frames of what moved are (0 = unrelated, 1 = equal), and how far it
+	// turns from one frame to the next. An offset that jumps now and then
+	// is alike between jumps and has phase 0; a carrier f Hz off the
+	// centre turns 2π·f·FFTSize/rate.
+	Coherence float64
+	PhaseRad  float64
+	Finding   DCFinding
+	// Filled is set when the three centre bins were filled in from the
+	// bins two either side (Finding is DCLineLeft and FillDC was asked).
+	Filled bool
 }
 
 // captureBlock bounds how many samples one Capture call asks for, so a long
@@ -206,6 +276,13 @@ type Integration struct {
 	// KeepDC leaves the tuner's own DC line in each hop's centre bins
 	// (see accumulator). The default removes it.
 	KeepDC bool
+	// FillDC fills in the three centre bins of a hop from the bins beside
+	// them when a line like the tuner's is left there after the removal
+	// (Row.DC.Finding == DCLineLeft): the tuner's offset moved during the
+	// hop. It also hides a narrowband signal that sits exactly on a hop's
+	// centre, which looks the same; without it such a line is only
+	// reported.
+	FillDC bool
 }
 
 // Sweep runs one pass of p over src, integrating each hop as in says. stamp
@@ -213,6 +290,7 @@ type Integration struct {
 func Sweep(ctx context.Context, src Source, p Plan, in Integration, stamp time.Time) ([]Row, error) {
 	acc := newAccumulator(p.FFTSize)
 	acc.keepDC = in.KeepDC
+	acc.fill = in.FillDC
 	frames := (in.Samples + p.FFTSize - 1) / p.FFTSize
 	if frames < 1 {
 		frames = 1
@@ -246,14 +324,20 @@ func Sweep(ctx context.Context, src Source, p Plan, in Integration, stamp time.T
 				break
 			}
 		}
-		rows = append(rows, Row{
+		row := Row{
 			Time:    stamp,
 			LowHz:   h.LowHz,
 			HighHz:  h.LowHz + float64(h.Bins)*p.BinHz,
 			StepHz:  p.BinHz,
 			Samples: acc.frames * p.FFTSize,
 			DB:      acc.dB(p.FirstBin, h.Bins),
-		})
+		}
+		// The centre bins are FFT-shifted indices n/2−1..n/2+1; a short last
+		// hop may end before them.
+		if p.FirstBin+h.Bins > p.FFTSize/2+1 {
+			row.DC = acc.line
+		}
+		rows = append(rows, row)
 	}
 	return rows, nil
 }
@@ -287,6 +371,43 @@ func Sweep(ctx context.Context, src Source, p Plan, in Integration, stamp time.T
 // with the line is anything else standing still for a block: an unmodulated
 // carrier within about a sixteenth of a bin of the hop's centre. Blocks,
 // not the whole hop, because the offset moves when the tuner's gain does.
+//
+// # When the line does not stand still
+//
+// Blocks follow an offset that moves now and then. They do not follow one
+// that moves several times a block, and on the #1230 PlutoSky that is what
+// happened in the busy hops: the v1.4.1 retest still had the line, in its
+// exact Hann shape and at its old level, in a hop with two stations of
+// nearly equal strength, while hops with one dominant station came out
+// clean. (An AGC holds still under one constant-envelope carrier and hunts
+// under the beating of several; each gain step moves the offset. That
+// cause is inferred from the CSV, not seen on the board.) The frame is the
+// finest time step a bin has, and a per-frame estimate of the offset would
+// use up the centre bin itself, so what is left of the line cannot be
+// subtracted. It can be recognised, by three things at once:
+//
+//   - it stands over the bins two either side of the centre, which are
+//     level with the bins beyond them (a flat floor, not a station), bar
+//     the few percent of itself a jumping offset spreads that far;
+//   - it has the offset's shape: the bins one either side carry a quarter
+//     of the centre bin's excess;
+//   - it does not turn. A carrier f Hz off the hop's centre advances
+//     2π·f·n/rate from one frame to the next; the tuner's offset, however
+//     it jumps about, has no direction to turn in. The lag-one product of
+//     the centre bin's frames (each less its block's mean, so the part
+//     that stood still does not vote) shows which.
+//
+// That is reported in the row's DCLine, and is all that happens by default,
+// because a narrowband signal that sits on the hop's centre looks the
+// same: its frames are alike from one to the next, and with a receiver on
+// frequency to a hundredth of a bin it does not turn either. A real case
+// is in the repository: the samples/mmr captures are centred on a
+// narrowband channel (a C4FM carrier with the spectrum of the site's P25
+// control channel, 19 dB weaker), which is line-shaped at 2.3 kHz bins and
+// 12 dB over the bins beside it. Filling in whatever is left would erase
+// it. Integration.FillDC asks for it anyway: the three centre bins are
+// then filled in from the bins two either side, as rtl_power does with its
+// DC bin.
 type accumulator struct {
 	n      int
 	plan   *fft.Radix2
@@ -297,8 +418,10 @@ type accumulator struct {
 	sum    []float64 // FFT-shifted linear power
 	frames int
 
-	// keepDC switches the DC line removal off.
+	// keepDC switches the DC line removal off. fill fills in the centre
+	// bins when a line like the tuner's is left after it.
 	keepDC bool
+	fill   bool
 	// The centre bins (FFT bins n−1, 0, 1): the current block's complex
 	// and power sums, and the finished blocks' line-free power and frames.
 	dcSum    [3]complex128
@@ -306,10 +429,57 @@ type accumulator struct {
 	dcN      int
 	dcOut    [3]float64
 	dcFrames int
+
+	// The centre bin's frames of the current block, and over the finished
+	// blocks the lag-one products p = r[t]·conj(r[t−1]) of what moved in
+	// them (r = a frame less its block's mean): Σp, Σ|p|² and their count.
+	dcBin0 [dcBlock]complex128
+	lagSum complex128
+	lagSq  float64
+	lagN   int
+
+	// line is the last dB call's report on the hop's DC line.
+	line DCLine
 }
 
 // dcBlock is how many FFT frames the DC line is taken to stand still for.
 const dcBlock = 16
+
+const (
+	// dcLeftMin is how far the centre bin must stand over the bins beside
+	// it, as a fraction of them, before a line counts as left (1 dB): under
+	// that it does not read as a carrier, and a tuner's own response can
+	// ripple that much at its centre. A hop of few frames needs more, see
+	// dcLeftSigmas.
+	dcLeftMin = 0.26
+	// dcLeftSigmas scales that margin on short hops: a bin averaged over f
+	// frames scatters about 1/√f of its level, and the difference of the
+	// centre bin and the pair beside it about 1.25 times that.
+	dcLeftSigmas = 5.0
+	// dcFlatTol is how far the bins two either side of the centre may
+	// differ from the four beyond them for the floor to count as flat
+	// (0.5 dB; 3 standard deviations of that difference on a short hop).
+	dcFlatTol    = 0.12
+	dcFlatSigmas = 3.0
+	// dcSkirtMax is how much of the line's own power the bins two either
+	// side may carry on top of that. An offset that jumps inside a frame
+	// spreads a little: measured on a jumping offset, 1 to 3.5 % of the
+	// line lands there. A station through the hop's centre puts 20 % and
+	// more of its peak there, which is what tells it from a line.
+	dcSkirtMax = 0.06
+	// dcShapeMin / dcShapeMax bound the offset's shape: the bins one either
+	// side of the centre carry a quarter of its excess (Hann), give or take
+	// what the averaging scatters at the smallest line that counts.
+	dcShapeMin = 0.05
+	dcShapeMax = 0.50
+	// dcTurnMinRad is the smallest turn per frame taken as a carrier's: a
+	// hundredth of a bin off the hop's centre, about. Below it a carrier
+	// and the tuner's offset are not told apart.
+	dcTurnMinRad = 0.05
+	// dcTurnSigmas is how many standard deviations of the lag-one product's
+	// scatter its turning must clear.
+	dcTurnSigmas = 4.0
+)
 
 func newAccumulator(n int) *accumulator {
 	hann := window.Hann(n)
@@ -339,6 +509,8 @@ func (a *accumulator) reset() {
 	a.frames = 0
 	a.dcSum, a.dcPow, a.dcN = [3]complex128{}, [3]float64{}, 0
 	a.dcOut, a.dcFrames = [3]float64{}, 0
+	a.lagSum, a.lagSq, a.lagN = 0, 0, 0
+	a.line = DCLine{}
 }
 
 // closeDCBlock folds the current block of the centre bins into dcOut,
@@ -354,6 +526,23 @@ func (a *accumulator) closeDCBlock() {
 			}
 		}
 		a.dcFrames += a.dcN
+		// What moved in the centre bin, frame against the frame before.
+		// Taking the block's mean out makes unrelated frames look slightly
+		// opposed (each pair by −|r|²/(m−1) on average); the block's mean
+		// |r|² puts that back, so noise sums to nothing.
+		mean := a.dcSum[1] / complex(m, 0)
+		prev := a.dcBin0[0] - mean
+		pow := real(prev)*real(prev) + imag(prev)*imag(prev)
+		for _, x := range a.dcBin0[1:a.dcN] {
+			r := x - mean
+			p := r * cmplx.Conj(prev)
+			a.lagSum += p
+			a.lagSq += real(p)*real(p) + imag(p)*imag(p)
+			a.lagN++
+			pow += real(r)*real(r) + imag(r)*imag(r)
+			prev = r
+		}
+		a.lagSum += complex(pow/m, 0)
 	}
 	a.dcSum, a.dcPow, a.dcN = [3]complex128{}, [3]float64{}, 0
 }
@@ -387,6 +576,7 @@ func (a *accumulator) add(iq []complex64) {
 				a.dcSum[i] += v
 				a.dcPow[i] += (real(v)*real(v) + imag(v)*imag(v)) * a.norm
 			}
+			a.dcBin0[a.dcN] = complex128(buf[0])
 			if a.dcN++; a.dcN == dcBlock {
 				a.closeDCBlock()
 			}
@@ -414,13 +604,82 @@ func (a *accumulator) centrePower() (p [3]float64, ok bool) {
 	return [3]float64{side, side, side}, true
 }
 
+// settleCentre looks at what the block removal left in the three centre
+// bins (centre, their line-free power): see "When the line does not stand
+// still" on accumulator. It returns the powers to report (filled in when
+// a line like the tuner's is left and fill is set) and the hop's DCLine.
+func (a *accumulator) settleCentre(centre [3]float64) ([3]float64, DCLine) {
+	half := a.n / 2
+	if a.dcFrames == 0 || half < 4 {
+		return centre, DCLine{}
+	}
+	frames := float64(a.frames)
+	line := DCLine{Measured: true, StillDB: math.Inf(-1), LeftDB: math.Inf(-1)}
+	if still := a.sum[half]/frames - centre[1]; still > 0 {
+		line.StillDB = 10 * math.Log10(still)
+	}
+	if a.lagN > 0 && a.lagSq > 0 {
+		// Σ|p|² ≥ |Σp|²/N, with equality when every product is the same.
+		line.Coherence = math.Min(cmplx.Abs(a.lagSum)/math.Sqrt(a.lagSq*float64(a.lagN)), 1)
+		line.PhaseRad = cmplx.Phase(a.lagSum)
+	}
+	beside := (a.sum[half-2] + a.sum[half+2]) / 2 / frames
+	beyond := (a.sum[half-4] + a.sum[half-3] + a.sum[half+3] + a.sum[half+4]) / 4 / frames
+	if beside <= 0 || beyond <= 0 {
+		return centre, line
+	}
+	line.LeftDB = 10 * math.Log10(math.Max(centre[1], 1e-30)/beside)
+	scatter := 1 / math.Sqrt(float64(a.dcFrames))
+	left := centre[1] - beside
+	if left <= beside*math.Max(dcLeftMin, dcLeftSigmas*scatter) {
+		return centre, line
+	}
+	line.Shape = ((centre[0]+centre[2])/2 - beside) / left
+	flat := math.Abs(beside-beyond) <= beyond*math.Max(dcFlatTol, dcFlatSigmas*scatter)+left*dcSkirtMax
+	switch {
+	case !flat || line.Shape < dcShapeMin || line.Shape > dcShapeMax:
+		line.Finding = DCSignal
+	case a.turns():
+		line.Finding = DCCarrier
+	default:
+		line.Finding = DCLineLeft
+		if a.fill {
+			line.Filled = true
+			centre = [3]float64{beside, beside, beside}
+		}
+	}
+	return centre, line
+}
+
+// turns reports whether what moved in the centre bin turns from one frame
+// to the next, as a carrier off the hop's centre does. The lag-one products
+// scatter about their mean; their sum's component across the real axis has
+// variance ½(Σ|p|² − |Σp|²/N). The turning counts when the sum stands
+// clear of that scatter, either off the real axis by more than
+// dcTurnMinRad or on its negative half (half a turn a frame).
+func (a *accumulator) turns() bool {
+	if a.lagN < 2 {
+		return false
+	}
+	n := float64(a.lagN)
+	re, im := real(a.lagSum), imag(a.lagSum)
+	sigma := math.Sqrt(math.Max(a.lagSq-(re*re+im*im)/n, 0) / 2)
+	if re < 0 && -re > dcTurnSigmas*sigma {
+		return true
+	}
+	return math.Abs(im) > dcTurnSigmas*sigma && math.Abs(cmplx.Phase(a.lagSum)) > dcTurnMinRad
+}
+
 // dB returns the averaged power of FFT-shifted bins [first, first+n) in dBFS.
 func (a *accumulator) dB(first, n int) []float32 {
 	out := make([]float32, n)
 	var centre [3]float64
 	haveCentre := false
+	a.line = DCLine{}
 	if !a.keepDC {
-		centre, haveCentre = a.centrePower()
+		if centre, haveCentre = a.centrePower(); haveCentre {
+			centre, a.line = a.settleCentre(centre)
+		}
 	}
 	half := a.n / 2
 	for j := range out {
