@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **HackRF and AirspyHF: a decoder that fell behind stopped the radio being
+  read, and the lost IQ was never counted (#1375).** Both drivers handed each
+  USB transfer to the stream through an 8-chunk buffer and waited when it was
+  full. The USB transport only asks for the next transfer after that hand-off
+  returns, so a slow decoder stopped the reads: samples were lost at the
+  radio, and on macOS the stream could stop with no error (the fault the
+  Airspy driver had before #1335). The buffer was also small: 6.6 ms of IQ on
+  a HackRF at 10 MS/s. Both now hold 400 ms at the stream's rate, like the
+  Airspy, RTL-SDR, SoapyRemote and Pluto drivers, and shed a chunk instead of
+  waiting when even that is full. Every shed chunk is counted, so
+  `iq_underruns_total`, the "host can't keep up" warning and the partial-
+  recording marking now see it. Not checked on hardware.
 - **dPMR voice decoded every AMBE+2 frame to the wrong vocoder parameters
   (#1374).** The dPMR voice FEC corrected the C0 and C1 sub-vectors with
   `framing.GolayDecode23_12`, a different (23,12) Golay code from the
