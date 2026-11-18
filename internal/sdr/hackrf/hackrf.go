@@ -19,8 +19,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr/rtlsdr/usb"
@@ -591,6 +593,26 @@ func (d *Device) SetFPGADCBlock(enable bool) error {
 	return d.fpgaWriteRegister(gatewareRegControl, next)
 }
 
+// streamBufferLatency is how much IQ the stream channel holds at the stream's
+// rate (#1375): the value the Airspy (#1321), RTL-SDR, soapyremote and iio
+// drivers use, and iqtap's SubBufferLatency (#1242: size buffers by time, not
+// by chunk count).
+const streamBufferLatency = 400 * time.Millisecond
+
+// minStreamChanDepth is the floor for the stream channel, and its depth while
+// the rate is unknown.
+const minStreamChanDepth = 8
+
+// streamDepthFor sizes the stream channel to hold streamBufferLatency of IQ at
+// rateHz in chunks of samplesPerChunk, never fewer than minStreamChanDepth.
+func streamDepthFor(rateHz uint32, samplesPerChunk int) int {
+	if rateHz == 0 || samplesPerChunk <= 0 {
+		return minStreamChanDepth
+	}
+	depth := int(math.Ceil(streamBufferLatency.Seconds() * float64(rateHz) / float64(samplesPerChunk)))
+	return max(depth, minStreamChanDepth)
+}
+
 // StreamIQ flips the HackRF into receive mode and reaps bulk-IN URBs,
 // converting each int8 IQ pair into a complex64 sample on the returned
 // channel. Close (or ctx cancellation) stops the stream and returns
@@ -622,6 +644,7 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 	d.streaming = true
 	done := make(chan struct{})
 	d.streamDone = done
+	rate := d.sampleRate
 	d.mu.Unlock()
 
 	if err := d.setMode(transceiverModeReceive); err != nil {
@@ -632,13 +655,23 @@ func (d *Device) StreamIQ(ctx context.Context) (<-chan []complex64, error) {
 		return nil, fmt.Errorf("hackrf: set receive mode: %w", err)
 	}
 
-	out := make(chan []complex64, 8)
+	// Sized by time at the stream's rate (#1375): a 16 KiB URB is 8192 int8
+	// IQ samples, so the fixed 8-deep channel held 6.6 ms at 10 MS/s.
+	out := make(chan []complex64, streamDepthFor(rate, usb.DefaultBufferLen/2))
 
+	// onPacket must not block: the transport posts its next read only after
+	// it returns, so a blocked send stops the device being read (on macOS
+	// every reaper blocks at once and the stream wedges with no error, the
+	// Airspy freeze), and nothing counts the IQ lost meanwhile. A consumer
+	// that has fallen behind loses the chunk instead, counted by
+	// sdr.NotifyIQDrop: iq_underruns_total, the host-can't-keep-up WARN and
+	// the partial-recording marking (#1288, #1363) all read it (#1375).
 	onPacket := func(buf []byte) {
 		samples := decodeInt8IQ(buf)
 		select {
 		case out <- samples:
-		case <-ctx.Done():
+		default:
+			sdr.NotifyIQDrop(d.info)
 		}
 	}
 	// streamDead fires (exactly once, via streamDeadOnce) when the USB
