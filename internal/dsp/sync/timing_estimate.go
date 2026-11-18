@@ -81,12 +81,18 @@ func EstimateSymbolPhase(samples []float32, sps float64) (tau float64, ok bool) 
 	if bestK > maxEyeKurtosis || worstK < bestK*minEyeContrast {
 		return 0, false
 	}
-	// Parabolic refinement through the minimum and its two (circular)
-	// neighbours; the vertex offset is clamped to ±0.5 so a lopsided eye
-	// cannot push the estimate past the neighbouring integer phase.
-	km := kurt[(best+n-1)%n]
-	kp := kurt[(best+1)%n]
-	denom := km - 2*bestK + kp
+	return refinePhase(kurt[:n], best, sps), true
+}
+
+// refinePhase fits a parabola through stat's minimum at best and its two
+// (circular) neighbours and returns the vertex as a phase in [0, sps). The
+// vertex offset is clamped to ±0.5 so a lopsided eye cannot push the
+// estimate past the neighbouring integer phase.
+func refinePhase(stat []float64, best int, sps float64) float64 {
+	n := len(stat)
+	km := stat[(best+n-1)%n]
+	kp := stat[(best+1)%n]
+	denom := km - 2*stat[best] + kp
 	frac := 0.0
 	if denom > 0 {
 		frac = 0.5 * (km - kp) / denom
@@ -96,8 +102,61 @@ func EstimateSymbolPhase(samples []float32, sps float64) (tau float64, ok bool) 
 			frac = -0.5
 		}
 	}
-	tau = math.Mod(float64(best)+frac+sps, sps)
-	return tau, true
+	return math.Mod(float64(best)+frac+sps, sps)
+}
+
+// EstimateSymbolPhaseCM is EstimateSymbolPhase for a linearly modulated PSK
+// signal after its matched filter (P25 Phase 2 H-DQPSK, the π/4-DQPSK
+// family): a constant-modulus eye search. At the ISI-free decision instant
+// every sample of an RRC-matched PSK signal has the same magnitude, so the
+// normalised fourth moment E[|y|⁴]/E[|y|²]² is 1; between instants the
+// samples are ISI mixtures whose magnitude varies, and complex Gaussian
+// noise sits at 2. The phase with the lowest ratio is the symbol instant,
+// refined below one sample like EstimateSymbolPhase. The statistic depends
+// only on |y|, so it needs no carrier lock, ignores any residual frequency
+// offset, and is scale-free (no AGC needed).
+//
+// Same contract as EstimateSymbolPhase: tau in [0, sps), samples[tau + k·sps]
+// are the decision points; ok is false for a window too short, or one that
+// shows no eye (best ratio above maxCMRatio, or less than minCMContrast
+// between the best and worst phase).
+func EstimateSymbolPhaseCM(samples []complex64, sps float64) (tau float64, ok bool) {
+	n := int(sps + 0.5)
+	if n < 2 || len(samples) < minPhaseSymbols*n {
+		return 0, false
+	}
+	var ratio [64]float64
+	if n > len(ratio) {
+		return 0, false
+	}
+	best, bestR, worstR := -1, math.Inf(1), 0.0
+	for p := 0; p < n; p++ {
+		var m2, m4 float64
+		cnt := 0
+		for i := p; i < len(samples); i += n {
+			re, im := float64(real(samples[i])), float64(imag(samples[i]))
+			a := re*re + im*im
+			m2 += a
+			m4 += a * a
+			cnt++
+		}
+		if cnt < minPhaseSymbols || m2 <= 0 {
+			return 0, false
+		}
+		m2 /= float64(cnt)
+		m4 /= float64(cnt)
+		ratio[p] = m4 / (m2 * m2)
+		if ratio[p] < bestR {
+			bestR, best = ratio[p], p
+		}
+		if ratio[p] > worstR {
+			worstR = ratio[p]
+		}
+	}
+	if bestR > maxCMRatio || worstR < bestR*minCMContrast {
+		return 0, false
+	}
+	return refinePhase(ratio[:n], best, sps), true
 }
 
 const (
@@ -115,6 +174,16 @@ const (
 	// A shaped 4-level signal spans ~1.7 → ~2.4 (ratio ≥ 1.3); noise varies
 	// only by estimation error.
 	minEyeContrast = 1.12
+
+	// maxCMRatio is the best-phase E[|y|⁴]/E[|y|²]² above which
+	// EstimateSymbolPhaseCM treats the window as showing no eye. An
+	// RRC-matched PSK signal at its instant sits near 1 (noise and ISI
+	// residue raise it); complex Gaussian noise sits at 2 at every phase.
+	maxCMRatio = 1.5
+	// minCMContrast is the minimum worst/best ratio across phases for
+	// EstimateSymbolPhaseCM: off the instant the PSK magnitude varies with
+	// the neighbouring symbols, while noise varies only by estimation error.
+	minCMContrast = 1.1
 )
 
 // SetPhase seeds the loop so its next symbol instant lands mu samples after

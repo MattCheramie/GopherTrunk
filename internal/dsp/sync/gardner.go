@@ -1,5 +1,7 @@
 package sync
 
+import "math"
+
 // Gardner is a feedback symbol-timing recovery loop for complex IQ
 // signals. It's the standard non-data-aided timing detector used in
 // PSK / QAM demodulators where the symbol decisions aren't yet
@@ -242,6 +244,25 @@ func (g *Gardner) Mu() float64 { return g.mu }
 // SPS returns the loop's nominal samples per symbol. Paired with Mu so a
 // diagnostic can render mu as a fraction of the symbol period.
 func (g *Gardner) SPS() float64 { return g.sps }
+
+// SetPhase seeds the loop so its next symbol instant lands mu samples after
+// the last sample it processed (0 < mu ≤ sps; values outside are wrapped
+// into that range), and forgets the previous symbol so the first error term
+// after the seed is formed between two symbols of the new phase rather than
+// against a stale one. The look-back stash is kept: it is the real sample
+// history the next midpoint interpolates from. MuellerMuller.SetPhase's
+// contract, for a feed-forward estimate (EstimateSymbolPhaseCM); the nominal
+// sps and gain are untouched.
+func (g *Gardner) SetPhase(mu float64) {
+	mu = math.Mod(mu, g.sps)
+	if mu <= 0 {
+		mu += g.sps
+	}
+	g.mu = mu
+	g.prevSym = 0
+	g.prevMid = 0
+	g.have = false
+}
 
 // Reset clears the loop state. Call on stream re-tune so the next
 // chunk doesn't carry a stale timing estimate.

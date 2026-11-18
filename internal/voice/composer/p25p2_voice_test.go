@@ -909,3 +909,23 @@ func TestComposerP25Phase2UnknownTimeslotBindsOneChannel(t *testing.T) {
 		t.Errorf("recorded both logical channels (%d and %d frames)", a, b)
 	}
 }
+
+// TestP25P2CensusDUIDKeysAreDistinct: every DUID value gets its own census
+// key. The seven reserved values used to share "duid_reserved", so the census
+// line on real air repeated that key six times with different counts (#1364).
+func TestP25P2CensusDUIDKeysAreDistinct(t *testing.T) {
+	seen := map[string]int{}
+	for d := 0; d < 16; d++ {
+		k := p25p2CensusDUIDKey(p25p2.DUID(d))
+		if prev, dup := seen[k]; dup {
+			t.Errorf("DUID %d and %d share census key %q", prev, d, k)
+		}
+		seen[k] = d
+	}
+	if got := p25p2CensusDUIDKey(p25p2.DUIDSACCHScrambled); got != "duid_sacch-s" {
+		t.Errorf("SACCH-S key = %q, want duid_sacch-s", got)
+	}
+	if got := p25p2CensusDUIDKey(5); got != "duid_reserved_5" {
+		t.Errorf("reserved DUID 5 key = %q, want duid_reserved_5", got)
+	}
+}

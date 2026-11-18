@@ -344,6 +344,21 @@ const (
 // recognised ISCH.
 const airLockLossDibits = 2 * AirSlotsPerSuperframe * AirPacketDibits
 
+// airReanchorMisses is how many consecutive packets without a recognised
+// ISCH make the framer look ahead for an S-ISCH off its grid (issue #1364).
+// On a clean carrier every packet's ISCH is recognised, so a miss is the
+// first mark of a grid that moved: a hole in the IQ the dibit counter does
+// not see (dropped USB buffers, a lagging subscriber). Without the look-ahead
+// the framer kept cutting on the stale grid until airLockLossDibits passed,
+// ~20 packets with random DUIDs; on the real MMR hole it lost 24 of 33. One
+// miss, not two: the new grid's first S-ISCH can sit inside the packet after
+// the first miss, and waiting for a second miss skips past it to the next
+// S-ISCH pair (four garbage packets instead of one, measured). A fade that
+// leaves the grid where it was finds no off-grid S-ISCH and keeps the
+// flywheel, as before; a false off-grid match (about 2e-5 per search) is
+// undone at the next real S-ISCH.
+const airReanchorMisses = 1
+
 // AirFramer frames a Phase 2 outbound dibit stream into timeslot bursts.
 // It hunts the S-ISCH under all four constant dibit rotations (a residual
 // carrier offset near ±1500 Hz rotates the differentially decoded stream,
@@ -361,6 +376,7 @@ type AirFramer struct {
 	next     int // absolute index of the next packet to cut
 	slot     int // timeslot of the next packet; -1 = not yet named
 	lastGood int // absolute index of the last packet with a recognised ISCH
+	misses   int // consecutive packets without a recognised ISCH
 
 	sisch [4]uint64 // S-ISCH under each rotation
 }
@@ -399,6 +415,9 @@ func (f *AirFramer) Process(dibits []uint8, baseIdx int) []AirBurst {
 		if !f.locked && !f.hunt() {
 			break
 		}
+		if f.misses >= airReanchorMisses {
+			f.reanchor()
+		}
 		off := f.next - f.bufStart
 		if off+AirPacketDibits > len(f.buf) {
 			break
@@ -416,7 +435,36 @@ func (f *AirFramer) Process(dibits []uint8, baseIdx int) []AirBurst {
 }
 
 func (f *AirFramer) unlock() {
-	f.locked, f.slot = false, -1
+	f.locked, f.slot, f.misses = false, -1, 0
+}
+
+// reanchor looks through the buffered dibits for an S-ISCH that the current
+// grid and rotation would not cut, and moves the grid there. The search
+// starts inside the packet that just missed its ISCH, not after it: a hole
+// shortens the stream, so the new grid's first S-ISCH can sit inside that
+// packet (on the real MMR hole it did, 155 dibits in). Starting one dibit
+// past that packet's start keeps the bursts in stream order. The timeslot is
+// unknown until the next I-ISCH names it (at most two packets on).
+func (f *AirFramer) reanchor() {
+	next := f.next - f.bufStart
+	for i := max(next-AirPacketDibits+1, 0); i+AirISCHDibits <= len(f.buf); i++ {
+		onGrid := ((i-next)%AirPacketDibits+AirPacketDibits)%AirPacketDibits == 0
+		w := ischWordAt(f.buf[i:])
+		for r := 0; r < 4; r++ {
+			if onGrid && uint8(r) == f.rot {
+				continue // the current grid's own S-ISCH: cut will see it
+			}
+			limit := sischMaxErrs
+			if r != 0 {
+				limit = sischMaxErrsRotated
+			}
+			if bits.OnesCount64(w^f.sisch[r]) <= limit {
+				f.rot = uint8(r)
+				f.next, f.lastGood, f.slot, f.misses = f.bufStart+i, f.bufStart+i, -1, 0
+				return
+			}
+		}
+	}
 }
 
 // hunt searches the buffer for an S-ISCH and locks the grid on it.
@@ -475,9 +523,11 @@ func (f *AirFramer) cut(raw []uint8) (AirBurst, bool) {
 	w := ischWordAt(pkt)
 	if ii, _, ok := DecodeIISCH(w); ok {
 		slot = ii.Slot()
-		f.lastGood = start
+		f.lastGood, f.misses = start, 0
 	} else if bits.OnesCount64(w^SISCHSync) <= sischMaxErrs {
-		f.lastGood = start
+		f.lastGood, f.misses = start, 0
+	} else {
+		f.misses++
 	}
 	if slot < 0 {
 		return AirBurst{}, false
@@ -492,9 +542,10 @@ func (f *AirFramer) cut(raw []uint8) (AirBurst, bool) {
 	}, true
 }
 
-// trim drops buffered dibits no longer needed.
+// trim drops buffered dibits no longer needed. While locked it keeps the
+// last cut packet, which reanchor searches.
 func (f *AirFramer) trim() {
-	keep := f.next - f.bufStart
+	keep := f.next - f.bufStart - AirPacketDibits
 	if !f.locked {
 		// Keep two packets of history for hunt's look-back.
 		keep = len(f.buf) - (2*AirPacketDibits + AirISCHDibits - 1)

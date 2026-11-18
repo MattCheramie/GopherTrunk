@@ -327,6 +327,20 @@ type Receiver struct {
 	seedHz  float64 // coarse carrier offset the NCO removes (Hz)
 	seedBuf []complex64
 
+	// Feed-forward symbol-timing acquisition (ArmTimingAcquisition;
+	// ClockGardner only). sampleBase counts the matched-filter samples
+	// processed before the current chunk.
+	acqPending  bool
+	acqSkip     int
+	acqBuf      []complex64
+	acqStart    int
+	acqHaveCand bool
+	acqCandInst float64
+	acqWindows  int
+	sampleBase  int
+	timingSeeds int
+	symbols2    []complex64 // Gardner output after a mid-chunk seed
+
 	// Scratch buffers reused across calls.
 	rotated []complex64 // NCO-de-rotated IQ, fed to the matched filter
 	matched []complex64
@@ -466,11 +480,25 @@ func (r *Receiver) Process(iq []complex64) {
 		}
 		r.rotated = r.nco.Mix(r.rotated, iq)
 		r.matched = r.dq.MatchedFilter(r.matched, r.rotated)
+		// The armed acquisition measures the raw matched-filter output: its
+		// statistic is scale-free, and the AGC's start-up ramp would only
+		// blur it.
+		k, mu, seed := r.observeTimingAcq()
+		r.sampleBase += len(r.matched)
 		// Normalise amplitude ahead of the gain-sensitive Gardner TED.
 		r.matched = r.agc.Process(r.matched, r.matched)
 		// Gardner manages its own cross-call tail state, so the
-		// receiver hands each matched-filter chunk straight in.
-		r.symbols = r.gardner.Process(r.symbols, r.matched)
+		// receiver hands each matched-filter chunk straight in. A confirmed
+		// acquisition seeds the loop between the two halves of the chunk,
+		// so every symbol after the window is timed from the estimate.
+		if seed {
+			r.symbols = r.gardner.Process(r.symbols, r.matched[:k])
+			r.gardner.SetPhase(mu)
+			r.symbols2 = r.gardner.Process(r.symbols2, r.matched[k:])
+			r.symbols = append(r.symbols, r.symbols2...)
+		} else {
+			r.symbols = r.gardner.Process(r.symbols, r.matched)
+		}
 		// Fine carrier tracking: de-rotate each symbol so the residual
 		// per-symbol rotation the coarse seed left behind is removed before
 		// the differential decode. The Costas error detector is four-fold
@@ -598,6 +626,126 @@ func (r *Receiver) Reset() {
 	r.seeded = false
 	r.seedHz = 0
 	r.seedBuf = nil
+	r.acqPending = false
+	r.acqBuf = r.acqBuf[:0]
+	r.acqHaveCand = false
+	r.sampleBase = 0
+}
+
+// Feed-forward symbol-timing acquisition, the DMR (#836) and YSF (#1261)
+// receivers' on the Phase 2 H-DQPSK stream (issue #1364). The Gardner loop
+// pulls a bad start phase in at gain·error per symbol, and from near a half
+// symbol (its unstable equilibrium) that takes a long time: on the real
+// Phase 2 carrier in samples/mmr (MMR, 420.65 MHz), started at the eight
+// sub-symbol phases of each of the nine captures, the first S-ISCH came
+// 8–100 ms in at most phases but 0.15–1.0 s in at about one in four, and
+// not within the 1.09 s capture at two. A voice chain starts at the grant,
+// and MAC_PTT, the burst that names the call's source radio, is sent at
+// key-up, so a slow start phase costs exactly that. A caller that starts
+// the receiver on a carrier that may already be up arms an acquisition:
+// the next timingAcqSkipSymbols symbols are skipped (the matched filter's
+// transient), then windows of timingAcqSymbols symbols of matched-filter
+// output are measured with sync.EstimateSymbolPhaseCM, and the Gardner
+// loop is seeded (Gardner.SetPhase) once two consecutive windows agree
+// within timingAcqAgreeSamples. After timingAcqMaxWindows windows without
+// that it gives up and the loop pulls in on its own, as before. Off unless
+// armed, and ClockGardner only, so every existing stream is byte-identical.
+const (
+	timingAcqSkipSymbols  = 10
+	timingAcqSymbols      = 96
+	timingAcqAgreeSamples = 1.0
+	timingAcqMaxWindows   = 4
+)
+
+// ArmTimingAcquisition schedules a feed-forward symbol-timing acquisition
+// on the samples that follow. Call after New and after each Reset when the
+// stream may already carry a transmission. A no-op on ClockNaive, which has
+// no timing loop to seed.
+func (r *Receiver) ArmTimingAcquisition() {
+	if r.gardner == nil {
+		return
+	}
+	r.acqPending = true
+	r.acqSkip = timingAcqSkipSymbols * r.sps
+	r.acqBuf = r.acqBuf[:0]
+	r.acqHaveCand = false
+	r.acqWindows = 0
+}
+
+// TimingSeeds is the number of feed-forward timing seeds applied so far.
+func (r *Receiver) TimingSeeds() int { return r.timingSeeds }
+
+// observeTimingAcq fills the armed acquisition window from this chunk's
+// matched-filter output. When a window completes and its estimate is
+// confirmed it returns the chunk index k at which the loop must be seeded
+// (samples [0,k) are timed as before, [k,…) after the seed) and the seed
+// value mu: the loop's next symbol instant, in samples past chunk sample
+// k−1, on the estimated phase's grid.
+func (r *Receiver) observeTimingAcq() (k int, mu float64, seed bool) {
+	if !r.acqPending {
+		return 0, 0, false
+	}
+	sps := float64(r.sps)
+	window := timingAcqSymbols * r.sps
+	for i := range r.matched {
+		if r.acqSkip > 0 {
+			r.acqSkip--
+			continue
+		}
+		if len(r.acqBuf) == 0 {
+			r.acqStart = r.sampleBase + i
+		}
+		r.acqBuf = append(r.acqBuf, r.matched[i])
+		if len(r.acqBuf) < window {
+			continue
+		}
+		tau, ok := sync.EstimateSymbolPhaseCM(r.acqBuf, sps)
+		start := r.acqStart
+		r.acqBuf = r.acqBuf[:0]
+		r.acqWindows++
+		if !ok {
+			if r.acqWindows >= timingAcqMaxWindows {
+				r.acqPending, r.acqHaveCand = false, false
+				return 0, 0, false
+			}
+			continue
+		}
+		// The symbol instants sit at start + tau + n·sps. Confirm the
+		// estimate against the previous window's before touching the loop.
+		inst := float64(start) + tau
+		if !r.acqHaveCand {
+			r.acqHaveCand = true
+			r.acqCandInst = inst
+			continue
+		}
+		d := math.Mod(inst-r.acqCandInst, sps)
+		if d > sps/2 {
+			d -= sps
+		} else if d < -sps/2 {
+			d += sps
+		}
+		if math.Abs(d) > timingAcqAgreeSamples {
+			r.acqCandInst = inst
+			if r.acqWindows >= timingAcqMaxWindows {
+				r.acqPending, r.acqHaveCand = false, false
+				return 0, 0, false
+			}
+			continue
+		}
+		r.acqPending, r.acqHaveCand = false, false
+		// The loop's next instant must be the first of those past the last
+		// sample it will have processed before the seed, chunk sample i.
+		last := float64(r.sampleBase + i)
+		if inst <= last {
+			inst += math.Ceil((last-inst)/sps) * sps
+			if inst <= last {
+				inst += sps
+			}
+		}
+		r.timingSeeds++
+		return i + 1, inst - last, true
+	}
+	return 0, 0, false
 }
 
 // CarrierOffsetHz reports the carrier-recovery loop's current estimate of
