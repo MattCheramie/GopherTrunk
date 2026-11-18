@@ -2,6 +2,7 @@ package composer
 
 import (
 	"context"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -304,7 +305,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		}
 		for d := range duidHist {
 			if cnt := duidHist[d].Load(); cnt > 0 {
-				attrs = append(attrs, "duid_"+p25p2.DUID(d).String(), cnt)
+				attrs = append(attrs, p25p2CensusDUIDKey(p25p2.DUID(d)), cnt)
 			}
 		}
 		c.log.Info("composer: p25p2 call census", attrs...)
@@ -330,6 +331,20 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			rx.Process(fe.Process(nil, iq))
 		}
 	}
+}
+
+// p25p2CensusDUIDKey names a DUID's bucket in the call census. The defined
+// DUIDs use DUID.String(); the seven reserved values all print "reserved", so
+// they carry their number (duid_reserved_5): with one shared name the census
+// line repeated the key six times on real air (issue #1364), and a reader
+// could not tell which bucket was which. A reserved DUID on a locked carrier
+// is a misread burst, so the count is the useful part.
+func p25p2CensusDUIDKey(d p25p2.DUID) string {
+	name := d.String()
+	if name == "reserved" {
+		return "duid_reserved_" + strconv.Itoa(int(d))
+	}
+	return "duid_" + name
 }
 
 // publishP25Phase2CallSource publishes a KindCallSourceUpdate event so
