@@ -17,6 +17,34 @@ for tagged releases.
   until #1365), pinned against MMDVMHost's DMR silence frame. dPMR audio is
   still unverified on air: the frame's on-air interleave remains a
   placeholder until a dPMR voice capture confirms it.
+- **P25 Phase 2 calls could lose their first second, including the burst
+  that names the talking radio (#1364).** The Phase 2 voice chain and the
+  signalling follower start at the grant, at an arbitrary point in the
+  symbol timing of a carrier that is already up. From about one start in
+  four the timing loop took 0.15 s to 1 s to pull in, and MAC_PTT (the
+  call's source radio) is sent at key-up. The receiver now measures the
+  symbol timing directly over the first ~35 ms and starts the loop there.
+  Measured on a real Phase 2 carrier from 72 cold starts: every one synced
+  within 0.12 s (before: up to 1 s, and two not within the 1.09 s capture).
+- **P25 Phase 2: after a hole in the IQ (dropped USB buffers, a lagging
+  subscriber) the decoder handed out garbage for up to 0.7 s (#1364).** The
+  burst framer kept cutting on its old timeslot grid until two superframes
+  passed without a recognised sync, so ~20 bursts came out with random
+  types (voice among them) and the signalling in them was lost. It now looks
+  for the moved grid as soon as one burst misses its sync. On the real
+  carrier, decoded control messages rose from 218 to 386 across the same 72
+  starts.
+- **The `composer: p25p2 call census` line repeated `duid_reserved`.** Each
+  reserved DUID value now has its own key (`duid_reserved_5`).
+
+### Added
+- **The first real-air test of the rebuilt P25 Phase 2 decode (#1364).**
+  `samples/mmr` holds an idle Phase 2 voice channel (MMR, 420.650 MHz) next
+  to the site's Phase 1 control channel. Its SACCH bursts decode with the
+  scrambling seed built from the control channel's own identity and with no
+  other, and carry the same Motorola supergroup patch the control channel
+  announces. A source radio from a live call is still unconfirmed: there is
+  no call in the capture.
 
 ## [v1.4.1] — 2026-11-17
 

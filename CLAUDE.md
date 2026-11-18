@@ -160,6 +160,21 @@ confirmation before any close-as-completed.
   to ~50 % after ~16k symbols (~3 s at 8 sps). Its old tests used a triangle pulse + quadrant check that
   survive a half-symbol error — test a timing loop's convergence POINT on RRC data, not its symbol
   count. Synthetic + reference-pinned only; a Phase 2 capture is the on-air gate (#764/#771).
+- **A real P25 Phase 2 carrier has been in `samples/mmr` all along (#1364): the idle MMR voice
+  channel at 420.650 MHz, +637.5 kHz in every `mmr-s9-*.cfile` (centre 420.0125 MHz; the Phase 1 CC
+  at +37.5 kHz is WACN BEE00 / sys 164 / NAC 164).** It is the first real-air pin of the #1290
+  rebuild: SACCH-S decodes CRC-valid only with `PN44SeedFromIdentity(0xBEE00,0x164,0x164)`
+  (0x165 decodes nothing) and carries the Motorola supergroup 3202/tg 201 patch the CC announces
+  (`realair_mmr_test.go`). It found two receive-side defects, both fixed: (1) the Gardner loop took
+  0.15–1 s (or never) from ~1 start phase in 4, the #836 hang-up, now seeded feed-forward
+  (`Receiver.ArmTimingAcquisition` → `sync.EstimateSymbolPhaseCM`, a constant-modulus eye search:
+  E|y|⁴/E|y|²² ≈ 1.01 at the instant, ≥ 1.67 on noise), armed in the voice chain and sigfollow
+  only (the CC pipelines are not); (2) the `AirFramer` flywheeled 720 ms on a stale grid after an
+  IQ hole — it now re-anchors on an off-grid S-ISCH after ONE missed ISCH, searching from inside
+  the missed packet (the new grid's S-ISCH sat there on the real hole). The nine files are separate
+  `rtl_sdr` grabs, not one recording, and five contain a hole (grid shifts fit whole dropped 16 KiB
+  buffers): never concatenate them, and check S-ISCH spacing before blaming the receiver. What is
+  still NOT confirmed: a source RID / talker alias from a live call (no call in these captures).
 - **"Recording far shorter than the call" (#1242 follow-up) is usually the HOLD, not lost audio —
   read `audio_pct` before chasing decode.** A call's duration is its wall-clock span (overs + gaps +
   hangtime); the WAV holds only decoded frames. Two defects made that look like loss: the sidecar's
