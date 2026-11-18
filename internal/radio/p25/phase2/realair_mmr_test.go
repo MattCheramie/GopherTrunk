@@ -42,6 +42,15 @@ func frameMMR(t *testing.T, path string) []AirBurst {
 	return out
 }
 
+// idleDUID is what every burst of this idle carrier carries: the SACCH on
+// timeslots 10 and 11, DATCH fill elsewhere.
+func idleDUID(slot int) DUID {
+	if slot >= 10 {
+		return DUIDSACCHScrambled
+	}
+	return DUIDDATCHScrambled
+}
+
 // TestRealAirMMRPhase2MACDecodes is the first real-air pin of the rebuilt
 // Phase 2 MAC path (PR #1290: air-format framing, RS(63,35), CRC-12, PN44):
 // the idle carrier's SACCH bursts decode CRC-valid with the seed built from
@@ -83,5 +92,36 @@ func TestRealAirMMRPhase2MACDecodes(t *testing.T) {
 	}
 	if !regroup {
 		t.Error("no SACCH carried the supergroup 3202 / talkgroup 201 regroup the control channel announces")
+	}
+}
+
+// TestAirFramerReanchorsAfterIQHole is the issue #1364 regression for a hole
+// in the IQ (dropped USB buffers, a lagging broker subscriber) that the dibit
+// counter does not see: the on-air timeslot grid moves under the framer. It
+// used to keep cutting packets on the stale grid until two superframes passed
+// without a recognised ISCH (airLockLossDibits, 720 ms), handing out ~20
+// garbage bursts with random DUIDs (voice among them) and losing the
+// signalling. It now looks ahead for an S-ISCH off its grid once two
+// consecutive packets miss theirs, and moves there.
+func TestAirFramerReanchorsAfterIQHole(t *testing.T) {
+	bursts := frameMMR(t, mmrDibitsHole)
+	masks := NewAirMasks(mmrSeed())
+	var bad, sacchOK int
+	for _, b := range bursts {
+		if b.DUID != idleDUID(b.Slot) {
+			bad++
+		}
+		if b.DUID == DUIDSACCHScrambled {
+			if _, ok := DecodeAirMAC(b, masks); ok {
+				sacchOK++
+			}
+		}
+	}
+	t.Logf("%d bursts, %d off the idle pattern, %d SACCH-S CRC-valid", len(bursts), bad, sacchOK)
+	if bad > 3 {
+		t.Errorf("%d bursts carried a DUID the idle carrier never sends: the framer stayed on the stale grid after the hole", bad)
+	}
+	if sacchOK < 5 {
+		t.Errorf("only %d SACCH-S bursts decoded", sacchOK)
 	}
 }
