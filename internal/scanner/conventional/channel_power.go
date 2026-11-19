@@ -31,22 +31,38 @@ type channelPowerMeter struct {
 	// sample repeats it rather than reading as silence (which would break
 	// a dwell's hangtime accounting on a stream of tiny chunks).
 	level float64
+	// noise is the channel's FM noise squelch, fed the same decimated,
+	// channel-filtered samples the level is measured on; nil when the
+	// channel has none (fm_noise_squelch.go, issue #1329).
+	noise *fmNoiseMeter
+}
+
+// channelFilterFor is the ±toneChannelCutoffHz channel filter for a stream
+// at rate, or nil when the rate is too low to need one.
+func channelFilterFor(rate float64) *filter.FIR {
+	if fc := toneChannelCutoffHz / rate; fc < 0.45 {
+		return filter.NewFIR(filter.LowpassKaiser(63, fc, 8.6))
+	}
+	return nil
+}
+
+// channelRateFor is the rate a stream at sampleHz is decimated to ahead of
+// the channel filter, and the integer factor that gets it there (1 = none).
+func channelRateFor(sampleHz float64) (rate float64, m int) {
+	m = int(sampleHz / toneRefRateHz)
+	if m < 2 {
+		m = 1
+	}
+	return sampleHz / float64(m), m
 }
 
 func newChannelPowerMeter(sampleHz float64) *channelPowerMeter {
 	var pre *dsp.Resampler
-	m := int(sampleHz / toneRefRateHz)
-	if m < 2 {
-		m = 1
-	} else {
+	rate, m := channelRateFor(sampleHz)
+	if m > 1 {
 		pre = dsp.NewResampler(1, m, m*8+1, 8.6)
 	}
-	rate := sampleHz / float64(m)
-	var chanFilter *filter.FIR
-	if fc := toneChannelCutoffHz / rate; fc < 0.45 {
-		chanFilter = filter.NewFIR(filter.LowpassKaiser(63, fc, 8.6))
-	}
-	return &channelPowerMeter{pre: pre, chanFilter: chanFilter, level: PowerDbFS(nil)}
+	return &channelPowerMeter{pre: pre, chanFilter: channelFilterFor(rate), level: PowerDbFS(nil)}
 }
 
 // process returns the in-channel power of iq in dBFS (a unit-amplitude tone
@@ -63,6 +79,9 @@ func (m *channelPowerMeter) process(iq []complex64) float64 {
 	if len(iq) == 0 {
 		return m.level
 	}
+	if m.noise != nil {
+		m.noise.feed(iq)
+	}
 	m.level = PowerDbFS(iq)
 	return m.level
 }
@@ -76,6 +95,9 @@ func (m *channelPowerMeter) reset() {
 	if m.chanFilter != nil {
 		m.chanFilter.Reset()
 	}
+	if m.noise != nil {
+		m.noise.reset()
+	}
 	m.level = PowerDbFS(nil)
 }
 
@@ -83,11 +105,25 @@ func (m *channelPowerMeter) reset() {
 // channel, or nil for an AM channel (which squelches on carrier-to-noise)
 // or when the scanner has no sample rate — the channel then falls back to
 // whole-span power (New warns once; see warnSpanPowerSquelch).
+//
+// An analog FM channel's meter also carries its noise squelch, unless the
+// channel switched it off (Channel.NoiseSquelchOff).
 func buildChannelPowerMeter(ch Channel, sampleHz float64) *channelPowerMeter {
 	if ch.Mode == ModeAM || sampleHz <= 0 {
 		return nil
 	}
-	return newChannelPowerMeter(sampleHz)
+	pm := newChannelPowerMeter(sampleHz)
+	if isAnalogFM(ch.Mode) && !ch.NoiseSquelchOff {
+		rate, _ := channelRateFor(sampleHz)
+		pm.noise = newFMNoiseMeter(rate)
+	}
+	return pm
+}
+
+// isAnalogFM reports whether mode is an analog FM channel ("fm", "nfm" or
+// unset, which New defaults to "fm").
+func isAnalogFM(mode string) bool {
+	return mode == "" || mode == "fm" || mode == "nfm"
 }
 
 // warnSpanPowerSquelch tells the operator, once, that without a sample rate

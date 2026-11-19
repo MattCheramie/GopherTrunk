@@ -105,18 +105,28 @@ func TestDataDecoderFactoryGetsChannelRate(t *testing.T) {
 	}
 }
 
-// A burst sent at key-up must be seen from its first bit: the chunk that
-// opens the squelch is fed to the decoders before the dwell starts.
+// A burst sent at key-up must be seen from its first bit: every chunk from
+// the first that clears squelch_dbfs is fed to the decoders before the dwell
+// starts, including those that arrive while the noise squelch is still
+// making its first reading (issue #1329: the channel opens about 25 ms
+// after the carrier, and a burst's first bits must not wait for that).
 func TestDataDecoderSeesSquelchBreakingChunk(t *testing.T) {
 	dec := &fakeDataDecoder{}
 	s := newDataTestScanner(t, Channel{Label: "A", FrequencyHz: 462_562_500, SquelchDbFS: -10, Decoders: []string{DecoderFleetSync}}, dec, nil)
-	stream := make(chan []complex64, 1)
-	stream <- loudChunk(4096)
-	if !s.scanWindow(context.Background(), 0, s.channels[0], stream, nil) {
-		t.Fatal("squelch did not break on a loud chunk")
+	const sent = 40 // 68 ms of carrier at 2.4 MS/s
+	stream := make(chan []complex64, sent)
+	for i := 0; i < sent; i++ {
+		stream <- loudChunk(4096)
 	}
-	if n, _ := dec.counts(); n != 1 {
-		t.Fatalf("decoder saw %d chunks before the dwell, want 1 (the squelch-breaking chunk)", n)
+	if !s.scanWindow(context.Background(), 0, s.channels[0], stream, nil) {
+		t.Fatal("squelch did not break on a carrier")
+	}
+	read := sent - len(stream)
+	if read < 10 || read > 20 {
+		t.Errorf("the squelch opened after %d chunks (%.0f ms), want about the noise squelch's 25 ms", read, float64(read)*4096/2.4e3)
+	}
+	if n, _ := dec.counts(); n != read {
+		t.Fatalf("decoder saw %d of the %d chunks read before the dwell, want all of them from the first", n, read)
 	}
 }
 
