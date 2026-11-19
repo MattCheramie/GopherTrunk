@@ -1071,6 +1071,27 @@ confirmation before any close-as-completed.
   `Streaming` is now a session COUNT, not a flag (an old session ending no longer reports a
   new one stopped). The Spectrum panel gained a typed MHz tune entry (an untuned SDR sits at
   0 Hz, out of click-to-tune reach) and a hint when an open stream delivers nothing.
+- **"Paging decodes only while the Spectrum view is open" (Discord, Nov 2026) = an always-on
+  consumer that only `Subscribe()`d.** A paging-only rig (one `role: dedicated` RTL-SDR, one
+  `paging.wideband` group of 929 MHz FLEX channels, no trunking system): the group tuned the SDR
+  and waited on a broker subscription nothing fed, so its only IQ was the viewer pump above. The
+  log pair `sdr: no decoder is streaming this SDR — streaming it for the live view` / `sdr: last
+  live view closed — stopping its IQ stream` on a dongle that HAS a decoder is the signature.
+  The group now runs through `runSingleChannelDecoder` (`paging_wideband.go`). Two more
+  defects on the same path, both failing-first: (1) the primary claim (`iqPrimary`) was never
+  released, so after a stream death the "decoder stopped — restarting" pass only Subscribed and
+  every single-channel decoder stayed deaf (decode passes 2, StreamIQ sessions 1), with the
+  viewer pump locked out too; the primary's cleanup releases it and each pass's stream has its
+  own context; (2) the group's DDC bank was built for `sdr.sample_rate`, not the dongle's own
+  `sample_rate` (#1316), now `decoderSDRRate`. Out-of-band channels are dropped at build with a
+  startup warning (they were a run-time log line), so a restart never runs an empty bank. The test
+  SDR (`pagingAirFake`) delivers IQ only while streamed, refuses a second session, and places
+  its FLEX transmitter relative to the PROGRAMMED centre: a fake that streams unasked cannot
+  see this class. Any new always-on broker consumer must go through `openSingleChannelIQ`.
+  Not built: the single-channel decoders still do not `pool.Reacquire` after an unplug (the CC
+  decoder and wideband engines do), and a wideband paging group puts a channel on the tuner's
+  DC spike when it sits at the group centre (an odd count of evenly spaced channels
+  auto-centres on the middle one). Not run on a real dongle (#764/#771).
 - **A recording made across an IQ hole is announced PARTIAL (#1288), not complete.** Voice sources
   implement `StreamIQWithLoss` (wideband channel fan-out, `wbvoice` taps, the sequential scanner's broker
   subscription): their own subscriber drops + the PHYSICAL serial's driver drops (`sdr.IQDropCount`,

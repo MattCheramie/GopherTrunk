@@ -8,6 +8,35 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Wideband paging decoded only while the Spectrum view was open.** On a
+  paging-only setup (one SDR, no trunking system, a `paging.wideband` group)
+  pages arrived only while a live view was open in the web console, and the
+  log showed the SDR starting and stopping with the view. The group listened
+  for the SDR's samples but never started the SDR's stream itself; the only
+  thing that did was a live view, which streams an otherwise idle SDR for as
+  long as it is open. The single-frequency `paging.pocsag` / `paging.flex`
+  entries were not affected.
+  - **A `paging.wideband` group now runs its SDR from start-up** and keeps
+    it running. The log says `paging.wideband: group starting` with the
+    centre, sample rate and channel list, and opening or closing a live view
+    no longer starts or stops the SDR.
+  - A failed tune or stream open at start-up is retried, where it used to
+    end the group until the daemon was restarted.
+  - **A decoder whose SDR stream ended never got it back.** After a stream
+    stopped under a decoder that owns its SDR (paging, APRS, AIS, DSC, M17,
+    MDC1200, FleetSync, LoRa, ADS-B), the log said `decoder stopped —
+    restarting` and the decoder then waited for ever without reopening the
+    stream. It reopens it now. A dongle that was unplugged still needs a
+    daemon restart.
+  - A wideband group on an SDR with its own `sample_rate` was set up for the
+    shared `sdr.sample_rate` and decoded nothing; it now uses that SDR's
+    rate.
+  - A channel outside the SDR's tuning window (centre ± half the sample
+    rate, less a 5 % guard) is reported as a startup warning and skipped. It
+    used to be a log line only.
+
+  Checked against a simulated SDR carrying a FLEX page, including the whole
+  daemon on the reported configuration; not yet run on a real dongle.
 - **Scan list: an FM channel opened a call on noise and recorded it for as
   long as the daemon ran (#1329).** A scan-list channel's `squelch_dbfs` is
   an absolute level and was an FM channel's only test. On the reporter's
