@@ -5612,8 +5612,12 @@ func (d *Daemon) runSingleChannelDecoder(ctx context.Context, name, serial strin
 		if err := tuneWithRetry(ctx, d.log, name, br, loHz); err != nil {
 			return nil // ctx ended
 		}
-		iqCh, cleanup, err := d.openSingleChannelIQ(ctx, br, serial)
+		// The stream runs on its own context so this pass can be sure it
+		// has stopped before cleanup gives the SDR up for the next one.
+		streamCtx, stopStream := context.WithCancel(ctx)
+		iqCh, cleanup, err := d.openSingleChannelIQ(streamCtx, br, serial)
 		if err != nil {
+			stopStream()
 			d.log.Warn(name+": open IQ failed — retrying",
 				"serial", serial, "freq_hz", freq, "err", err, "retry_in", singleChannelRetryBackoff(attempt))
 			if !wait(attempt) {
@@ -5627,6 +5631,7 @@ func (d *Daemon) runSingleChannelDecoder(ctx context.Context, name, serial strin
 			in = fe.Pump(ctx, iqCh)
 		}
 		err = decode(ctx, in)
+		stopStream()
 		cleanup()
 		if ctx.Err() != nil {
 			return nil
@@ -5657,8 +5662,13 @@ func (d *Daemon) runSingleChannelDecoder(ctx context.Context, name, serial strin
 //
 // The first caller per serial (when no trunking/wideband primary already owns
 // the broker) becomes the primary and gets StreamIQ; later callers on the same
-// serial Subscribe. The returned cleanup must be deferred. StreamIQ
-// self-terminates on ctx cancel, so the primary's cleanup is a no-op.
+// serial Subscribe. The returned cleanup must be called once the caller is
+// done with the channel, and for the primary only after its stream has ended
+// (StreamIQ self-terminates when ctx is cancelled): it gives the serial up,
+// so the caller's next open — or another decoder's — drives StreamIQ again.
+// Without that a decoder restarting after its stream died found the serial
+// still "owned", only Subscribed, and waited for ever on a broker nothing
+// was streaming.
 func (d *Daemon) openSingleChannelIQ(ctx context.Context, br *iqtap.Broker, serial string) (<-chan []complex64, func(), error) {
 	d.iqPrimaryMu.Lock()
 	primary := !d.iqPrimary[serial]
@@ -5689,7 +5699,11 @@ func (d *Daemon) openSingleChannelIQ(ctx context.Context, br *iqtap.Broker, seri
 			d.iqPrimaryMu.Unlock()
 			return nil, func() {}, err
 		}
-		return ch, func() {}, nil
+		return ch, func() {
+			d.iqPrimaryMu.Lock()
+			delete(d.iqPrimary, serial)
+			d.iqPrimaryMu.Unlock()
+		}, nil
 	}
 	sub := br.Subscribe()
 	return sub.C, sub.Close, nil
