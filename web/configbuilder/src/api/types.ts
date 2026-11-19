@@ -283,6 +283,9 @@ export interface ConvChannelConfig {
   // How long the channel must stay above squelch before a call opens;
   // 0 = at once (#1321).
   SquelchOpenMs: number;
+  // fm / nfm: open only on a carrier, not on noise above the squelch level.
+  // Unset or true = on; false = the level alone (#1329).
+  NoiseSquelch?: boolean;
   Priority: number;
   TalkgroupID: number;
   // Per-channel tuner gain on the scanner SDR: "auto" or tenths of a dB;

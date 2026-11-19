@@ -6,6 +6,7 @@ import (
 	"fmt"
 	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	"log/slog"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,7 +55,8 @@ type Channel struct {
 	// "carrier present", compared against the CHANNEL's power
 	// (channel_power.go, issue #1239), not the whole SDR span. A
 	// typical value for an RTL-SDR-class receiver is around -50 dBFS;
-	// tune per channel as needed. Ignored on an AM channel.
+	// tune per channel as needed. Ignored on an AM channel. An fm / nfm
+	// channel must clear its noise squelch as well (NoiseSquelchOff).
 	SquelchDbFS float64
 	// SquelchCNDb is an AM channel's open threshold: the carrier's C/N
 	// in one ~188 Hz bin, measured from the channel's own spectrum
@@ -143,6 +145,12 @@ type Channel struct {
 	// or "cqpsk" for a linear (LSM) transmitter; carried on the grant to
 	// the voice chain and used by the NAC gate (issue #1262).
 	P25Phase1DemodMode string
+	// NoiseSquelchOff switches off an analog FM channel's noise squelch
+	// (fm_noise_squelch.go, issue #1329), leaving SquelchDbFS as its only
+	// carrier test, as before that squelch existed: for a channel listed
+	// as fm to record something that is not FM. Ignored on other modes,
+	// which have no noise squelch.
+	NoiseSquelchOff bool
 }
 
 // ToneConfig configures CTCSS / DCS squelch gating for one channel.
@@ -210,6 +218,12 @@ type streamPos struct {
 	next, onset, lastAbove uint64
 	inRun                  bool
 	gap                    uint64 // onsetGap in samples
+	// lead is how many samples the squelch decision trails the carrier's
+	// arrival by: an analog FM channel's noise squelch reports a carrier
+	// one measurement window after it came up (fmNoiseLatency), so a run's
+	// onset is placed that far before its first above-squelch chunk, never
+	// before first, the stream's first sample. Zero on other channels.
+	lead, first uint64
 }
 
 // advance accounts for chunk iq, above squelch or not.
@@ -220,7 +234,8 @@ func (p *streamPos) advance(n int, above bool) {
 		return
 	}
 	if !p.inRun || start-p.lastAbove > p.gap {
-		p.onset, p.inRun = start, true
+		back := min(p.lead, start-p.first)
+		p.onset, p.inRun = start-back, true
 	}
 	p.lastAbove = p.next
 }
@@ -350,8 +365,14 @@ type ChannelStatus struct {
 	// SquelchCNDb is compared with. Unset until the channel has been
 	// visited; LevelAt is when it was last measured — the scanner measures
 	// a channel only while it is on it. Issue #1321 follow-up.
-	LevelDbFS   *float64  `json:"level_dbfs,omitempty"`
-	LevelCNDb   *float64  `json:"level_cn_db,omitempty"`
+	LevelDbFS *float64 `json:"level_dbfs,omitempty"`
+	LevelCNDb *float64 `json:"level_cn_db,omitempty"`
+	// QuietingDb is an analog FM channel's noise squelch reading: how far
+	// the discriminator's noise sits below what an empty channel gives.
+	// About 0 dB on noise at any gain, 3 dB where the squelch opens, 15 dB
+	// and up on a usable signal. Unset on a channel without the noise
+	// squelch or not visited yet. Issue #1329.
+	QuietingDb  *float64  `json:"quieting_db,omitempty"`
 	LevelAt     time.Time `json:"level_at,omitempty"`
 	SquelchDbFS float64   `json:"squelch_dbfs,omitempty"`
 	SquelchCNDb float64   `json:"squelch_cn_db,omitempty"`
@@ -429,6 +450,10 @@ type Scanner struct {
 	gainActive  bool
 	appliedGain int
 	gainWarned  map[int]bool
+	// noiseNoted records the channels (by their noise squelch) whose
+	// "above squelch_dbfs on noise alone" note has been logged, so each
+	// says it once. Scan-goroutine only.
+	noiseNoted map[*fmNoiseMeter]bool
 	// squelchState publishes beginDwell's live per-chunk squelch
 	// decision for SquelchOpen (one of the squelch* constants).
 	// Atomic because the composer's FM chain polls it from its own
@@ -920,7 +945,7 @@ func (s *Scanner) Run(ctx context.Context) error {
 		if counted {
 			var start uint64
 			stream, start, err = onsetSrc.StreamIQCounted(streamCtx)
-			pos = &streamPos{next: start, gap: uint64(onsetGap.Seconds() * float64(s.opts.SampleRateHz))}
+			pos = &streamPos{next: start, first: start, gap: uint64(onsetGap.Seconds() * float64(s.opts.SampleRateHz))}
 		} else {
 			stream, err = s.opts.IQ.StreamIQ(streamCtx)
 		}
@@ -961,6 +986,9 @@ func (s *Scanner) Run(ctx context.Context) error {
 		}
 		if pm := s.powerMeterFor(idx); pm != nil {
 			pm.reset()
+			if pm.noise != nil && pos != nil {
+				pos.lead = uint64(fmNoiseLatency.Seconds() * float64(s.opts.SampleRateHz))
+			}
 		}
 		if g := s.levelFor(idx); g != nil {
 			g.startVisit()
@@ -1010,6 +1038,10 @@ func (s *Scanner) endVisit(v *channelVisit) {
 //
 // pos, when the stream comes from an OnsetIQSource, follows the stream
 // position so the caller can mark where the transmission began.
+//
+// An analog FM channel must also clear its noise squelch (issue #1329):
+// level above squelch_dbfs AND a quieted discriminator. Everywhere below,
+// "above the squelch" on such a channel means both.
 func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-chan []complex64, pos *streamPos) bool {
 	deadline := time.NewTimer(s.opts.MinDwellPerChannel)
 	defer deadline.Stop()
@@ -1017,6 +1049,19 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 	cd := s.dataFor(idx)
 	gauge := s.levelFor(idx)
 	level, open := s.squelchMeasure(idx, ch)
+	nsq := s.noiseSquelchFor(idx)
+	// levelOnly counts the samples that cleared squelch_dbfs while the
+	// noise squelch said "no carrier", and seen every sample measured: a
+	// window spent that way is reported once (noteNoiseAboveSquelch).
+	// int64: a wideband conventional channel's window lasts a day, and a
+	// 32-bit int would wrap in half of one.
+	var levelOnly, seen int64
+	var lastLevel float64
+	// sawLevel: some chunk cleared squelch_dbfs. If the window ends before
+	// the noise squelch has made its first reading (a stream that started
+	// late, a short window), it gets one extension to make it, like a call
+	// gate's; a channel under the level costs no extra time.
+	sawLevel, noiseExtended := false, false
 	onset := onsetRun{delay: ch.SquelchOpenDelay, rateHz: s.opts.SampleRateHz, now: s.opts.Now}
 	onsetExtended := false
 	var held time.Duration
@@ -1051,6 +1096,14 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				onsetExtended = true
 				continue
 			}
+			if nsq != nil && sawLevel && !noiseExtended && math.IsInf(nsq.ratio(), 1) {
+				deadline.Reset(fmNoiseSettle)
+				noiseExtended = true
+				continue
+			}
+			if nsq != nil && seen > 0 && levelOnly*2 > seen {
+				s.noteNoiseAboveSquelch(ch, nsq, lastLevel)
+			}
 			return false
 		case iq, ok := <-stream:
 			if !ok {
@@ -1058,7 +1111,22 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 			}
 			lv := level(iq)
 			gauge.observeChunk(lv, len(iq), s.opts.SampleRateHz, s.opts.Now)
-			powerOK := lv >= open
+			// levelOK: the level clears squelch_dbfs. powerOK: the squelch
+			// is open, which on an analog FM channel also takes a carrier.
+			levelOK := lv >= open
+			powerOK := levelOK
+			if nsq != nil {
+				// The meter was fed by level(iq). Until its first window is
+				// in, it reads +Inf: not open, and not counted as noise.
+				r := nsq.ratio()
+				seen += int64(len(iq))
+				sawLevel = sawLevel || levelOK
+				if levelOK && r > fmNoiseOpenRatio && !math.IsInf(r, 1) {
+					levelOnly += int64(len(iq))
+					lastLevel = lv
+				}
+				powerOK = levelOK && r <= fmNoiseOpenRatio
+			}
 			// openOK: above threshold for SquelchOpenDelay (the chunk itself
 			// when the delay is 0, exactly as before).
 			openOK := onset.observe(len(iq), powerOK)
@@ -1076,7 +1144,11 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				}
 				continue
 			}
-			if !powerOK {
+			// The data decoders and the tone detector run from the level
+			// alone, as before the noise squelch: a burst's first bits and
+			// a tone's first block arrive before the noise squelch's window
+			// has filled.
+			if !levelOK {
 				continue
 			}
 			if cd != nil {
@@ -1084,6 +1156,7 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 			}
 			if det == nil {
 				if openOK {
+					s.logSquelchOpened(idx, ch, lv, nsq)
 					return true
 				}
 				continue
@@ -1092,6 +1165,7 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				if !openOK {
 					continue
 				}
+				s.logSquelchOpened(idx, ch, lv, nsq)
 				if nd, ok := det.(*NACDetector); ok {
 					s.log.Info("conv: NAC gate opened",
 						"freq_hz", ch.FrequencyHz, "label", ch.Label,
@@ -1202,6 +1276,11 @@ func (s *Scanner) beginDwell(v *channelVisit, ch Channel, stream <-chan []comple
 	level, open := s.squelchMeasure(idx, ch)
 	keepAlive := open - ch.SquelchHysteresisDb
 	gauge := s.levelFor(idx)
+	// nsq is an analog FM channel's noise squelch (nil otherwise): the
+	// carrier must also keep the discriminator quiet, so the call ends
+	// when the transmitter drops even if what is left on the channel,
+	// noise under an AGC say, still clears squelch_dbfs (issue #1329).
+	nsq := s.noiseSquelchFor(idx)
 	// belowSince marks the start of the current below-threshold run
 	// (zero => currently active). aboveSince marks the start of a run
 	// of above-threshold chunks seen *during* a countdown — it is the
@@ -1247,6 +1326,9 @@ func (s *Scanner) beginDwell(v *channelVisit, ch Channel, stream <-chan []comple
 			lv := level(iq)
 			gauge.observeChunk(lv, len(iq), s.opts.SampleRateHz, s.opts.Now)
 			active := lv >= keepAlive
+			if active && nsq != nil && nsq.ratio() > fmNoiseHoldRatio {
+				active = false
+			}
 			if active {
 				lastAbove = lastChunk
 			} else if bridge > 0 && lastChunk.Sub(lastAbove) < bridge {
@@ -1739,6 +1821,11 @@ func (s *Scanner) Snapshot() Status {
 					channels[i].LevelDbFS = &v
 				}
 				channels[i].LevelAt = at
+			}
+		}
+		if i < len(s.powerMeters) && s.powerMeters[i] != nil && s.powerMeters[i].noise != nil {
+			if q, ok := s.powerMeters[i].noise.shownQuietingDb(); ok {
+				channels[i].QuietingDb = &q
 			}
 		}
 	}

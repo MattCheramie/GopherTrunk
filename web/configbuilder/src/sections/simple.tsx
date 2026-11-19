@@ -10,6 +10,7 @@ import {
 import { ListEditor } from "../components/ListEditor";
 import { RRCredentials } from "../components/RRCredentials";
 import { formatCommaList, parseCommaList } from "../lib/csvList";
+import { NOISE_SQUELCH_OPTIONS, isAnalogFM, noiseSquelchValue, parseNoiseSquelch } from "../lib/noiseSquelch";
 import { useStore } from "../store/shared";
 import type {
   APIConfig,
@@ -531,7 +532,8 @@ export function ScannerSection() {
                 <SelectField
                   label="Mode"
                   value={ch.Mode}
-                  onChange={(x) => setCh({ ...ch, Mode: x })}
+                  // The noise squelch is an fm / nfm setting: another mode must not carry it.
+                  onChange={(x) => setCh({ ...ch, Mode: x, NoiseSquelch: isAnalogFM(x) ? ch.NoiseSquelch : undefined })}
                   options={[
                     { value: "", label: "(fm)" },
                     { value: "fm", label: "fm" },
@@ -559,6 +561,15 @@ export function ScannerSection() {
                 <NumberField label="Squelch open delay (ms)" value={ch.SquelchOpenMs} onChange={(x) => setCh({ ...ch, SquelchOpenMs: x })} />
                 <NumberField label="Activity debounce (ms)" value={ch.ActivityDebounceMs} onChange={(x) => setCh({ ...ch, ActivityDebounceMs: x })} />
                 <NumberField label="Squelch hysteresis (dB)" step={0.1} value={ch.SquelchHysteresisDb} onChange={(x) => setCh({ ...ch, SquelchHysteresisDb: x })} />
+                {isAnalogFM(ch.Mode) ? (
+                  <SelectField
+                    label="Noise squelch"
+                    value={noiseSquelchValue(ch.NoiseSquelch)}
+                    onChange={(x) => setCh({ ...ch, NoiseSquelch: parseNoiseSquelch(x) })}
+                    options={NOISE_SQUELCH_OPTIONS}
+                    help="On: the channel opens only on a carrier, never on noise above the squelch level, at any gain. Off is for a channel listed as fm to record something that is not FM."
+                  />
+                ) : null}
                 <NumberField label="Priority" value={ch.Priority} onChange={(x) => setCh({ ...ch, Priority: x })} />
                 <NumberField label="Talkgroup ID (0 = positional)" value={ch.TalkgroupID} onChange={(x) => setCh({ ...ch, TalkgroupID: x })} />
                 <TextField

@@ -8,6 +8,36 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **Scan list: an FM channel opened a call on noise and recorded it for as
+  long as the daemon ran (#1329).** A scan-list channel's `squelch_dbfs` is
+  an absolute level and was an FM channel's only test. On the reporter's
+  PlutoSky the empty channel's noise sat above the threshold, so a call
+  opened 100 ms after start-up and recorded noise for 33 and 41 minutes;
+  under automatic gain (`gain: auto`) a tuner raises its noise above almost
+  any threshold, so no setting would have helped.
+  - **`fm` / `nfm` channels now have a noise squelch**, on by default: the
+    channel opens, and a call stays open, only while a carrier quiets the FM
+    discriminator, as well as clearing `squelch_dbfs`. Receiver noise never
+    does, at any gain or sample rate, so the call also ends when the
+    transmitter drops even if the level never falls. It measures a ratio, so
+    there is nothing to set.
+  - A signal opens the squelch from about 0 dB carrier-to-noise in the
+    channel, which is too weak to understand, so it takes nothing that could
+    be heard. A channel now opens about 25 ms after its carrier comes up,
+    where the level alone opened on the first samples.
+  - `GET /api/v1/scanner` carries `quieting_db` per FM channel (about 0 on
+    noise, 3 where the squelch opens, 15 and up on a usable signal), each
+    call logs `conv: squelch opened` with the level, the threshold and the
+    quieting it measured, and a channel that sits above `squelch_dbfs` with
+    no carrier on it says so once.
+  - **`noise_squelch: false`** on a channel (new, also in the config
+    builders) restores the level-only squelch, for a channel listed as `fm`
+    to record something that is not FM.
+
+  Measured on the real receiver noise and FM transmissions in the
+  repository's captures at 48 kHz and 2.4 MS/s; not yet run on a PlutoSky.
+  AM and the digital modes already had level-independent squelches and are
+  unchanged.
 - **`power`: a tuner's DC spike that survives the removal is reported, and
   `-fill-dc` takes it out (#1230).** v1.4.1 removes the spike at the centre
   of every hop by taking out what holds still from one FFT to the next. On

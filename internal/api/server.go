@@ -245,6 +245,10 @@ type ManualTuneRequest struct {
 	// above its threshold before a call opens. 0 = open on the first chunk
 	// (default); at most 1000.
 	SquelchOpenMs int `json:"squelch_open_ms"`
+	// NoiseSquelch is the channel's noise_squelch (fm / nfm): unset or
+	// true leaves the noise squelch on, false opens on the level alone
+	// (issue #1329). Ignored for other modes.
+	NoiseSquelch *bool `json:"noise_squelch,omitempty"`
 }
 
 // ScannerStatus is the JSON shape returned by GET /api/v1/scanner —
@@ -376,8 +380,15 @@ type ConvChannelStatusDTO struct {
 	// was last measured (the scanner measures a channel only while on it).
 	// SquelchDbFS / SquelchCNDb are the thresholds in effect, defaults
 	// applied. Issue #1321 follow-up.
-	LevelDbFS   *float64  `json:"level_dbfs,omitempty"`
-	LevelCNDb   *float64  `json:"level_cn_db,omitempty"`
+	LevelDbFS *float64 `json:"level_dbfs,omitempty"`
+	LevelCNDb *float64 `json:"level_cn_db,omitempty"`
+	// QuietingDb is an fm / nfm channel's noise squelch reading: how far
+	// the FM discriminator's noise sits below what an empty channel gives.
+	// About 0 dB on noise whatever the gain, 3 dB where the squelch opens,
+	// 15 dB and up on a usable signal. Unset on other modes, with
+	// noise_squelch: false, and until the channel has been visited. Issue
+	// #1329.
+	QuietingDb  *float64  `json:"quieting_db,omitempty"`
 	LevelAt     time.Time `json:"level_at,omitempty"`
 	SquelchDbFS float64   `json:"squelch_dbfs,omitempty"`
 	SquelchCNDb float64   `json:"squelch_cn_db,omitempty"`

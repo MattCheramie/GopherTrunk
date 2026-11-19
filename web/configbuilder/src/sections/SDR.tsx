@@ -9,6 +9,7 @@ import {
 } from "../components/fields";
 import { ListEditor } from "../components/ListEditor";
 import { AdvancedJSON } from "../components/AdvancedJSON";
+import { NOISE_SQUELCH_OPTIONS, isAnalogFM, noiseSquelchValue, parseNoiseSquelch } from "../lib/noiseSquelch";
 import { useStore } from "../store/shared";
 import { formatCommaList, parseCommaList } from "../lib/csvList";
 import type {
@@ -413,7 +414,8 @@ function DeviceEditor(props: {
                 <SelectField
                   label="Mode"
                   value={c.Mode}
-                  onChange={(v) => set({ ...c, Mode: v })}
+                  // The noise squelch is an fm / nfm setting: another mode must not carry it.
+                  onChange={(v) => set({ ...c, Mode: v, NoiseSquelch: isAnalogFM(v) ? c.NoiseSquelch : undefined })}
                   options={[
                     { value: "nfm", label: "nfm" },
                     { value: "fm", label: "fm" },
@@ -432,6 +434,15 @@ function DeviceEditor(props: {
                 )}
                 <NumberField label="Hangtime (ms)" value={c.HangtimeMs} onChange={(v) => set({ ...c, HangtimeMs: v })} />
                 <NumberField label="Squelch open delay (ms)" value={c.SquelchOpenMs} onChange={(v) => set({ ...c, SquelchOpenMs: v })} />
+                {isAnalogFM(c.Mode) ? (
+                  <SelectField
+                    label="Noise squelch"
+                    value={noiseSquelchValue(c.NoiseSquelch)}
+                    onChange={(v) => set({ ...c, NoiseSquelch: parseNoiseSquelch(v) })}
+                    options={NOISE_SQUELCH_OPTIONS}
+                    help="On: the channel opens only on a carrier, never on noise above the squelch level."
+                  />
+                ) : null}
                 <NumberField label="Talkgroup ID (0 = positional)" value={c.TalkgroupID} onChange={(v) => set({ ...c, TalkgroupID: v })} />
                 <NumberField label="Audio gain (dB)" step={0.5} value={c.AudioGainDB ?? 0} onChange={(v) => set({ ...c, AudioGainDB: v })} />
                 <SelectField

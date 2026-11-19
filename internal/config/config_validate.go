@@ -921,6 +921,13 @@ func validateConvChannelAt(path string, ch ConvChannelConfig) error {
 	if ch.SquelchOpenMs < 0 || ch.SquelchOpenMs > 1000 {
 		return fmt.Errorf("%s: squelch_open_ms must be 0..1000", path)
 	}
+	if ch.NoiseSquelch != nil {
+		switch ch.Mode {
+		case "", "fm", "nfm":
+		default:
+			return fmt.Errorf("%s: noise_squelch applies to mode fm / nfm, not mode: %s (am squelches on carrier-to-noise, digital modes on their own frames)", path, ch.Mode)
+		}
+	}
 	if g := strings.TrimSpace(ch.Gain); g != "" && !strings.EqualFold(g, "auto") {
 		if _, err := strconv.ParseFloat(strings.ReplaceAll(g, ",", "."), 64); err != nil {
 			return fmt.Errorf("%s: gain %q must be \"auto\" or tenths of a dB (e.g. \"280\")", path, ch.Gain)

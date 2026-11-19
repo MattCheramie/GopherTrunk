@@ -1196,7 +1196,13 @@ What the driver does, all pinned to libiio v0.25 and SoapyPlutoSDR's source:
   analog bandwidth (`rf_bandwidth`) follows the sample rate unless
   `rf_bandwidth_hz` pins it.
 - **Gain**: `auto` selects `slow_attack`; otherwise `manual` plus
-  `hardwaregain` in whole dB.
+  `hardwaregain` in whole dB. Under `auto` the AD9361 raises whatever it
+  receives, noise included, to its own target level, so an absolute
+  threshold such as a scan-list channel's `squelch_dbfs` screens nothing
+  there. FM scan-list channels also need a carrier (their noise squelch),
+  AM channels use carrier-to-noise and the digital modes their own frames,
+  so a scan list works under either setting; a fixed gain is still the
+  better choice for reading levels.
 - **12-bit samples**, full scale 2048. Levels in dBFS, `squelch_dbfs` and the
   overload checks read like any other SDR.
 - **No ppm trim.** A `ppm` hint is logged and ignored; the decoder's measured

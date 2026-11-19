@@ -605,7 +605,7 @@ type ConvChannelConfig struct {
 	Label       string  `yaml:"label"`
 	FrequencyHz uint32  `yaml:"frequency_hz"`
 	Mode        string  `yaml:"mode"`         // "fm" | "nfm" | "am" (#1219) | "p25" (#1239)
-	SquelchDbFS float64 `yaml:"squelch_dbfs"` // in-channel power (±8 kHz); default -50; ignored for mode am
+	SquelchDbFS float64 `yaml:"squelch_dbfs"` // in-channel power (±8 kHz); default -50; ignored for mode am; fm/nfm also need a carrier (noise_squelch)
 	// SquelchCNDb is an AM channel's squelch: the carrier's
 	// carrier-to-noise ratio (dB, in a ~188 Hz bin) measured from the
 	// channel's own spectrum, so it does not move with gain the way a
@@ -629,7 +629,17 @@ type ConvChannelConfig struct {
 	// 0 (default) opens on the first chunk above the threshold; at most
 	// 1000. Issue #1321 follow-up.
 	SquelchOpenMs int `yaml:"squelch_open_ms"`
-	Priority      int `yaml:"priority"` // 1..10, 0 = unset
+	// NoiseSquelch is an fm / nfm channel's noise squelch: the channel
+	// opens, and a call stays open, only while a carrier quiets the FM
+	// discriminator, as well as clearing squelch_dbfs. Receiver noise
+	// never does at any level, so a squelch_dbfs set below the noise
+	// floor, or a tuner on automatic gain, no longer opens calls on an
+	// empty channel. It measures a ratio, not a level, so it needs no
+	// setting. Unset (default) and true turn it on; false leaves
+	// squelch_dbfs as the only carrier test, for a channel listed as fm
+	// to record something that is not FM. fm / nfm only. Issue #1329.
+	NoiseSquelch *bool `yaml:"noise_squelch,omitempty"`
+	Priority     int   `yaml:"priority"` // 1..10, 0 = unset
 	// TalkgroupID pins the synthetic talkgroup ID this channel surfaces
 	// under (API, call log, scan-type upload consumers such as Rdio
 	// Scanner / OpenMHz / Broadcastify Calls). Unset (0) keeps the

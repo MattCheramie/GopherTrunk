@@ -119,6 +119,7 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 					DeviceSerial: snap.DeviceSerial,
 					LevelDbFS:    ch.LevelDbFS,
 					LevelCNDb:    ch.LevelCNDb,
+					QuietingDb:   ch.QuietingDb,
 					LevelAt:      ch.LevelAt,
 					SquelchDbFS:  ch.SquelchDbFS,
 					SquelchCNDb:  ch.SquelchCNDb,
@@ -302,6 +303,8 @@ func (c scannerCockpit) ManualTune(req api.ManualTuneRequest) (int, bool) {
 		Mode:        req.Mode,
 		SquelchDbFS: req.SquelchDbFS,
 		SquelchCNDb: req.SquelchCNDb,
+		// On unless the request says noise_squelch: false (#1329).
+		NoiseSquelchOff: req.NoiseSquelch != nil && !*req.NoiseSquelch,
 	}
 	if req.HangtimeMs > 0 {
 		ch.Hangtime = time.Duration(req.HangtimeMs) * time.Millisecond

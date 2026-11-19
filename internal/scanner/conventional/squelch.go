@@ -7,10 +7,14 @@
 // silence the scanner publishes CallEnd through EndSyntheticCall and
 // resumes hopping.
 //
-// IQ-domain squelch is chosen over FM-discriminator squelch because
-// it's measurable before any demod chain spins up (cheap blind-channel
-// visits during scanning) and FM carriers are constant-envelope so
-// the same metric drives hangtime detection while a call is active.
+// The first squelch test is IQ-domain power: measurable before any
+// demod chain spins up (cheap blind-channel visits during scanning),
+// and FM carriers are constant-envelope so the same metric drives
+// hangtime detection while a call is active. It is an absolute level,
+// though, so each mode pairs it with a test that does not depend on
+// gain: an analog FM channel's noise squelch (fm_noise_squelch.go), an
+// AM channel's carrier-to-noise (am_squelch.go), a digital channel's
+// call gate (the *_gate.go files, nac.go).
 package conventional
 
 import "math"

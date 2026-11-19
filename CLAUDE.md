@@ -2638,9 +2638,31 @@ confirmation before any close-as-completed.
   the CTCSS/DCS detector alone ("Tone only, not CSQ AND Tone"). FM channels now squelch on
   `channelPowerMeter` (the tone front end's decimate + ±8 kHz filter, then RMS), which reads
   the same level as before for an on-channel signal. It is still absolute dBFS, so a big gain
-  change still moves it; the gain-independent answer is a noise-quieting squelch (the
-  `dmrrx.carrierGate` discriminator-variance idea), not built. Per-channel `gain` landed in the
-  same PR for mixed-band scan lists.
+  change still moves it; the gain-independent answer, a noise squelch, is the #1329 note below.
+  Per-channel `gain` landed in the same PR for mixed-band scan lists.
+- **FM scan-list channels have a NOISE squelch ANDed with `squelch_dbfs` (#1329,
+  `conventional/fm_noise_squelch.go`), because an absolute level screens nothing under an AGC.**
+  The reporter's PlutoSky scan list (PMR446, `squelch_dbfs: -60`) opened a call 100 ms after
+  start-up and recorded noise for 33 and 41 minutes. Their 17 Nov log had the AGC holding
+  -12 dBFS across 4.8 MHz, which is about -37 dBFS in a ±8 kHz channel; whether the 18 Nov run
+  still had `gain: auto` is NOT known (the gain line was not in the paste). The meter
+  discriminates the channel's decimated, filtered IQ (the `channelPowerMeter` stream), high-passes
+  above 5 kHz, and divides by what the same chain gives on white noise (calibrated per rate, as
+  the dmrrx carrier gate is). Measured: 0.98-1.04 on noise at ANY level and rate (real RTL noise
+  at six offsets of `samples/mmr`, the #1219 air-band noise, white noise -99..-11 dBFS, 16 kHz to
+  4.8 MS/s); 0.51 / 0.2 / 0.03 at 0 / 4 / 10 dB carrier-to-noise for every modulation tried; under
+  0.001 on the real FM handhelds, 0.02 on the 57 %-clipped tone, 0.12 on the Phase 2 H-DQPSK
+  carrier. Open at 0.5, hold to 0.6, 20 ms window; two hours of noise never read below 0.66. The
+  two tests cover each other: digital silence or a sub-LSB gain reads perfectly quiet and fails
+  the level; noise over the level fails here. Costs and traps: a channel opens ~25 ms after its
+  carrier (one existing test fed ONE chunk and expected an open); data decoders and the tone
+  detector still run from the level alone so a burst's first bits are not lost; the
+  `OnsetIQSource` mark is back-dated by the latency; a window that ends before the first reading
+  gets one 60 ms extension. `loudChunk` (a DC carrier) passes the gate, noise used as a "signal"
+  would not. `noise_squelch: false` is the A/B. A broadcast FM station (±75 kHz) reads 1.0, like
+  noise, in the ±8 kHz channel and never opens (steadily; ±12 kHz still opens every window): the
+  scan list has no wide-FM mode. NOT covered: a `p25` channel without `nac` still opens on the
+  level alone (`nac: F7E` is its remedy). Not run on a PlutoSky (#764/#771).
 - **A static GOOS=linux binary is NOT an Android binary — the Termux builds are GOOS=android
   (#1230).** v1.2.3 shipped static `GOOS=linux` Termux tarballs (`-tags nolibasound` to drop
   purego's libdl, which a Linux build links even with cgo off) and they died before `main` with
