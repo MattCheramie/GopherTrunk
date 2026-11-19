@@ -51,6 +51,8 @@ func runPower(args []string) {
 	iioAddr := fs.String("iio", "", "address of a Pluto / PlutoSky board's iiod (e.g. 192.168.2.1) to sweep instead of a local SDR")
 	settle := fs.Duration("settle", 0, "samples discarded after each retune (default 50ms local, 250ms rtl_tcp)")
 	keepDC := fs.Bool("keep-dc", false, "leave the tuner's own DC line in the output: a spike at the centre of every hop that is not on the air, removed by default (which also takes out an unmodulated carrier within a sixteenth of a bin of a hop's centre)")
+	fillDC := fs.Bool("fill-dc", false, "when a line like the tuner's DC line is still at a hop's centre after its removal (the tuner's offset moved during the hop, e.g. an AGC stepping its gain), fill those three bins in from the bins beside them, as rtl_power does; this also hides a narrowband signal that sits exactly on a hop's centre")
+	dcReport := fs.Bool("dc-report", false, "print what each hop measured of the tuner's DC line (on stderr, every sweep)")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `gophertrunk power — rtl_power-style sweep logger (CSV) for a local or rtl_tcp SDR.
@@ -64,7 +66,9 @@ OUTPUT (rtl_power's CSV layout, one line per hop):
   date, time, Hz low, Hz high, Hz step, samples, dB, dB, ...
   Bin k of a line is at Hz low + k·Hz step. Levels are uncalibrated dBFS.
   The tuner's own DC line, which would show as a carrier at the centre of
-  every hop, is removed (-keep-dc leaves it in).
+  every hop, is removed (-keep-dc leaves it in). If the tuner's offset moves
+  while a hop is measured, part of the line stays: power says so, and
+  -fill-dc fills it in.
 
 EXAMPLES:
   # FM broadcast band in 10 kHz bins, one sweep every 10 s, to a file
@@ -191,6 +195,7 @@ FLAGS:`)
 
 	integ := powerIntegration(every, uint32(*rate), len(plan.Hops), settleFor)
 	integ.KeepDC = *keepDC
+	integ.FillDC = *fillDC
 	fmt.Fprint(os.Stderr, powerPlanSummary(name, r, plan, every))
 
 	// IQ dropped anywhere between the dongle and the FFT: by the driver (its
@@ -201,7 +206,7 @@ FLAGS:`)
 	defer sdr.SetIQDropObserver(nil)
 	drops := func() uint64 { return driverDrops.count() + src.dropped.Load() }
 
-	err = runPowerSweeps(ctx, src, plan, integ, powerSchedule{every: every, stopAfter: stopAfter, single: *single}, bw, os.Stderr, time.Now, sleepCtx, drops)
+	err = runPowerSweeps(ctx, src, plan, integ, powerSchedule{every: every, stopAfter: stopAfter, single: *single, dcReport: *dcReport, fixedGain: gainTenthDB >= 0}, bw, os.Stderr, time.Now, sleepCtx, drops)
 	if errors.Is(err, io.ErrUnexpectedEOF) {
 		err = iqStreamEnded(dev, err)
 	}
@@ -237,6 +242,11 @@ type powerSchedule struct {
 	every     time.Duration
 	stopAfter time.Duration
 	single    bool
+	// dcReport prints every hop's DC line measurements (-dc-report).
+	dcReport bool
+	// fixedGain says the tuner's gain is not automatic, so a DC line left
+	// after the removal is not put down to an AGC.
+	fixedGain bool
 }
 
 // newPowerIQSource opens the device's IQ stream for `power`. Falling behind
@@ -302,7 +312,7 @@ func runPowerSweeps(ctx context.Context, src powersweep.Source, plan powersweep.
 		in.Now = now
 	}
 	start := now()
-	var notedCPU, notedSource bool
+	var notedCPU, notedSource, notedDC bool
 	var lastDrops uint64
 	if drops != nil {
 		lastDrops = drops()
@@ -341,6 +351,17 @@ func runPowerSweeps(ctx context.Context, src powersweep.Source, plan powersweep.
 				}
 			}
 		}
+		if notes != nil {
+			if sched.dcReport {
+				for _, row := range rows {
+					fmt.Fprintln(notes, powerDCReportLine(row, plan))
+				}
+			}
+			if note := powerDCLineNote(sweep, rows, plan, sched.fixedGain); note != "" && !notedDC {
+				notedDC = true
+				fmt.Fprint(notes, note)
+			}
+		}
 		if err := powersweep.WriteCSV(w, rows); err != nil {
 			return err
 		}
@@ -358,6 +379,82 @@ func runPowerSweeps(ctx context.Context, src powersweep.Source, plan powersweep.
 			return err
 		}
 	}
+}
+
+// powerHopCentreHz is the frequency a row's hop was tuned to: the bin
+// HopBins/2 of the row, whether or not a short last row reaches it.
+func powerHopCentreHz(row powersweep.Row, plan powersweep.Plan) float64 {
+	return row.LowHz + float64(plan.HopBins/2)*row.StepHz
+}
+
+// powerDCLineNote is what `power` says, once per run, when the removal of
+// the tuner's DC line left a line of its shape at the centre of some hops
+// (#1230: the v1.4.1 retest on a PlutoSky still showed it in the busy hops,
+// with nothing to say why). It is empty when no hop of the sweep has one.
+//
+// The removal takes out what stands still from frame to frame. A line is
+// left when the tuner's offset moved during the hop (an AGC stepping its
+// gain moves it), and also when a narrowband signal sits exactly on the
+// hop's centre; the spectrum cannot tell which, so the note names both and
+// what to do about each.
+func powerDCLineNote(sweep int, rows []powersweep.Row, plan powersweep.Plan, fixedGain bool) string {
+	var at []string
+	var worst float64
+	filled := false
+	for _, row := range rows {
+		if row.DC.Finding != powersweep.DCLineLeft {
+			continue
+		}
+		at = append(at, fmt.Sprintf("%.4f", powerHopCentreHz(row, plan)/1e6))
+		worst = math.Max(worst, row.DC.LeftDB)
+		filled = filled || row.DC.Filled
+	}
+	if len(at) == 0 {
+		return ""
+	}
+	where := strings.Join(at, ", ")
+	if len(at) > 4 {
+		where = strings.Join(at[:4], ", ") + ", …"
+	}
+	if filled {
+		return fmt.Sprintf("power: note — sweep %d: a line the shape of the tuner's DC line was left at the centre of %d of %d hops "+
+			"(%s MHz; up to %.1f dB over the bins beside it) and is filled in from those bins (-fill-dc). "+
+			"A narrowband signal exactly on a hop's centre is filled in with it. -dc-report prints what each hop measured.\n",
+			sweep, len(at), len(rows), where, worst)
+	}
+	agc := " (an AGC changing its gain does that: a fixed -gain keeps it still)"
+	if fixedGain {
+		agc = ""
+	}
+	return fmt.Sprintf("power: note — sweep %d: after the tuner's DC line was removed, a line of its shape is still at the centre of "+
+		"%d of %d hops (%s MHz; up to %.1f dB over the bins beside it). Either the tuner's offset moved while those hops were measured%s, "+
+		"or a narrowband signal sits exactly on a hop's centre. "+
+		"-fill-dc fills those three bins in from the bins beside them, as rtl_power does. -dc-report prints what each hop measured.\n",
+		sweep, len(at), len(rows), where, worst, agc)
+}
+
+// powerDCReportLine is one hop's line of -dc-report: what was removed as
+// the tuner's DC line, what was left at the centre, and how that behaves
+// from one FFT frame to the next. Posted back from a field run, it tells a
+// moving offset (alike from frame to frame, no turn) from a carrier off the
+// centre (a steady turn) without a capture.
+func powerDCReportLine(row powersweep.Row, plan powersweep.Plan) string {
+	head := fmt.Sprintf("power: dc %.4f–%.4f MHz (centre %.4f):", row.LowHz/1e6, row.HighHz/1e6, powerHopCentreHz(row, plan)/1e6)
+	d := row.DC
+	if !d.Measured {
+		return head + " not measured"
+	}
+	still := "nothing stood still"
+	if !math.IsInf(d.StillDB, -1) {
+		still = fmt.Sprintf("%.1f dBFS stood still and was removed", d.StillDB)
+	}
+	turnHz := d.PhaseRad / (2 * math.Pi) * plan.SampleRateHz / float64(plan.FFTSize)
+	s := fmt.Sprintf("%s %s; centre %+.1f dB over the bins beside it, shape %.2f, alike %.2f, turn %+.1f° a frame (%+.0f Hz): %s",
+		head, still, d.LeftDB, d.Shape, d.Coherence, d.PhaseRad*180/math.Pi, turnHz, d.Finding)
+	if d.Filled {
+		s += ", filled in"
+	}
+	return s
 }
 
 // droppedClause names the IQ chunks a short sweep dropped, for the slow-CPU

@@ -11,10 +11,12 @@ import (
 )
 
 // talkerCall logs one call on its own device serial: it starts with the first
-// over's radio, each further over arrives as a source update (which is what
-// moves call_log.source_id to the LAST talker), and every over finishes a
-// recording file stamped with its own radio. overs lists the radio of each
-// file in order; 0 is a file whose talker never resolved.
+// over's radio, every over finishes a recording file stamped with its own
+// radio, and the call's end carries the last radio that resolved, which is
+// what moves call_log.source_id to the LAST talker (the call log takes the
+// source from the start and the end; it does not follow source updates in
+// between). overs lists the radio of each file in order; 0 is a file whose
+// talker never resolved.
 func talkerCall(t *testing.T, bus *events.Bus, serial string, tg uint32, start time.Time, overs ...uint32) {
 	t.Helper()
 	g := trunking.Grant{System: "R13", Protocol: "p25", GroupID: tg, SourceID: overs[0], FrequencyHz: 167_850_000}
@@ -22,12 +24,6 @@ func talkerCall(t *testing.T, bus *events.Bus, serial string, tg uint32, start t
 	publish(events.KindCallStart, trunking.CallStart{Grant: g, DeviceSerial: serial, StartedAt: start})
 	end := start
 	for i, src := range overs {
-		if i > 0 && src != 0 {
-			publish(events.KindCallSourceUpdate, trunking.CallSourceUpdate{
-				DeviceSerial: serial, System: g.System, Protocol: g.Protocol, GroupID: tg,
-				SourceID: src, FrequencyHz: g.FrequencyHz, At: end,
-			})
-		}
 		g.SourceID = src
 		overStart := end
 		end = overStart.Add(3 * time.Second)
@@ -85,6 +81,29 @@ func waitRecordings(t *testing.T, db *DB, n int) {
 	}
 }
 
+// waitEnded blocks until the call log has written the end of n calls. A
+// row's source_id becomes its last talker only then, after the call's last
+// recording is attached: waiting for the recordings alone left a window in
+// which the last call still showed the radio it started with (seen once in
+// a loaded -race run: "tg 104: source_id = 0").
+func waitEnded(t *testing.T, db *DB, n int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var got int
+		if err := db.SQL().QueryRow(`SELECT COUNT(*) FROM call_log WHERE ended_at IS NOT NULL`).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got == n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("call_log has %d ended calls, want %d", got, n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // A call row's source_id is the call's LAST talker, so a reply inside the
 // hangtime hid the radio that opened the call (#1379). The row now lists
 // every radio its recording files name, in the order each first spoke.
@@ -98,6 +117,7 @@ func TestHistoryListsEveryTalkerOfACall(t *testing.T) {
 	talkerCall(t, bus, "tap-3", 103, t0.Add(3*time.Minute), a, 0)     // second over never resolved
 	talkerCall(t, bus, "tap-4", 104, t0.Add(4*time.Minute), 0, b)     // opened with no source, then B
 	waitRecordings(t, db, 12)
+	waitEnded(t, db, 5)
 
 	rows, err := db.History(context.Background(), HistoryFilter{Limit: 10})
 	if err != nil {
@@ -179,6 +199,7 @@ func TestHistorySourceFilterFindsEarlierTalker(t *testing.T) {
 	talkerCall(t, bus, "tap-1", 101, t0.Add(time.Minute), b)   // B alone
 	talkerCall(t, bus, "tap-2", 102, t0.Add(2*time.Minute), c) // C alone
 	waitRecordings(t, db, 4)
+	waitEnded(t, db, 3)
 
 	tgs := func(src uint32) []uint32 {
 		t.Helper()
