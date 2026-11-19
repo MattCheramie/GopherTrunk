@@ -287,3 +287,46 @@ func TestWidebandPagingDecodesWithNoLiveView(t *testing.T) {
 		t.Fatalf("StreamIQ sessions = %d, want 1", got)
 	}
 }
+
+// TestWidebandPagingBankFollowsItsSDRsOwnRate: a dongle a paging section
+// pins may run its own sample_rate (#1316), and the group's DDC bank must be
+// built for the rate that dongle streams at. It was built for the shared
+// sdr.sample_rate, which puts every tap at the wrong offset and the wrong
+// output rate on such a dongle: nothing decodes, with no warning.
+func TestWidebandPagingBankFollowsItsSDRsOwnRate(t *testing.T) {
+	const serial = "pager-own-rate"
+	sdr.Register(&fixedSDRDriver{name: "fake-paging-own-rate", serials: []string{serial}})
+
+	cfg := config.Default()
+	cfg.API.HTTPAddr = ""
+	cfg.Trunking.Systems = nil
+	cfg.SDR.SampleRate = 2_400_000
+	cfg.SDR.Devices = []config.DeviceConfig{{Serial: serial, Role: "dedicated", SampleRate: 1_200_000}}
+	group := pagingTestGroup()
+	group.Serial = serial
+	cfg.Paging.Wideband = []config.PagingWidebandConfig{group}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("config: %v", err)
+	}
+
+	d, err := NewDaemon(cfg, "paging-rate-test", slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("NewDaemon: %v", err)
+	}
+	t.Cleanup(d.Close)
+	if d.pool == nil {
+		t.Fatalf("pool did not open: %v", d.StartupWarnings())
+	}
+	if e := d.pool.FindBySerial(serial); e == nil || e.Role != sdr.RoleDedicated {
+		t.Fatalf("paging SDR entry = %+v, want role dedicated", e)
+	}
+	if len(d.pagingGroups) != 1 {
+		t.Fatalf("paging groups = %d, want 1; warnings=%v", len(d.pagingGroups), d.StartupWarnings())
+	}
+	if got := d.pagingGroups[0].sampleRateHz; got != 1_200_000 {
+		t.Fatalf("group DDC bank rate = %d S/s, want the dongle's own 1200000 (sdr.sample_rate is 2400000)", got)
+	}
+	if got := d.iqBrokers[serial].SampleRateHz(); got != 1_200_000 {
+		t.Fatalf("broker rate = %d S/s, want 1200000", got)
+	}
+}

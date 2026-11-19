@@ -2711,11 +2711,13 @@ func (d *Daemon) buildPeripheralReceivers(cfg config.Config, log *slog.Logger) {
 	// paging.wideband entry sharing a single SDR across several paging
 	// channels. Constructed here; the Run loop tunes the dongle to the
 	// group's center, builds the tuner.DDCBank, and feeds each tap into
-	// the receiver built below. Same skip-with-warning policy as the
+	// the receiver built below. The bank is built for the rate the
+	// group's own SDR streams at, which is not sdr.sample_rate when the
+	// dongle sets its own (#1316). Same skip-with-warning policy as the
 	// single-frequency paging loops: a bad group is logged and dropped
 	// without disturbing the rest of the pipeline.
 	for _, wg := range cfg.Paging.Wideband {
-		if group := d.buildWidebandPagingGroup(wg, cfg.SDR.SampleRate, log); group != nil {
+		if group := d.buildWidebandPagingGroup(wg, d.decoderSDRRate(cfg, wg.Serial), log); group != nil {
 			d.pagingGroups = append(d.pagingGroups, *group)
 		}
 	}
