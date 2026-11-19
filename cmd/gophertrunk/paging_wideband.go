@@ -35,6 +35,10 @@ func newWidebandPagingBank(sampleRateHz uint32) *tuner.DDCBank {
 // first decoder on a serial drives StreamIQ (later ones Subscribe), and a
 // failed tune, a stream that cannot open or a stream that ends are retried.
 func (d *Daemon) runWidebandPagingGroup(ctx context.Context, g widebandPagingGroup) error {
+	if d.iqBrokers[g.serial] == nil {
+		d.log.Warn("paging.wideband: SDR not found, skipping group", "serial", g.serial)
+		return nil
+	}
 	freqs := make([]uint32, len(g.channels))
 	for i, ch := range g.channels {
 		freqs[i] = ch.freq

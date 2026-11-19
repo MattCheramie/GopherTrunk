@@ -33,7 +33,7 @@ func TestDaemonDecodesWidebandPagingWithNoLiveView(t *testing.T) {
 	const serial = "pager-air-sdr"
 	dev := &pagingAirFake{serial: serial, rateHz: pagingTestRateHz,
 		txHz: pagingTestTxHz, syms: pagingTestFrame(t)}
-	sdr.Register(&pagingAirDriver{dev: dev})
+	registerSDRDriverForTest(t, &pagingAirDriver{dev: dev})
 
 	cfg := config.Default()
 	cfg.API.HTTPAddr = freeAddr(t)

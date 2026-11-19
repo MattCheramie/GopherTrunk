@@ -151,6 +151,29 @@ func flexFSK(syms []byte, rateHz, offsetHz, leadSec float64, rng *rand.Rand) []c
 	return iq
 }
 
+// registerSDRDriverForTest registers drv and hides its devices again when
+// the test ends. The sdr driver registry is process-wide and has no
+// Unregister, so a later test whose daemon opens every discovered device
+// would otherwise open this test's fake SDR too.
+func registerSDRDriverForTest(t *testing.T, drv sdr.Driver) {
+	t.Helper()
+	scoped := &testScopedDriver{Driver: drv}
+	sdr.Register(scoped)
+	t.Cleanup(func() { scoped.gone.Store(true) })
+}
+
+type testScopedDriver struct {
+	sdr.Driver
+	gone atomic.Bool
+}
+
+func (d *testScopedDriver) Enumerate() ([]sdr.Info, error) {
+	if d.gone.Load() {
+		return nil, nil
+	}
+	return d.Driver.Enumerate()
+}
+
 const (
 	pagingTestSerial = "pager-sdr"
 	pagingTestRateHz = 240_000
@@ -295,7 +318,7 @@ func TestWidebandPagingDecodesWithNoLiveView(t *testing.T) {
 // output rate on such a dongle: nothing decodes, with no warning.
 func TestWidebandPagingBankFollowsItsSDRsOwnRate(t *testing.T) {
 	const serial = "pager-own-rate"
-	sdr.Register(&fixedSDRDriver{name: "fake-paging-own-rate", serials: []string{serial}})
+	registerSDRDriverForTest(t, &fixedSDRDriver{name: "fake-paging-own-rate", serials: []string{serial}})
 
 	cfg := config.Default()
 	cfg.API.HTTPAddr = ""

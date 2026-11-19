@@ -6230,6 +6230,9 @@ func (d *Daemon) buildWidebandPagingGroup(wg config.PagingWidebandConfig, sample
 		center = min + (max-min)/2
 	}
 
+	if sampleRateHz == 0 {
+		sampleRateHz = sdr.DefaultSampleRateHz
+	}
 	group := &widebandPagingGroup{serial: wg.Serial, centerFreq: center, sampleRateHz: sampleRateHz}
 	// The bank the run loop builds per stream session; used here only to
 	// tell which channels the IQ window reaches, so a group never starts
