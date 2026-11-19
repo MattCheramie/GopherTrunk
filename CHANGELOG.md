@@ -8,6 +8,23 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **The decode chip read `decode: —` on a setup with only a wideband SDR.**
+  On a `role: wideband` dongle, the Dashboard, Scanner and Plots showed
+  `decode: —` beside a control channel that was decoding cleanly, because
+  `GET /api/v1/scanner` listed only the systems the control-channel hunter
+  follows, and a wideband-only setup has no hunter (`systems: []`).
+  - **Each wideband system is now listed**, with `wideband_serial` naming its
+    dongle. It reads `locked` while a control channel decodes, otherwise
+    `listening` (or `camped` for conventional DMR and other channels that are
+    idle between transmissions).
+  - **The chip shows the channel's decode quality:** P25 TSBKs and TETRA BSCH
+    bursts failed over the last 30 seconds, with the same clean / marginal /
+    poor limits as a dedicated control SDR. Other protocols show the lock and
+    the level, with no quality they could not measure.
+  - The per-system symbol chip and level bar now have the locked frequency and
+    level to read too.
+  - Hold, resume and retune are not offered for a wideband system, in the web
+    console or the TUI: nothing hunts it.
 - **Wideband paging decoded only while the Spectrum view was open.** On a
   paging-only setup (one SDR, no trunking system, a `paging.wideband` group)
   pages arrived only while a live view was open in the web console, and the

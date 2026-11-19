@@ -1057,6 +1057,13 @@ confirmation before any close-as-completed.
   the FULL input rate plus a receiver (`internal/scanner/symbolscope/scope.go`), nothing is
   pooled, and Dashboard + Scanner + Plots each mount `useSignalQuality` while Histogram opens a
   fourth. Several open tabs = several full DSP chains. Pooling them is still open work.
+- **`GET /api/v1/scanner` `systems` came ONLY from the cchunt supervisor, so a wideband-only rig
+  (no `role: control` SDR ⇒ no hunter) listed `systems: []` and every decode chip read
+  `decode: —` beside a cleanly decoding CC (PR #1384's notes).** `widebandt2.Engine.ChannelHealth`
+  now reports each wideband CC (decoding = a frame within `lowPowerDecodeGrace`, frame-error
+  bucket over a ROLLING 30 s span — not lifetime, an engine runs for days — on P25 P1 TSBKs /
+  TETRA BSCH only, ccdecoder's 1 % / 5 % / 20-attempt limits) and `mergeWidebandSystems` adds one
+  row per system (`wideband_serial`, state `locked` / `listening` / `camped`; hunt controls hidden).
 - **"Spectrum waterfall works on the example config, blank after saving my own" (Discord,
   Oct 2026) = no decoder was streaming the SDR, NOT the API mutation/auth settings.** An iqtap
   broker only fans IQ to subscribers while a PRIMARY `StreamIQ` session runs; the example

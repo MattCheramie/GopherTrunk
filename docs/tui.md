@@ -237,8 +237,8 @@ or configure a token before exposing the listener. The legacy
 | Talkgroups | `a` | Avoid the selected talkgroup for 30 minutes (timed lockout, clears itself); pressing it on an avoided talkgroup clears the avoid early | no |
 | Tone alerts | `R` | Reset tone-out match progress on the highlighted device (`POST /api/v1/devices/{serial}/tone-reset`) | yes |
 | Metrics | `S` | Run a retention sweep now (`POST /api/v1/retention/sweep`) | yes |
-| Scanner | `h` | Hold/resume highlighted system or conv channel (`POST /api/v1/scanner/hunt/{system}/{hold,resume}` or `/conventional/{hold,resume}`) | no |
-| Scanner | `r` | Force re-hunt the highlighted system (`POST /api/v1/scanner/hunt/{system}/retune`) | yes |
+| Scanner | `h` | Hold/resume highlighted system or conv channel (`POST /api/v1/scanner/hunt/{system}/{hold,resume}` or `/conventional/{hold,resume}`); does nothing on a system marked `[wideband …]`, which nothing hunts | no |
+| Scanner | `r` | Force re-hunt the highlighted system (`POST /api/v1/scanner/hunt/{system}/retune`); does nothing on a `[wideband …]` system | yes |
 | Scanner | `Enter` | Dwell on the highlighted conv channel (`POST /api/v1/scanner/conventional/{index}/dwell`) | no |
 | Scanner | `L` | Lockout / unlockout the highlighted conv channel (`POST /api/v1/scanner/conventional/{index}/{lockout,unlockout}`) | no — reversible |
 | Scanner | `m` | Cycle global scan_mode list ↔ all (`PATCH /api/v1/scanner`) | no |
