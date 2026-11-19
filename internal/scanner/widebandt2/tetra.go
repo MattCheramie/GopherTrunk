@@ -245,5 +245,7 @@ func buildTETRAChannel(sys trunking.System, ch ChannelConfig, outRateHz float64,
 		processor: cc,
 		receiver:  rcv,
 		decoded:   func() uint64 { ok, _ := cc.BSCHCounts(); return uint64(ok) },
+		// BSCH is what the single-tuner decoder rates a TETRA lock on too.
+		frameCounts: cc.BSCHCounts,
 	}, nil
 }

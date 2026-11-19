@@ -320,6 +320,11 @@ type Engine struct {
 	// spurious grants whose voice taps capture no audio (empty TG folders).
 	// Read on the pump goroutine; set via Suspend/Resume from another goroutine.
 	suspended atomic.Bool
+
+	// health is the per-channel decode-health snapshot ChannelHealth serves
+	// (the web console's decode chip). Written by the pump once per
+	// diagnostics window, read from the API goroutine under its mutex.
+	health healthTracker
 }
 
 // Serial returns the dongle serial this engine decodes on (the value passed as
@@ -412,6 +417,9 @@ type engineChannel struct {
 	// conventional marks a tap-only analog FM channel (issue #1288): no
 	// receiver, and silence between transmissions is its normal state.
 	conventional bool
+	// sysProto is the channel's system protocol, reported by ChannelHealth
+	// in trunking.Protocol.String() spelling. Unset on conventional channels.
+	sysProto trunking.Protocol
 	// dmrTier3 is the typed Tier III control channel for "dmr-tier3"
 	// channels (nil otherwise). Exposed via DMRTier3ControlChannel so the
 	// DMR LCN autoconfig learner can hot-swap a learned band-plan resolver.
@@ -489,6 +497,17 @@ type engineChannel struct {
 	// activity (delta > 0). Set per protocol in buildChannel.
 	decoded     func() uint64
 	lastDecoded uint64
+	// frameCounts returns the channel's cumulative (decoded, failed) frame
+	// counts where the protocol counts its failures (P25 Phase 1 TSBKs,
+	// TETRA BSCH), so ChannelHealth can bucket a frame-error rate; nil
+	// elsewhere. healthRing/healthNext/healthCount hold the last
+	// healthSpanWindows windows of it, and decodingSince is when the current
+	// decoding stretch began. All pump-owned (see health.go).
+	frameCounts   func() (decoded, failed int64)
+	healthRing    [healthSpanWindows + 1]frameTally
+	healthNext    int
+	healthCount   int
+	decodingSince time.Time
 	// lastDecodeAt is when the channel last showed a positive decode delta.
 	// It gates the low-power WARN: a channel with live decode evidence within
 	// lowPowerDecodeGrace is healthy whatever its absolute dBFS reads, so the
@@ -708,6 +727,7 @@ func New(opts Options) (*Engine, error) {
 			if ec, err = buildChannel(sys, ch, outRateHz, opts.Bus, log, opts.Now); err != nil {
 				return nil, err
 			}
+			ec.sysProto = sys.Protocol
 		}
 		ec.rateHz = outRateHz
 		ec.fan = newChannelFanout(log, opts.Serial, ch.FrequencyHz, outRateHz)
@@ -936,12 +956,13 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			log:       log, system: sys.Name, label: "p25-phase1",
 			rateHz: outRateHz, window: p25Phase1ResyncWindow,
 		}
+		tsbkCounts := func() (int64, int64) {
+			st := cc.Stats()
+			return st.TSBKDecoded, st.TSBKTrellisFailed + st.TSBKCRCFailed
+		}
 		return &engineChannel{freqHz: freqHz, sysName: sys.Name, protoTag: "p25-phase1", processor: cc, receiver: rcv,
-			decoded: func() uint64 { return uint64(cc.Stats().TSBKDecoded) },
-			tsbkCounts: func() (int64, int64) {
-				st := cc.Stats()
-				return st.TSBKDecoded, st.TSBKTrellisFailed + st.TSBKCRCFailed
-			}}, nil
+			decoded:    func() uint64 { return uint64(cc.Stats().TSBKDecoded) },
+			tsbkCounts: tsbkCounts, frameCounts: tsbkCounts}, nil
 
 	case trunking.ProtocolP25Phase2:
 		if err := requireControlChannel(sys, freqHz, "p25-phase2 / Phase 2"); err != nil {
@@ -1488,11 +1509,12 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 	}
 
 	debug := e.log.Enabled(context.Background(), slog.LevelDebug)
-	for _, ec := range e.channels {
+	for i, ec := range e.channels {
 		if ec.pwr.Samples() == 0 {
 			continue
 		}
 		dbfs, _ := ec.pwr.MeanDbFSAndReset()
+		prevDecodeAt := ec.lastDecodeAt
 		if e.metrics != nil {
 			e.metrics.RecordIQPowerDbFS(ec.powerLabel(), dbfs)
 		}
@@ -1524,6 +1546,7 @@ func (e *Engine) maybeLogDiagnostics(now time.Time) {
 				})
 			}
 		}
+		e.updateHealth(i, ec, now, dbfs, prevDecodeAt)
 		e.checkTSBKHealth(ec, now, dbfs, wbOverloaded)
 
 		// A channel with recent protocol decodes is healthy whatever its
