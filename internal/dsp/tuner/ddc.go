@@ -246,6 +246,10 @@ func (b *DDCBank) offsetInBand(offsetHz float64) bool {
 	return offsetHz >= -half && offsetHz <= half
 }
 
+// OffsetInBand reports whether AddTap would accept a tap at offsetHz, so a
+// caller can validate its plan before it builds the taps.
+func (b *DDCBank) OffsetInBand(offsetHz float64) bool { return b.offsetInBand(offsetHz) }
+
 // EnableWorkers runs the per-tap chains (NCO mix, resample, sink) across up to
 // workers goroutines once there are at least two taps; a no-op otherwise (the
 // serial loop). Unlike the channelizer, whose per-tap work is a cheap

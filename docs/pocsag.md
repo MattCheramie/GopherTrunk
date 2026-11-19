@@ -69,9 +69,26 @@ So two pagers a few hundred kHz apart (e.g. FLEX on 153.0250 MHz and
 POCSAG on 153.3500 MHz, 325 kHz apart) share one stick instead of
 needing two. Each channel frequency must sit inside the dongle's IQ
 window (`center ± sample_rate/2`, minus a 5% guard); a channel outside
-the window is logged and skipped without disturbing its siblings. When
-`center_freq_hz` is omitted (or 0) the daemon centers on the midpoint
-of the channel frequencies.
+the window is reported as a startup warning and skipped without
+disturbing its siblings. When `center_freq_hz` is omitted (or 0) the
+daemon centers on the midpoint of the channel frequencies.
+
+The group runs its SDR from start-up, whether or not anything else uses
+that dongle, so a paging-only setup (one SDR, no trunking system) decodes
+on its own. The log shows it:
+
+```
+paging.wideband: group starting serial=pager-sdr center_hz=929637500 sample_rate_hz=2400000 channels_hz="[929612500 929662500]"
+flex: frame sync source=pager-sdr bps=1600 symbol_rate=1600 levels=2
+```
+
+A live view (Spectrum, the scopes, a Signal Lab capture) on that SDR
+shares the group's stream; opening or closing one does not start or stop
+the SDR. If the tune or the stream fails, the group retries with a
+back-off (`paging.wideband: … — retrying`) instead of stopping. The SDR
+streams at its own `sample_rate` when `sdr.devices` sets one for it,
+otherwise at `sdr.sample_rate`, and the IQ window above follows that
+rate.
 
 ## FLEX
 

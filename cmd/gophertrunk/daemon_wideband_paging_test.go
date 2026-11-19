@@ -123,3 +123,43 @@ func TestBuildWidebandPagingGroupRejectsEmpty(t *testing.T) {
 		t.Fatalf("want 1 warning for the empty group, got %v", d.StartupWarnings())
 	}
 }
+
+// TestBuildWidebandPagingGroupSkipsOutOfBandChannel: a channel the SDR's IQ
+// window cannot reach is dropped at start-up with a warning the operator
+// sees (it used to surface only as a log line once the group ran), and a
+// group left with nothing it can decode is not built at all, so its run
+// loop never starts with an empty bank.
+func TestBuildWidebandPagingGroupSkipsOutOfBandChannel(t *testing.T) {
+	d := newPagingTestDaemon()
+	wg := config.PagingWidebandConfig{
+		Serial:       "pager-sdr",
+		CenterFreqHz: 929_612_500,
+		Channels: []config.PagingWidebandChannel{
+			{Protocol: "flex", FrequencyHz: 929_612_500},
+			{Protocol: "flex", FrequencyHz: 931_937_500}, // 2.325 MHz off: outside ±921.6 kHz at 2.048 MS/s
+		},
+	}
+	group := d.buildWidebandPagingGroup(wg, 2_048_000, slog.Default())
+	if group == nil {
+		t.Fatalf("group should survive one out-of-band channel; warnings=%v", d.StartupWarnings())
+	}
+	if len(group.channels) != 1 || group.channels[0].freq != 929_612_500 {
+		t.Fatalf("expected only the in-band channel, got %+v", group.channels)
+	}
+	if got := d.StartupWarnings(); len(got) != 1 {
+		t.Fatalf("want 1 warning for the out-of-band channel, got %v", got)
+	}
+	if group.sampleRateHz != 2_048_000 {
+		t.Fatalf("group sample rate = %d, want 2048000", group.sampleRateHz)
+	}
+
+	// Auto-centred between two channels 2.325 MHz apart, neither fits.
+	d = newPagingTestDaemon()
+	wg.CenterFreqHz = 0
+	if g := d.buildWidebandPagingGroup(wg, 2_048_000, slog.Default()); g != nil {
+		t.Fatalf("a group with no reachable channel should not be built, got %+v", g)
+	}
+	if got := d.StartupWarnings(); len(got) != 2 {
+		t.Fatalf("want a warning per out-of-band channel, got %v", got)
+	}
+}
