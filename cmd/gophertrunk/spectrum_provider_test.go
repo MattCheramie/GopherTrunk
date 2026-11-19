@@ -341,9 +341,18 @@ func TestControlChannelFor(t *testing.T) {
 
 	const sr = 2_048_000 // ±1.024 MHz passband
 
+	// importedSites stands in for a RadioReference site dump: every
+	// frequency of every site, none of them the one being decoded.
+	importedSites := trunking.System{
+		Name:            "Imported-sites",
+		Protocol:        trunking.ProtocolP25,
+		ControlChannels: []uint32{851_087_500, 851_112_500, 851_900_000},
+	}
+
 	tests := []struct {
 		name       string
 		systems    []trunking.System
+		locked     []uint32
 		centerHz   uint32
 		sampleRate uint32
 		want       uint32
@@ -390,11 +399,55 @@ func TestControlChannelFor(t *testing.T) {
 			sampleRate: sr,
 			want:       0,
 		},
+		{
+			// The wideband regression: an imported site list puts
+			// every site's frequencies in the config, so an unused
+			// entry can sit nearer the tuner than the CC actually
+			// being decoded. The locked one must win.
+			name:       "locked CC beats a configured CC nearer the centre",
+			systems:    []trunking.System{multiCC, importedSites},
+			locked:     []uint32{851_500_000},
+			centerHz:   851_100_000,
+			sampleRate: sr,
+			want:       851_500_000,
+		},
+		{
+			name:       "locked CC out of band falls back to configured",
+			systems:    []trunking.System{multiCC},
+			locked:     []uint32{900_000_000},
+			centerHz:   851_100_000,
+			sampleRate: sr,
+			want:       851_000_000,
+		},
+		{
+			name:       "two locked CCs in band returns the closer one",
+			systems:    []trunking.System{multiCC},
+			locked:     []uint32{851_000_000, 851_500_000},
+			centerHz:   851_400_000,
+			sampleRate: sr,
+			want:       851_500_000,
+		},
+		{
+			name:       "no locked CCs keeps the configured behaviour",
+			systems:    []trunking.System{multiCC},
+			locked:     nil,
+			centerHz:   851_100_000,
+			sampleRate: sr,
+			want:       851_000_000,
+		},
+		{
+			name:       "a zero locked frequency is ignored",
+			systems:    []trunking.System{multiCC},
+			locked:     []uint32{0},
+			centerHz:   851_100_000,
+			sampleRate: sr,
+			want:       851_000_000,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := controlChannelFor(tc.systems, tc.centerHz, tc.sampleRate)
+			got := controlChannelFor(tc.systems, tc.locked, tc.centerHz, tc.sampleRate)
 			if got != tc.want {
 				t.Fatalf("controlChannelFor() = %d, want %d", got, tc.want)
 			}
