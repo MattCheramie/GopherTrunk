@@ -112,6 +112,10 @@ depends on the path:
           - { label: "EMS", frequency_hz: 460_200_000, mode: nfm, tone: { mode: ctcss, ctcss_hz: 123.0 } }
   ```
 
+  An `fm` / `nfm` channel here has the scan list's noise squelch too: it
+  opens only on a carrier, not on noise above `squelch_dbfs`
+  (`noise_squelch: false` switches that off).
+
   An AM channel (air band) squelches on its carrier-to-noise ratio
   (`squelch_cn_db`, default 12 dB) measured from its own tap, exactly as on the
   scan list, so `squelch_dbfs` does not apply to it and the threshold does not

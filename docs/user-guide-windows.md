@@ -1071,7 +1071,8 @@ scanner:
 | `gain` | Optional tuner gain for this channel on the scanner SDR: `"auto"` or tenths of a dB (`"280"` = 28 dB). Empty uses the device's gain |
 | `audio_gain_db` | Optional gain in dB on this channel's recovered audio (recording, live stream, uploads), to balance a mixed list of AM, NFM and P25 channels. `0` (default) leaves it unchanged; range ±30 dB; clamps at full scale |
 | `device` | Optional SDR for this channel: the serial of a `role: voice` SDR. Channels naming the same device form that SDR's scan list, and each SDR scans in parallel with the others. A named SDR is taken out of the trunking voice pool. Empty (default) uses the shared scanner SDR. See "Scanning on several SDRs" below |
-| `squelch_dbfs` | Squelch threshold in dBFS (FM channels), measured on the channel itself (±8 kHz), not the SDR's whole span |
+| `squelch_dbfs` | Squelch threshold in dBFS (FM and digital channels), measured on the channel itself (±8 kHz), not the SDR's whole span. An `fm` / `nfm` channel must also show a carrier (`noise_squelch`) |
+| `noise_squelch` | `fm` / `nfm` only, on by default: the channel opens, and a call stays open, only while a carrier quiets the FM discriminator. Receiver noise never does, at any level, so a `squelch_dbfs` under the noise floor or a tuner on automatic gain does not open calls on an empty channel. Nothing to set; `false` leaves `squelch_dbfs` as the only test. Also accepted by `POST /api/v1/scanner/manual_tune`. See "The noise squelch" below |
 | `squelch_cn_db` | AM channels: carrier-to-noise open threshold in dB (default 12) |
 | `hangtime_ms` | Carrier-lost dwell before hopping |
 | `squelch_open_ms` | Optional: how long the channel must stay above its squelch (`squelch_dbfs`, or `squelch_cn_db` on AM) before a call opens. A click above the threshold then no longer opens a call, so a channel with impulsive noise can run a lower squelch. `0` (default) opens at once; at most `1000`. The first `squelch_open_ms` of each transmission is not recorded, so keep it short (30–80 ms rejects a click). Also accepted by `POST /api/v1/scanner/manual_tune` |
@@ -1091,6 +1092,44 @@ channel's live level next to its threshold: `level_dbfs` against
 compares, smoothed over about 200 ms, with `level_at` saying when it was
 last measured. The scanner measures a channel only while it is on it, so
 read it with no signal present and set the squelch a few dB above.
+
+**The noise squelch (`fm` / `nfm`).** `squelch_dbfs` is an absolute
+level: it moves with the tuner's gain, and under automatic gain
+(`gain: auto`) the tuner raises an empty channel's noise until it clears
+almost any threshold. So an FM channel has a second test that does not
+depend on level, the one every FM receiver's squelch uses. On noise alone
+an FM discriminator's output is loud and wideband; a carrier quiets it.
+The scanner measures that noise above the speech band and compares it
+with what an empty channel gives:
+
+- The channel opens when `level_dbfs` clears `squelch_dbfs` **and** the
+  discriminator has quieted by 3 dB, which a signal does from about 0 dB
+  carrier-to-noise in the channel (too weak to understand). A call ends,
+  after `hangtime_ms`, when either test fails.
+- `quieting_db` in `GET /api/v1/scanner` is the live reading: about 0 on
+  noise at any gain, 3 where the squelch opens, 15 and up on a usable
+  signal.
+- A channel opens about 25 ms after its carrier comes up, the time the
+  measurement takes.
+- Each call logs what both tests read as it opened:
+  `conv: squelch opened … level_dbfs=-41.3 squelch_dbfs=-60 quieting_db=34.2`.
+- When a channel sits above `squelch_dbfs` with no carrier on it, the
+  scanner says so once (`conv: channel is above squelch_dbfs with no
+  carrier on it …`): the level is not screening that channel, only the
+  noise squelch is. That is expected with `gain: auto`; with a fixed gain
+  it means `squelch_dbfs` is under the noise floor.
+
+A signal that is not narrowband FM does not quiet the discriminator, so a
+channel listed as `fm` to record one stays shut: a wideband digital
+carrier, or a broadcast FM station, whose ±75 kHz deviation reads as noise
+in a ±8 kHz channel (the scan list has no wide-FM mode; deviations up to
+±12 kHz open normally). `noise_squelch: false` on that channel restores
+the level-only squelch.
+
+AM channels squelch on carrier-to-noise and the digital modes on their own
+frames, so neither has this setting. The exception is a `p25` channel
+without a `nac` filter, which opens on `squelch_dbfs` alone; under
+automatic gain give it `nac: F7E` (any NAC, but only P25).
 
 #### AM channels (VHF air band)
 
