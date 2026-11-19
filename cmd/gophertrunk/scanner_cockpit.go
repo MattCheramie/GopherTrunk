@@ -29,9 +29,19 @@ type scannerCockpit struct {
 	// wbConvs are the continuous wideband conventional channels (issue
 	// #1288), one single-channel scanner each. They are reported in their
 	// own list and take no part in the index-based scan-list controls.
-	wbConvs    []wbConvStatusSource
+	wbConvs []wbConvStatusSource
+	// wideband are the wideband engines, whose control channels decode in
+	// parallel with no hunter. Their systems are reported beside the
+	// hunter's so the web console's decode chip has a system to read on a
+	// wideband-only rig.
+	wideband   []channelHealthSource
 	engine     *trunking.Engine
 	talkgroups *trunking.TalkgroupDB
+}
+
+// channelHealthSource is the part of a widebandt2.Engine the cockpit reads.
+type channelHealthSource interface {
+	ChannelHealth() []widebandt2.ChannelHealth
 }
 
 // wbConvStatusSource is what the cockpit reports for one wideband
@@ -53,6 +63,7 @@ func (d *Daemon) newScannerCockpit() scannerCockpit {
 		cchunt:     d.cchuntSup,
 		convs:      d.convScans,
 		wbConvs:    d.wbConvStatusSources(),
+		wideband:   widebandHealthSources(d.widebandT2),
 		engine:     d.engine,
 		talkgroups: d.talkgroups,
 	}
@@ -93,6 +104,7 @@ func (c scannerCockpit) Status() api.ScannerStatus {
 			})
 		}
 	}
+	st.Systems = mergeWidebandSystems(st.Systems, c.widebandChannelHealth())
 	if len(c.convs) > 0 {
 		st.Conventional.Enabled = true
 		states := map[conventional.State]bool{}
@@ -420,4 +432,119 @@ func wbConvHealth(h widebandt2.ChannelIQHealth, ok bool, now time.Time) string {
 	default:
 		return api.ConvHealthOK
 	}
+}
+
+// widebandHealthSources adapts the daemon's wideband engines to the cockpit's
+// read interface, skipping nil entries.
+func widebandHealthSources(engines []*widebandt2.Engine) []channelHealthSource {
+	out := make([]channelHealthSource, 0, len(engines))
+	for _, e := range engines {
+		if e != nil {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// widebandChannelHealth collects every wideband control channel's health,
+// across every wideband dongle.
+func (c scannerCockpit) widebandChannelHealth() []widebandt2.ChannelHealth {
+	var out []widebandt2.ChannelHealth
+	for _, src := range c.wideband {
+		out = append(out, src.ChannelHealth()...)
+	}
+	return out
+}
+
+// Wideband system states. "locked" is the hunter's word for a control
+// channel that is decoding, so the chips and pills treat both the same.
+// A wideband tap never hunts or backs off, so a channel that is not decoding
+// is "listening" (or "camped", the hunter's word for a conventional /
+// direct-mode channel idle between transmissions).
+const (
+	widebandStateLocked    = "locked"
+	widebandStateCamped    = "camped"
+	widebandStateListening = "listening"
+)
+
+// mergeWidebandSystems adds one row per wideband-decoded system to the
+// hunter's rows. A system with several wideband control channels (several
+// sites, or several dongles) is reported by its best channel: one that is
+// decoding, then the busiest, then the one with a level reading. A system the
+// hunter also lists (some control channels wideband-hosted, the rest hunted)
+// keeps the hunter's row unless only the wideband side is decoding it.
+func mergeWidebandSystems(rows []api.SystemHuntStatusDTO, chs []widebandt2.ChannelHealth) []api.SystemHuntStatusDTO {
+	if len(chs) == 0 {
+		return rows
+	}
+	var order []string
+	best := make(map[string]widebandt2.ChannelHealth)
+	for _, ch := range chs {
+		cur, seen := best[ch.System]
+		if !seen {
+			order = append(order, ch.System)
+			best[ch.System] = ch
+			continue
+		}
+		if betterWidebandChannel(ch, cur) {
+			best[ch.System] = ch
+		}
+	}
+	byName := make(map[string]int, len(rows))
+	for i, r := range rows {
+		byName[r.Name] = i
+	}
+	for _, name := range order {
+		row := widebandSystemRow(best[name])
+		if i, ok := byName[name]; ok {
+			if rows[i].State != string(cchunt.StateLocked) && row.State == widebandStateLocked {
+				rows[i] = row
+			}
+			continue
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// betterWidebandChannel reports whether a should represent its system over b.
+func betterWidebandChannel(a, b widebandt2.ChannelHealth) bool {
+	if a.Decoding != b.Decoding {
+		return a.Decoding
+	}
+	if a.RecentDecodes != b.RecentDecodes {
+		return a.RecentDecodes > b.RecentDecodes
+	}
+	if a.HasSignal != b.HasSignal {
+		return a.HasSignal
+	}
+	return a.HasSignal && a.SignalDbFS > b.SignalDbFS
+}
+
+// widebandSystemRow is the scanner endpoint's row for one wideband system,
+// shaped like the hunter's so every consumer (decode chip, symbol chip,
+// Dashboard meters, TUI) reads it unchanged.
+func widebandSystemRow(ch widebandt2.ChannelHealth) api.SystemHuntStatusDTO {
+	row := api.SystemHuntStatusDTO{
+		Name:           ch.System,
+		Protocol:       ch.Protocol,
+		WidebandSerial: ch.Serial,
+		SignalDbFS:     ch.SignalDbFS,
+		HasSignal:      ch.HasSignal,
+	}
+	switch {
+	case ch.Decoding:
+		row.State = widebandStateLocked
+		row.LockedFreqHz = ch.FreqHz
+		row.LockedAt = ch.DecodingSince
+		row.DecodeQuality = ch.DecodeQuality
+		row.HasDecodeHealth = ch.HasDecodeHealth
+	case ch.CampsWhenIdle:
+		row.State = widebandStateCamped
+		row.AttemptedFreqHz = ch.FreqHz
+	default:
+		row.State = widebandStateListening
+		row.AttemptedFreqHz = ch.FreqHz
+	}
+	return row
 }

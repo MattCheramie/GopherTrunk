@@ -242,6 +242,9 @@ type SystemHuntStatusDTO struct {
 	LastFailedAt    time.Time `json:"last_failed_at,omitempty"`
 	BackoffMs       int       `json:"backoff_ms,omitempty"`
 	LastGrantAt     time.Time `json:"last_grant_at,omitempty"`
+	// WidebandSerial is set on a system a role: wideband dongle decodes:
+	// it is never hunted, so the hold / retune keys skip it.
+	WidebandSerial string `json:"wideband_serial,omitempty"`
 }
 
 // ConvScannerStatusDTO mirrors api.ConvScannerStatusDTO.

@@ -489,6 +489,11 @@ export interface SystemHuntStatusDTO {
   // level is negative). Present as soon as the CC locks.
   signal_dbfs?: number;
   has_signal?: boolean;
+  // Set on a system a role: wideband dongle decodes (no hunter): the dongle's
+  // serial. Hold / resume / retune do not apply to it, and its state is
+  // "locked" while a control channel decodes, otherwise "listening" (or
+  // "camped" for a conventional / direct-mode protocol).
+  wideband_serial?: string;
 }
 
 export interface ConvScannerStatusDTO {

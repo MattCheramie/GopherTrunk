@@ -292,6 +292,12 @@ type SystemHuntStatusDTO struct {
 	// since a genuine level is negative). Present as soon as the CC locks.
 	SignalDbFS float64 `json:"signal_dbfs,omitempty"`
 	HasSignal  bool    `json:"has_signal,omitempty"`
+	// WidebandSerial is set on a system decoded by a role: wideband dongle
+	// rather than the control-channel hunter: the dongle's serial. Such a
+	// system is never hunted, so hold / resume / retune do not apply, and
+	// its state is "locked" while a control channel decodes, otherwise
+	// "listening" (or "camped" for a conventional / direct-mode protocol).
+	WidebandSerial string `json:"wideband_serial,omitempty"`
 }
 
 // ConvScannerStatusDTO is the conventional FM scanner's read shape.

@@ -174,3 +174,27 @@ func TestScannerPanelFlagsStalledWidebandTap(t *testing.T) {
 		t.Errorf("view missing the drop count\n%s", view)
 	}
 }
+
+// TestScannerPanelWidebandSystemHasNoHuntKeys: a system decoded on a wideband
+// SDR is listed with its dongle, and the hold / retune keys do nothing on it
+// (the API would only refuse them), while a hunted system keeps them.
+func TestScannerPanelWidebandSystemHasNoHuntKeys(t *testing.T) {
+	p := NewScanner()
+	s := &state.SharedState{Scanner: client.ScannerStatusDTO{
+		Systems: []client.SystemHuntStatusDTO{
+			{Name: "Metro", Protocol: "p25", State: "listening", AttemptedFreqHz: 168_150_000, WidebandSerial: "WB-1"},
+		},
+	}}
+	view := p.View(120, 30, true, s)
+	for _, want := range []string{"Metro", "listening", "168.1500", "(no decode)", "[wideband WB-1]"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view missing %q\n%s", want, view)
+		}
+	}
+	_, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}, s)
+	for _, k := range []string{"h", "r"} {
+		if _, cmd := p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}, s); cmd != nil {
+			t.Errorf("%q on a wideband system emitted %T, want nothing", k, cmd())
+		}
+	}
+}

@@ -119,6 +119,38 @@ describe("Scanner panel", () => {
     expect(chip.closest("[title]")?.getAttribute("title")).toContain("offset -958 Hz");
   });
 
+  // A system decoded on a wideband SDR has no hunter behind it: it shows its
+  // decode chip and its dongle, and no hold / resume / retune buttons, which
+  // would only fail. A hunted system beside it keeps them.
+  it("shows a wideband system's decode health without hunt controls", async () => {
+    vi.mocked(api.scanner).mockResolvedValue({
+      scan_mode: "all",
+      systems: [
+        {
+          name: "Metro",
+          protocol: "p25",
+          state: "locked",
+          locked_freq_hz: 168_150_000,
+          decode_quality: "clean",
+          has_decode_health: true,
+          wideband_serial: "00000001",
+        },
+        { name: "County", protocol: "p25", state: "hunting" },
+      ],
+      conventional: { enabled: false, channels: [] },
+      tg_scan_count: 0,
+      tg_total: 0,
+    } as unknown as ScannerStatusDTO);
+
+    render(<Scanner />);
+
+    expect(await screen.findByText(/decode: clean/i)).toBeInTheDocument();
+    expect(screen.getByText("wideband 00000001")).toBeInTheDocument();
+    // One set of hunt buttons: County's.
+    expect(screen.getAllByRole("button", { name: "Hold" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Retune" })).toHaveLength(1);
+  });
+
   // No chip when the daemon reports no decode health (unlocked / too few frames).
   it("omits the signal chip when decode health is absent", async () => {
     vi.mocked(api.scanner).mockResolvedValue({
