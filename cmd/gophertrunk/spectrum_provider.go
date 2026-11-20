@@ -40,7 +40,13 @@ type spectrumProvider struct {
 	// each device with the P25 Phase 1 modulation it is decoding so the
 	// web panels can auto-select C4FM vs CQPSK.
 	systems []trunking.System
-	log     *slog.Logger
+	// lockedCCs reports the control channels being decoded right now
+	// (scannerCockpit.LockedControlChannels: the hunter's lock and the
+	// wideband channels decoding), fresh per call; nil in tests and
+	// capture-only builds. Config alone cannot say which of several
+	// in-band CCs is the live one.
+	lockedCCs func() []uint32
+	log       *slog.Logger
 }
 
 func newSpectrumProvider(pool *sdr.Pool, brokers map[string]*iqtap.Broker, systems []trunking.System, log *slog.Logger) *spectrumProvider {
@@ -76,7 +82,7 @@ func (p *spectrumProvider) Devices() []api.SpectrumDevice {
 			SampleRateHz:     sampleRateHz,
 			P25Modulation:    p25ModulationFor(p.systems, centerHz, sampleRateHz),
 			SymbolProto:      symbolProtoFor(p.systems, centerHz, sampleRateHz),
-			ControlChannelHz: controlChannelFor(p.systems, centerHz, sampleRateHz),
+			ControlChannelHz: controlChannelFor(p.systems, p.locked(), centerHz, sampleRateHz),
 		})
 	}
 	return out
@@ -132,27 +138,62 @@ func p25ModulationFor(systems []trunking.System, centerHz, sampleRateHz uint32) 
 // (0) instead keeps the old centre default for devices that can't see a CC.
 // Closest-to-centre (rather than first-match) is used because a wideband
 // voice SDR can span several CCs of one system; the nearest one is the
-// deterministic, operator-intuitive choice.
-func controlChannelFor(systems []trunking.System, centerHz, sampleRateHz uint32) uint32 {
-	var best uint32
-	var bestDelta int64 = -1
-	half := int64(sampleRateHz) / 2
+// deterministic, operator-intuitive choice — but only among the control
+// channels being decoded right now, when any of those are in band. A locked
+// channel of any protocol counts; the configured fallback is P25-only, as
+// before.
+func controlChannelFor(systems []trunking.System, locked []uint32, centerHz, sampleRateHz uint32) uint32 {
+	// A locked CC wins outright. On a role: wideband SDR the passband can
+	// hold dozens of configured CCs — a site list imported from
+	// RadioReference puts every frequency of every site in the config —
+	// and closest-to-centre then picks whichever entry happens to sit
+	// nearest the tuner rather than the one being decoded. The symbol
+	// panels rest their whole view on this field, so that opens the
+	// scopes on dead air while the real CC decodes cleanly a few hundred
+	// kHz away.
+	if cc := nearestInBand(locked, centerHz, sampleRateHz); cc != 0 {
+		return cc
+	}
+	var configured []uint32
 	for i := range systems {
 		if systems[i].Protocol != trunking.ProtocolP25 {
 			continue
 		}
-		for _, cc := range systems[i].ControlChannels {
-			delta := int64(cc) - int64(centerHz)
-			if delta < 0 {
-				delta = -delta
-			}
-			if delta <= half && (bestDelta < 0 || delta < bestDelta) {
-				best = cc
-				bestDelta = delta
-			}
+		configured = append(configured, systems[i].ControlChannels...)
+	}
+	return nearestInBand(configured, centerHz, sampleRateHz)
+}
+
+// nearestInBand returns the frequency in freqs closest to centreHz that
+// still falls inside the passband (|delta| <= sample_rate/2), or 0 when
+// none does.
+func nearestInBand(freqs []uint32, centerHz, sampleRateHz uint32) uint32 {
+	var best uint32
+	var bestDelta int64 = -1
+	half := int64(sampleRateHz) / 2
+	for _, f := range freqs {
+		if f == 0 {
+			continue
+		}
+		delta := int64(f) - int64(centerHz)
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta <= half && (bestDelta < 0 || delta < bestDelta) {
+			best = f
+			bestDelta = delta
 		}
 	}
 	return best
+}
+
+// locked snapshots the engine's locked control channels, or nil when no
+// source is wired.
+func (p *spectrumProvider) locked() []uint32 {
+	if p == nil || p.lockedCCs == nil {
+		return nil
+	}
+	return p.lockedCCs()
 }
 
 // demodModeName canonicalises a configured demod-mode string to the

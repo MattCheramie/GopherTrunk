@@ -54,6 +54,25 @@ for tagged releases.
 
   Checked against a simulated SDR carrying a FLEX page, including the whole
   daemon on the reported configuration; not yet run on a real dongle.
+- **Symbol panels opened on an unused frequency on a `role: wideband` SDR
+  (#557 follow-up).** The control channel the Constellation, Eye diagram,
+  Symbol scope and Histogram panels rest on was the *configured* control
+  channel nearest the tuner's centre. One wideband passband can hold dozens
+  of configured control channels — a site list imported from RadioReference
+  puts every frequency of every site in the config — so the panels could
+  open on a frequency nothing is transmitting on, while the control channel
+  being decoded sat a few hundred kHz away. The Plots health banner reads
+  the same field, so it showed `symbol: poor` with an unhelpfully healthy
+  level balance (noise sliced into four bins is evenly distributed) beside a
+  control channel decoding at 0.000% TSBK error. A control channel being
+  decoded **now** wins: one the control-channel hunter holds locked, or a
+  wideband channel that decoded within the last 15 seconds, the same two
+  sources the decode chip reads. One that decoded earlier and has since
+  gone quiet no longer counts. The configured nearest-to-centre P25
+  choice remains the fallback before a lock and after one is lost.
+  - **This applies to every protocol.** On a TETRA, DMR or NXDN setup the
+    panels used to open on the SDR's centre; they now open on the
+    decoding control channel.
 - **Scan list: an FM channel opened a call on noise and recorded it for as
   long as the daemon ran (#1329).** A scan-list channel's `squelch_dbfs` is
   an absolute level and was an FM channel's only test. On the reporter's

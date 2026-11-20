@@ -434,6 +434,32 @@ func wbConvHealth(h widebandt2.ChannelIQHealth, ok bool, now time.Time) string {
 	}
 }
 
+// LockedControlChannels returns the frequency of every control channel being
+// decoded right now: each system the hunter holds locked (its lock frequency
+// is cleared on cc.lost and kept while the system is held), and each wideband
+// control channel that decoded a frame within the last 15 seconds. These are
+// the two sources the scanner endpoint's decode chip reads, so the symbol
+// panels rest on the same channel the chip reports. A channel that decoded
+// once and has since gone quiet is not in the list; the site table behind
+// GET /api/v1/sites keeps every site ever seen, which is right for that
+// listing and wrong for "decoding now". Every protocol counts.
+func (c scannerCockpit) LockedControlChannels() []uint32 {
+	var out []uint32
+	if c.cchunt != nil {
+		for _, ss := range c.cchunt.Snapshot() {
+			if ss.LockedFreqHz != 0 {
+				out = append(out, ss.LockedFreqHz)
+			}
+		}
+	}
+	for _, ch := range c.widebandChannelHealth() {
+		if ch.Decoding {
+			out = append(out, ch.FreqHz)
+		}
+	}
+	return out
+}
+
 // widebandHealthSources adapts the daemon's wideband engines to the cockpit's
 // read interface, skipping nil entries.
 func widebandHealthSources(engines []*widebandt2.Engine) []channelHealthSource {

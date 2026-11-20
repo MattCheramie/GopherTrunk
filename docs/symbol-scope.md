@@ -44,11 +44,15 @@ same controls work around it:
   as an SDR is selected, before any symbols decode.
 - **Hold** — when off, the Offset automatically follows the newest
   active call on the selected SDR (the "last locked channel"), and rests
-  on the system's **control channel** (resolved from config) when no call
-  is up — so the scope defaults onto a decodable channel off the centre
-  DC spike and returns there when a call ends (#557). Turn Hold on (or
-  edit the Offset / press **Centre**) to pin it. Devices with no control
-  channel in their passband keep the old centre default.
+  on the system's **control channel** when no call is up — so the scope
+  defaults onto a decodable channel off the centre DC spike and returns
+  there when a call ends (#557). The control channel is the one being
+  decoded now (one the hunter holds locked, or a wideband channel that
+  decoded within the last 15 seconds), so on a wideband SDR with many
+  configured control channels the scope opens on the live one; with
+  nothing decoding it is the configured P25 control channel nearest the
+  SDR centre. Turn Hold on (or edit the Offset / press **Centre**) to pin
+  it. Devices with neither in their passband keep the old centre default.
 
 ## How it works
 
