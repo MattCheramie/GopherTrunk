@@ -1069,11 +1069,9 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		// carrier is then listed exactly once. Trunked protocols (dmr Tier III,
 		// p25, …) keep requiring an explicit control_channels list. A non-empty
 		// list is always honoured verbatim.
-		ctrlChannels := sys.ControlChannels
-		if len(ctrlChannels) == 0 &&
-			(proto == trunking.ProtocolDMRTier2 || proto == trunking.ProtocolDMRTier1) {
-			ctrlChannels = widebandChannelsForSystem(cfg.SDR.Devices, sys.Name)
-		}
+		// config.validateSystemControlChannels applies the same rule, so
+		// `config validate` accepts exactly the systems this loop can start.
+		ctrlChannels := sys.EffectiveControlChannels(cfg.SDR.Devices)
 		s := trunking.System{
 			Name:                    sys.Name,
 			Protocol:                proto,
@@ -4588,21 +4586,7 @@ func isControlChannel(sys trunking.System, freqHz uint32) bool {
 // listed exactly once (in sdr.devices[].channels). The returned slice is freshly
 // allocated and never aliases the config's backing arrays.
 func widebandChannelsForSystem(devices []config.DeviceConfig, system string) []uint32 {
-	var out []uint32
-	seen := make(map[uint32]bool)
-	for _, dev := range devices {
-		if dev.Role != "wideband" {
-			continue
-		}
-		for _, ch := range dev.Channels {
-			if ch.System != system || seen[ch.FrequencyHz] {
-				continue
-			}
-			seen[ch.FrequencyHz] = true
-			out = append(out, ch.FrequencyHz)
-		}
-	}
-	return out
+	return config.WidebandChannelsForSystem(devices, system)
 }
 
 // cchuntSystems returns the systems the sequential cchunt supervisor should

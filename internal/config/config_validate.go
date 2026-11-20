@@ -509,9 +509,39 @@ func (c Config) validateTrunking() []error {
 	for i, s := range c.Trunking.Systems {
 		if err := validateSystem(i, s); err != nil {
 			errs = append(errs, err)
+			continue
+		}
+		if err := validateSystemControlChannels(i, s, c.SDR.Devices); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errs
+}
+
+// validateSystemControlChannels rejects a system the daemon would refuse to
+// start on. The daemon checks every system with trunking.System.Validate,
+// which needs at least one control channel within 25–1300 MHz, after
+// filling an empty list for conventional DMR from the wideband channels
+// (EffectiveControlChannels). Without this check `config validate`,
+// `doctor` and the web config builder passed such a config and the daemon
+// then failed at start-up. It runs after validateSystem so a system with
+// several problems reports its other field errors first.
+func validateSystemControlChannels(i int, s SystemConfig, devices []DeviceConfig) error {
+	ccs := s.EffectiveControlChannels(devices)
+	if len(ccs) == 0 {
+		return fmt.Errorf("trunking.systems[%d].control_channels: at least one control channel frequency is required "+
+			"(a conventional DMR system may instead list its carriers as channels of a role: wideband device; "+
+			"to scan single channels with no control channel, use scanner.conventional)", i)
+	}
+	for k, f := range ccs {
+		if f < 25_000_000 || f > 1_300_000_000 {
+			if len(s.ControlChannels) == 0 {
+				return fmt.Errorf("trunking.systems[%d]: wideband channel %d Hz outside 25-1300 MHz", i, f)
+			}
+			return fmt.Errorf("trunking.systems[%d].control_channels[%d]: %d Hz outside 25-1300 MHz", i, k, f)
+		}
+	}
+	return nil
 }
 
 // validateSystem returns the first error in one trunking system (the

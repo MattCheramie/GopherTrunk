@@ -7,6 +7,26 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **`config validate`, `doctor` and the web config builder accepted a trunking
+  system the daemon then refused to start on** (#1379 follow-up). The daemon
+  requires each system to have at least one control channel within
+  25–1300 MHz and stops at start-up with `trunking: at least one
+  control_channel frequency is required` otherwise, but config validation
+  never checked it. It now reports the same problem as
+  `trunking.systems[N].control_channels`, before you start the daemon. This is
+  not a new requirement: the daemon has refused such a system since May. A
+  conventional DMR system (`dmr-tier2` / `dmr-tier1`) whose carriers are
+  channels of a `role: wideband` device still needs no `control_channels`,
+  as before; the daemon and the validator now share that rule.
+
+### Documentation
+- **Recording `segment` numbers can have gaps** (#1379). They count a call's
+  transmissions, and a transmission whose file was discarded (under
+  `recordings.min_duration_ms`, or with no decoded audio) keeps its number,
+  so `GET /api/v1/recordings` can list segments 1 and 3 of a call with no 0
+  or 2.
+
 ## [v1.4.2] — 2026-11-20
 
 ### Fixed
