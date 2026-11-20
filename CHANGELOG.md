@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.4.2] — 2026-11-20
+
 ### Fixed
 - **The decode chip read `decode: —` on a setup with only a wideband SDR.**
   On a `role: wideband` dongle, the Dashboard, Scanner and Plots showed
