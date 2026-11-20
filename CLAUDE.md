@@ -1064,6 +1064,9 @@ confirmation before any close-as-completed.
   bucket over a ROLLING 30 s span — not lifetime, an engine runs for days — on P25 P1 TSBKs /
   TETRA BSCH only, ccdecoder's 1 % / 5 % / 20-attempt limits) and `mergeWidebandSystems` adds one
   row per system (`wideband_serial`, state `locked` / `listening` / `camped`; hunt controls hidden).
+  The spectrum devices' `control_channel_hz` (where the symbol panels rest, #1384) reads the same
+  live set via `scannerCockpit.LockedControlChannels` — never the `SiteTracker`, whose entries
+  NEVER expire: as a "locked" source it kept the panels on a CC that decoded once and went quiet.
 - **"Spectrum waterfall works on the example config, blank after saving my own" (Discord,
   Oct 2026) = no decoder was streaming the SDR, NOT the API mutation/auth settings.** An iqtap
   broker only fans IQ to subscribers while a PRIMARY `StreamIQ` session runs; the example

@@ -64,10 +64,15 @@ for tagged releases.
   being decoded sat a few hundred kHz away. The Plots health banner reads
   the same field, so it showed `symbol: poor` with an unhelpfully healthy
   level balance (noise sliced into four bins is evenly distributed) beside a
-  control channel decoding at 0.000% TSBK error. A control channel the
-  engine has **locked** now wins; the configured nearest-to-centre choice
-  remains the fallback before lock, and a rig with a dedicated `role:
-  control` SDR is unaffected, since its passband holds only the one CC.
+  control channel decoding at 0.000% TSBK error. A control channel being
+  decoded **now** wins: one the control-channel hunter holds locked, or a
+  wideband channel that decoded within the last 15 seconds, the same two
+  sources the decode chip reads. One that decoded earlier and has since
+  gone quiet no longer counts. The configured nearest-to-centre P25
+  choice remains the fallback before a lock and after one is lost.
+  - **This applies to every protocol.** On a TETRA, DMR or NXDN setup the
+    panels used to open on the SDR's centre; they now open on the
+    decoding control channel.
 - **Scan list: an FM channel opened a call on noise and recorded it for as
   long as the daemon ran (#1329).** A scan-list channel's `squelch_dbfs` is
   an absolute level and was an FM channel's only test. On the reporter's
