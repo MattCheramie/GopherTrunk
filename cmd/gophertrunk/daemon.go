@@ -3053,21 +3053,15 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 			// decoder streams still produces frames while it is watched.
 			sp := newSpectrumProvider(d.pool, d.iqBrokers, d.systems, log)
 			sp.viewerIQ = d.acquireViewerIQ
-			if st := d.siteTracker; st != nil {
-				// Let the symbol panels rest on the CC the engine
-				// locked, not merely the configured one nearest the
-				// tuner (#557 follow-up).
-				sp.lockedCCs = func() []uint32 {
-					sites := st.Snapshot()
-					ccs := make([]uint32, 0, len(sites))
-					for _, si := range sites {
-						if si.ControlChannelHz != 0 {
-							ccs = append(ccs, si.ControlChannelHz)
-						}
-					}
-					return ccs
-				}
-			}
+			// Let the symbol panels rest on the CC being decoded, not
+			// merely the configured one nearest the tuner (#557
+			// follow-up, #1384): the hunter's lock and the wideband
+			// channels decoding now. The hunter and the engines are
+			// built before the API and never replaced.
+			sp.lockedCCs = scannerCockpit{
+				cchunt:   d.cchuntSup,
+				wideband: widebandHealthSources(d.widebandT2),
+			}.LockedControlChannels
 			opts.Spectrum = sp
 			dp := newDiagProvider(d.pool, d.iqBrokers, cfg.SDR.SampleRate, log)
 			dp.viewerIQ = d.acquireViewerIQ

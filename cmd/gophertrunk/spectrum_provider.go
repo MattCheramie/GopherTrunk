@@ -40,10 +40,11 @@ type spectrumProvider struct {
 	// each device with the P25 Phase 1 modulation it is decoding so the
 	// web panels can auto-select C4FM vs CQPSK.
 	systems []trunking.System
-	// lockedCCs reports the control channels the trunking engine has
-	// actually locked, newest snapshot per call; nil when no site
-	// tracker is running (capture-only builds, tests). Config alone
-	// cannot say which of several in-band CCs is the live one.
+	// lockedCCs reports the control channels being decoded right now
+	// (scannerCockpit.LockedControlChannels: the hunter's lock and the
+	// wideband channels decoding), fresh per call; nil in tests and
+	// capture-only builds. Config alone cannot say which of several
+	// in-band CCs is the live one.
 	lockedCCs func() []uint32
 	log       *slog.Logger
 }
@@ -138,7 +139,9 @@ func p25ModulationFor(systems []trunking.System, centerHz, sampleRateHz uint32) 
 // Closest-to-centre (rather than first-match) is used because a wideband
 // voice SDR can span several CCs of one system; the nearest one is the
 // deterministic, operator-intuitive choice — but only among the control
-// channels the engine has actually locked, when any of those are in band.
+// channels being decoded right now, when any of those are in band. A locked
+// channel of any protocol counts; the configured fallback is P25-only, as
+// before.
 func controlChannelFor(systems []trunking.System, locked []uint32, centerHz, sampleRateHz uint32) uint32 {
 	// A locked CC wins outright. On a role: wideband SDR the passband can
 	// hold dozens of configured CCs — a site list imported from
