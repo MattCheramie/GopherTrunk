@@ -285,6 +285,14 @@ function Hunt({
                     lock {formatHz(sys.locked_freq_hz)}
                   </span>
                 )}
+                {sys.wideband_serial && (
+                  <span
+                    className="font-mono text-xs text-muted"
+                    title="Decoded in parallel on a wideband SDR: never hunted, so hold / resume / retune do not apply"
+                  >
+                    wideband {sys.wideband_serial}
+                  </span>
+                )}
               </div>
               <div className="text-xs text-muted font-mono">
                 {sys.attempt_index != null && sys.total_candidates != null && (
@@ -293,7 +301,11 @@ function Hunt({
                   </>
                 )}
                 {sys.attempted_freq_hz != null && (
-                  <> · attempting {formatHz(sys.attempted_freq_hz)}</>
+                  <>
+                    {" "}
+                    · {sys.wideband_serial ? "on" : "attempting"}{" "}
+                    {formatHz(sys.attempted_freq_hz)}
+                  </>
                 )}
                 {sys.backoff_ms != null && sys.backoff_ms > 0 && (
                   <> · backoff {sys.backoff_ms}ms</>
@@ -302,7 +314,7 @@ function Hunt({
                   <> · last grant {timeOnly(sys.last_grant_at)}</>
                 )}
               </div>
-              {canMutate && (
+              {canMutate && !sys.wideband_serial && (
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     className="btn-ghost text-xs"

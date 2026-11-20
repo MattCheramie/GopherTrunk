@@ -226,6 +226,9 @@ func (p *ScannerPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd
 		switch section {
 		case "sys":
 			sys := s.Scanner.Systems[idx]
+			if sys.WidebandSerial != "" {
+				return p, nil // decoded on a wideband SDR: nothing hunts it
+			}
 			kind := state.WriteKindScannerHuntHold
 			verb := "hold"
 			if sys.State == "held" {
@@ -255,6 +258,9 @@ func (p *ScannerPanel) Update(msg tea.Msg, s *state.SharedState) (Panel, tea.Cmd
 	case key.Matches(km, scanRetuneKey):
 		if section == "sys" {
 			sys := s.Scanner.Systems[idx]
+			if sys.WidebandSerial != "" {
+				return p, nil // decoded on a wideband SDR: nothing to re-hunt
+			}
 			req := state.WriteRequest{
 				Confirm:     fmt.Sprintf("Force re-hunt for system %s?", sys.Name),
 				Label:       fmt.Sprintf("force re-hunt %s", sys.Name),
@@ -460,6 +466,15 @@ func (p *ScannerPanel) renderSystems(width int, s *state.SharedState) string {
 			if sys.AttemptedFreqHz != 0 {
 				freq = client.FormatFreqMHz(sys.AttemptedFreqHz) + " (idle)"
 			}
+		case "listening":
+			// A wideband control channel that is not decoding: it never
+			// hunts, so show where it listens.
+			if sys.AttemptedFreqHz != 0 {
+				freq = client.FormatFreqMHz(sys.AttemptedFreqHz) + " (no decode)"
+			}
+		}
+		if sys.WidebandSerial != "" {
+			freq += "  [wideband " + sys.WidebandSerial + "]"
 		}
 		grantAge := "—"
 		if !sys.LastGrantAt.IsZero() {

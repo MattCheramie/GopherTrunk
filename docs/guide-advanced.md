@@ -92,6 +92,16 @@ depends on the path:
   single `role: control`/`auto` tuner the hunter is a time multiplexer that
   camps on the first system that locks, and the daemon now warns at startup
   when several systems share one control SDR.
+  Each wideband system is listed in `GET /api/v1/scanner` (`systems`) beside
+  the hunted ones, with `wideband_serial` naming its dongle. Its `state` is
+  `locked` while one of its control channels decodes, otherwise `listening`
+  (`camped` for conventional DMR and other channels that are silent between
+  transmissions). The decode chip on the Dashboard, Scanner and Plots reads
+  `decode_quality` from it: the share of P25 TSBKs or TETRA BSCH bursts that
+  failed over the last 30 seconds, as clean (≤ 1 %), marginal (≤ 5 %) or poor.
+  Other protocols do not count their failures, so their chip stays `decode: —`
+  while the state reads `locked`. Hold, resume and retune do not apply to a
+  wideband system: nothing hunts it.
 - **Many conventional channels on one wideband SDR, all at once.** List them
   under the device's `conventional:` key (the same fields as a
   `scanner.conventional` channel, and every scan-list mode: `fm`, `nfm`, `am`,
