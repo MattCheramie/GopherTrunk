@@ -82,8 +82,17 @@ tag. Anything failing means the tag isn't ready.
    git push origin vX.Y.Z
    ```
 
-3. **Watch the release workflow.** The push triggers
+   **Or start the release from the Actions tab** instead of pushing a
+   tag: *Actions → Release → Run workflow*, pick the branch (`main`
+   for an ordinary release) and type the version. The workflow then
+   creates the tag itself, on the commit it built. The version box has
+   no default, so the run cannot start until you type one.
+
+3. **Watch the release workflow.** The push (or the dispatch) triggers
    `.github/workflows/release.yml`, which:
+   - checks the version first (the `preflight` job) and stops before
+     building anything if it is wrong; see
+     [The version check](#the-version-check) below,
    - builds `gophertrunk.exe` (amd64 + arm64) and the Windows
      installer (Zadig-bundled, Inno Setup),
    - builds Linux + macOS tarballs for amd64 and arm64,
@@ -102,6 +111,41 @@ tag. Anything failing means the tag isn't ready.
    a fresh patch number — do not delete-and-recreate a tag that
    ever went public, since GitHub's tag deletion is not retroactive
    for clones.
+
+## The version check
+
+The first job of the release workflow runs
+`python3 scripts/release-refs.py preflight <version>` on the commit
+being released, and every build job waits for it. It refuses the run
+unless all three hold:
+
+- the version is a well-formed `vX.Y.Z`, or `vX.Y.Z-suffix` for a
+  prerelease;
+- a tag of that name does not already exist on a *different* commit
+  (a published tag is never moved);
+- the version is newer than every release tag already in that commit's
+  history.
+
+The third rule looks at the commit's own history, not at every tag in
+the repository. A patch release cut from an older release branch (see
+[Patch releases](#patch-releases)) therefore still passes, while
+`v1.4.1` typed on `main` after `v1.4.2` does not.
+
+It exists because of release run #140 (20 November 2026). The dispatch
+form used to pre-fill a placeholder, the run was started with it still
+in the box, and nothing looked at the version: every artifact was built
+and published as a `v0.0.0` pre-release, tagged on the v1.4.2 commit.
+
+To try a version before a release, on a full clone (`git fetch --tags`
+first; the check refuses a shallow clone, because it cannot see the
+history):
+
+```sh
+python3 scripts/release-refs.py preflight vX.Y.Z
+```
+
+`make release-refs-test` runs the check's own tests; CI runs them in
+the `version-refs` job.
 
 ## Post-release
 
