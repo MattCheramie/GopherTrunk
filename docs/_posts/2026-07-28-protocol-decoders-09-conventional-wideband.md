@@ -26,6 +26,17 @@ for when a capture like **Mercury** refuses to name itself — which is where Pa
 > with the carriers that key up; and exposes a **symbol scope** that reuses the
 > production DSP to stream pre-slicer soft symbols and dibits to the web console.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 3 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** the CTCSS gate this
+> post calls fully wired had never opened on a real radio, and the DCS
+> detector that followed matched a codeword nothing transmits. Both gates were
+> rebuilt and are on-air verified.
+> [Rebuilt From the Air, Part 3]({{ rfa_fix.url | relative_url }}) is the
+> postmortem, and the [Squelch]({{ '/blog/series/squelch/' | relative_url }})
+> series covers the scan list as it stands now.
+{% endif %}
+
 **Key takeaways**
 
 - Conventional decode has no grants — it's a **squelch + tone** state machine

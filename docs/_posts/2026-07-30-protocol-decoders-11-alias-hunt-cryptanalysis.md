@@ -27,6 +27,16 @@ is clean-room, data-driven, and authorized-use-only (issue #773).*
 > hidden low byte drives the update and is never observed. `CipherVerified` stays
 > **false**.
 
+> **Update (Nov 2026):** the cipher this post describes as unsolved has since
+> been solved and is enabled by default (`CipherVerified = true`,
+> [#773](https://github.com/MattCheramie/GopherTrunk/issues/773), shipped in
+> v1.0.8). It reproduces a held-out reference set character for character and
+> decodes the real
+> [#376](https://github.com/MattCheramie/GopherTrunk/issues/376) capture to
+> its radio's display name with a matching CRC. Confirmation on the reporter's
+> own rig is still open. See the
+> [talker-alias operator guide]({{ '/talker-alias.html' | relative_url }}).
+
 **Key takeaways**
 
 - The per-character keystream factors into a clean product form
