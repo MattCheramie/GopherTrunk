@@ -50,6 +50,23 @@ for tagged releases.
   activity feed. The voice chain now passes a source update only when the
   talker, or the call's encryption / emergency / priority, changes. The DMR
   chain already did this.
+- **A build from source named itself `v0.0.0-N-g<sha>`** (reported on #1321).
+  On 20 November the release workflow was first started with the placeholder
+  its form pre-filled as the version. It published a `v0.0.0` pre-release and
+  put that tag on the v1.4.2 commit, and `git describe` then picked `v0.0.0`
+  over `v1.4.2` for every later commit. `make build` and `make dist` now leave
+  that tag out, so a source build reads `v1.4.2-N-g<sha>` again. The v1.4.2
+  release was not affected. The binaries attached to the `v0.0.0` pre-release
+  are the v1.4.2 code under the wrong version label; use v1.4.2.
+- **The release workflow checks the version before it builds anything.** Its
+  first job refuses a version that is not a well-formed `vX.Y.Z`, that names a
+  tag sitting on another commit, or that is not newer than every release
+  already in the released commit's history, so `v0.0.0`, a repeated version
+  and an older one all stop the run before an artifact exists. The form no
+  longer pre-fills a version. On a run started from the Actions tab the tag
+  is now created on the commit that was built, not on whatever `main` points
+  at when the release is published. See "The version check" in
+  `docs/release.md`.
 - **`config validate`, `doctor` and the web config builder accepted a trunking
   system the daemon then refused to start on** (#1379 follow-up). The daemon
   requires each system to have at least one control channel within

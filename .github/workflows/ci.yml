@@ -39,6 +39,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Version references match the newest stable tag
         run: make version-refs-check
+      - name: Release-version guard tests
+        run: make release-refs-test
 
   build-test:
     runs-on: ubuntu-latest

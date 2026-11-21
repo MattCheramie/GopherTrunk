@@ -1891,6 +1891,21 @@ confirmation before any close-as-completed.
   workflow). Note `tsconfig.json` sets `noUnusedLocals`/`noUnusedParameters`, so an unused
   parameter needs a leading underscore (`_fn`), and test files are inside `include: ["src"]`
   and are typechecked like production code.
+- **Release run #140 published a `v0.0.0` pre-release on the v1.4.2 commit (20 Nov, reported on
+  #1321): the dispatch form pre-filled a placeholder version and nothing checked it.** Every
+  recent release is cut by `workflow_dispatch`, not a tag push, so the box is typed by hand each
+  time. Two tags on one commit tie and `git describe` takes the first by name, so every source
+  build of main read `v0.0.0-N-g<sha>` (the Makefile now passes `--exclude v0.0.0`; a `v0.0.0-…`
+  version in a report means a build older than that fix, not an old release). `release.yml`'s
+  first job is now `scripts/release-refs.py preflight`: well-formed `vX.Y.Z`, no tag of that name
+  on another commit, newer than every release tag in the RELEASED COMMIT'S history (not the whole
+  repository, or a patch release from an older branch could never ship). It fails closed on a
+  shallow checkout or one with no tags, which is why the job sets `fetch-depth: 0`. Its tests are
+  Python (`make release-refs-test`, run in CI's `version-refs` job, NOT by `make test`) and
+  include a text check that every build job `needs: preflight`. Not exercised on GitHub until
+  the next release run: the preflight job itself, and `target_commitish: ${{ github.sha }}` on
+  the publish step (without it a dispatched run tags the default branch's head at publish time).
+  docs/release.md says never to delete a tag or release that went public; nothing here did.
 - **A graceful-shutdown window is a lie unless something tells the handlers to leave.**
   Ctrl-C took a fixed 30 s. `Daemon.Close` stops the HTTP server FIRST, and
   `http.Server.Shutdown` waits for active non-hijacked requests without cancelling their
