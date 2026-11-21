@@ -54,13 +54,14 @@ type Options struct {
 	Alpha float64
 	// ClockGain is the Mueller-Müller loop gain. <= 0 uses 0.05.
 	ClockGain float64
-	// DeviationHz is the peak frequency deviation of the C4FM
-	// signal at symbol ±3 (900 Hz on dPMR Mode 3 — half of P25 /
-	// DMR / YSF, matching the 6.25 kHz channel spacing). Used to
-	// calibrate the slicer thresholds against the FM-discriminator
-	// output level (slicer scale = 2π · DeviationHz / SampleRateHz).
-	// <= 0 falls back to the legacy slicerScale = 1.0 for fixtures
-	// that pre-scale their FM levels.
+	// DeviationHz is the peak frequency deviation of the signal at
+	// symbol ±3. ETSI TS 102 658 clause 14.2.2.1 puts it at 1050 Hz
+	// (symbol ±1 at 350 Hz); the control-channel pipeline passes 900,
+	// which sets the inner/outer threshold at 600 Hz instead of 700 and
+	// still separates the two. Used to calibrate the slicer thresholds
+	// against the FM-discriminator output level (slicer scale =
+	// 2π · DeviationHz / SampleRateHz). <= 0 falls back to the legacy
+	// slicerScale = 1.0 for fixtures that pre-scale their FM levels.
 	DeviationHz float64
 }
 

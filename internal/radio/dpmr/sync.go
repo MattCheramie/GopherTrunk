@@ -10,15 +10,19 @@ package dpmr
 // dPMR CC state machine on live IQ.
 type DibitSink func(dibits []uint8, baseIdx int)
 
-// dPMR sync words per ETSI TS 102 658 §4.4. Three distinct 48-bit
-// (24-dibit) patterns mark the three burst types Mode 3 uses:
+// Sync words of the older control-channel model (see the package comment).
+// They are NOT the standard's: clause 6.1 of TS 102 658 defines FS1 as
+// 57 FF 5F 75 D5 77 (48 bits) and FS2 and FS3 as 5F F7 7D and 7D DF F5
+// (24 bits each), and FS3 opens the end frame, not a signalling burst.
+// The real ones are AirFS1..AirFS4 in airframe.go. These stay for the
+// control-channel path and its fixtures, which share the model:
 //
-//	FS1  start of a voice / data superframe
-//	FS2  middle synchronisation inside a superframe (every 4th burst)
-//	FS3  start of a CSBK (signalling) burst on the control channel
+//	FS1  "start of a voice / data superframe"
+//	FS2  "middle synchronisation inside a superframe"
+//	FS3  "start of a CSBK burst on the control channel"
 //
-// All three are stored as canonical 48-bit hex constants; helpers
-// materialise the dibits MSB-first for the symbol-domain detector.
+// All three are stored as 48-bit hex constants; helpers materialise the
+// dibits MSB-first for the symbol-domain detector.
 const (
 	FS1Hex uint64 = 0x57FF5F75F575
 	FS2Hex uint64 = 0x5F7F77FD7DFD
