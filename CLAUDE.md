@@ -195,6 +195,12 @@ confirmation before any close-as-completed.
   for a ts1 grant while another tap framed the same carrier; the 2V burst's ESS-B is not decoded (the ES
   comes from MAC_PTT only); MAC opcodes 0x42 / 0x7C print unnamed. The daemon path with the fix is not yet
   confirmed by the reporter (#764/#771).
+- **A Phase 2 traffic channel repeats GROUP_VOICE_CHANNEL_USER on every FACCH / SACCH burst (~60 ms), and
+  the chain published each one** (same report: 79 `call source update` INFO lines in 4 s over three calls,
+  one `call.source` bus event each). Invisible until MAC decoded on air (v1.3.1). `callSourceFilter`
+  (`composer/p25p2_voice.go`) passes an update only when talker or flags change; a hang-time update names
+  no radio (source 0) and counts as the last talker. The DMR chain had the same dedupe already
+  (`lastSrcUpd`); a new chain that publishes source updates needs one too.
 - **"Recording far shorter than the call" (#1242 follow-up) is usually the HOLD, not lost audio —
   read `audio_pct` before chasing decode.** A call's duration is its wall-clock span (overs + gaps +
   hangtime); the WAV holds only decoded frames. Two defects made that look like loss: the sidecar's

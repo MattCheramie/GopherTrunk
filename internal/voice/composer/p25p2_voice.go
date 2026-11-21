@@ -143,13 +143,16 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// The voice chain wires the call-bound source / encryption PDUs to
 	// its engine-backfill publishers; the alias the dispatcher publishes
 	// itself (identical in both paths).
+	// srcFilter keeps the call's source updates to the ones that say
+	// something new; see callSourceFilter.
+	var srcFilter callSourceFilter
 	dispatcher := sigfollow.NewMACDispatcher(sigfollow.MACDispatcherOptions{
 		Bus:              c.bus,
 		Log:              c.log,
 		LogPrefix:        "composer",
 		System:           system,
 		Serial:           serial,
-		OnCallSource:     func(u p25p2.GroupVoiceChannelUser) { c.publishP25Phase2CallSource(serial, u) },
+		OnCallSource:     func(u p25p2.GroupVoiceChannelUser) { c.publishP25Phase2CallSource(serial, u, &srcFilter) },
 		OnCallEncryption: func(es p25p2.EncryptionSync) { c.publishP25Phase2CallEncryption(serial, es) },
 	})
 	// voiceSubframes counts P25 Phase 2 voice-bearing subframes the
@@ -349,21 +352,54 @@ func p25p2CensusDUIDKey(d p25p2.DUID) string {
 	return "duid_" + name
 }
 
+// callSourceFilter passes a call's in-call source update only when it tells
+// the engine something the last one it passed did not. A Phase 2 traffic
+// channel repeats GROUP_VOICE_CHANNEL_USER on every FACCH / SACCH burst of a
+// talk spurt, roughly every 60 ms, and each one used to go to the bus: the
+// first on-air Phase 2 log had 79 "call source update" lines in four seconds
+// across three calls, and the same flood reached every event subscriber (the
+// web activity feed, alerts, the affiliation tracker). The engine's backfill
+// is additive, so a repeat carries nothing. Not safe for concurrent use; one
+// per voice chain, called from the chain's own goroutine.
+type callSourceFilter struct {
+	last trunking.CallSourceUpdate
+	have bool
+}
+
+// admit reports whether upd (with At unset) is news. A hang-time update names
+// no radio (source 0), and the engine keeps the source it has, so such an
+// update is compared as if it named the last one: it passes only when its
+// encryption / emergency / priority differ.
+func (f *callSourceFilter) admit(upd trunking.CallSourceUpdate) bool {
+	if upd.SourceID == 0 && f.have {
+		upd.SourceID = f.last.SourceID
+	}
+	if f.have && upd == f.last {
+		return false
+	}
+	f.last, f.have = upd, true
+	return true
+}
+
 // publishP25Phase2CallSource publishes a KindCallSourceUpdate event so
 // the trunking engine can backfill the bound ActiveCall's SourceID +
 // Encrypted from an in-call GROUP_VOICE_CHANNEL_USER PDU. The engine
 // fills in System / Protocol / GroupID from the bound Grant on
-// republish — leave them blank here.
-func (c *Composer) publishP25Phase2CallSource(serial string, u p25p2.GroupVoiceChannelUser) {
+// republish — leave them blank here. Repeats are dropped by filter.
+func (c *Composer) publishP25Phase2CallSource(serial string, u p25p2.GroupVoiceChannelUser, filter *callSourceFilter) {
 	so := p25p2.ServiceOptions(u.ServiceOptions)
-	c.publishCallSource(trunking.CallSourceUpdate{
+	upd := trunking.CallSourceUpdate{
 		DeviceSerial: serial,
 		SourceID:     u.SourceID,
 		Encrypted:    so.Encrypted(),
 		Emergency:    so.Emergency(),
 		Priority:     so.Priority(),
-		At:           time.Now().UTC(),
-	})
+	}
+	if filter != nil && !filter.admit(upd) {
+		return
+	}
+	upd.At = time.Now().UTC()
+	c.publishCallSource(upd)
 }
 
 // publishP25Phase2CallEncryption mirrors the Phase 1 LDU2 in-call

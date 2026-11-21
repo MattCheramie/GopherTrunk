@@ -30,6 +30,14 @@ for tagged releases.
   - The Settings panel's vocoder table (`vocoder_map` in
     `GET /api/v1/runtime`) showed `ambe2` for P25 Phase 2 and `—` for YSF. It
     now shows what the recorder loads.
+- **A P25 Phase 2 call flooded the log and the event stream with
+  `call source update`.** A Phase 2 traffic channel repeats the talker's ID on
+  every signalling burst, about every 60 ms, and each copy was logged at INFO
+  and published as a `call.source` event: 79 lines in four seconds across three
+  calls in the first on-air Phase 2 log, and the same number of rows in the web
+  activity feed. The voice chain now passes a source update only when the
+  talker, or the call's encryption / emergency / priority, changes. The DMR
+  chain already did this.
 - **`config validate`, `doctor` and the web config builder accepted a trunking
   system the daemon then refused to start on** (#1379 follow-up). The daemon
   requires each system to have at least one control channel within
