@@ -986,11 +986,15 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			ClockMode:    clockMode,
 			GardnerGain:  p25Phase2GardnerGain,
 		})
+		// Seed the symbol timing feed-forward at every start, as the
+		// ccdecoder p25Phase2Pipeline does (issue #1364): the engine starts on
+		// a carrier that is already up, at an arbitrary sub-symbol phase.
+		rx.ArmTimingAcquisition()
 		// Decode-drought watchdog, mirroring the ccdecoder p25Phase2Pipeline:
 		// the air framer re-hunts on the receiver's restarted dibit count.
 		rcv := &droughtGuardReceiver{
 			rx: rx, activity: cc.LastActivityNano,
-			reacquire: func() { rx.Reset() },
+			reacquire: func() { rx.Reset(); rx.ArmTimingAcquisition() },
 			log:       log, system: sys.Name, label: "p25-phase2",
 			rateHz: outRateHz, window: p25Phase2ResyncWindow,
 		}

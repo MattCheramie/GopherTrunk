@@ -581,6 +581,12 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		// Only applied when ClockMode == ClockGardner.
 		GardnerGain: 0.005,
 	})
+	// A hunt dwell, a retune and a drought resync all start the receiver at
+	// an arbitrary point in the symbol timing of a carrier that is already
+	// up. The timing loop alone took 0.27 s and 0.99 s to find the frame grid
+	// from two of eight start phases of a real Phase 2 carrier; the
+	// feed-forward seed finds it within the first superframe (issue #1364).
+	rx.ArmTimingAcquisition()
 	return &p25Phase2Pipeline{
 		rx: rx, cc: cc, log: opts.Log, system: opts.SystemName,
 		guard: resyncGuard{rateHz: opts.SampleRateHz, window: p25Phase2ResyncWindow},
@@ -603,6 +609,7 @@ func (p *p25Phase2Pipeline) Process(iq []complex64) {
 	// restarted dibit count), the same reset Reset does.
 	if p.guard.check(len(iq), p.cc.LastActivityNano()) {
 		p.rx.Reset()
+		p.rx.ArmTimingAcquisition()
 		if p.log != nil {
 			p.log.Debug("p25/phase2: dsp resync (signal-time decode drought; reacquiring from centre)",
 				"system", p.system)
@@ -612,6 +619,7 @@ func (p *p25Phase2Pipeline) Process(iq []complex64) {
 
 func (p *p25Phase2Pipeline) Reset() {
 	p.rx.Reset()
+	p.rx.ArmTimingAcquisition()
 	p.guard.reset()
 }
 func (p *p25Phase2Pipeline) Close() error { return nil }
