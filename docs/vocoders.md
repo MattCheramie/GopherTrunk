@@ -56,7 +56,8 @@ type Vocoder interface {
 | ------------------------ | ------------ | -------- | ----------------------------------------------- |
 | `null` (silence)         | none         | yes      | Always available                                |
 | `imbe` (pure-Go, P25 P1) | none         | yes      | Producing intelligible audio; level calibration pending reference data ([voice-calibration.md](voice-calibration.md)) |
-| `ambe2` (pure-Go)        | none         | yes      | Producing audio; level calibration pending reference data; DTMF tones synthesise, knox tones via `ambe2.SetKnoxTone` or stay silent |
+| `ambe2-dmr` (pure-Go)    | none         | yes      | AMBE+2 3600x2450, the half-rate vocoder of P25 Phase 2, DMR, NXDN, dPMR and YSF. Verified on air (DMR, NXDN, P25 Phase 2) and against mbelib on real frames; DTMF tones synthesise, knox tones via `ambe2.SetKnoxTone` or stay silent |
+| `ambe2` (pure-Go)        | none         | yes      | AMBE 3600x2400, D-STAR only. A different table set from `ambe2-dmr`: decoding a P25 Phase 2 / DMR / NXDN `.raw` with it gives speech-shaped noise |
 | `tetra-acelp` (pure-Go)  | none         | yes      | Producing audio; TETRA full-rate voice (ETSI EN 300 395-2), verified bit-exact against the reference codec; up to 4 concurrent same-carrier timeslots |
 | `dvsi` (USB-3000 chip)   | `-tags dvsi` | **no**   | Wire-protocol + Vocoder scaffolding shipping; USB transport stub (returns `ErrNoDevice`) — hardware integration follows in a separate PR |
 
@@ -72,7 +73,7 @@ Default mapping (see `voice.DefaultVocoderForProtocol`):
 | Grant.Protocol | Vocoder | Notes                            |
 | -------------- | ------- | -------------------------------- |
 | `p25`          | `imbe`  | P25 Phase 1 LDU1 / LDU2          |
-| `p25-phase2`   | `ambe2` | P25 Phase 2 — AMBE+2 3600x2400   |
+| `p25-phase2`   | `ambe2-dmr` | P25 Phase 2 — AMBE+2 3600x2450 (the TIA-102 half-rate vocoder; the same decoder as DMR) |
 | `dmr-tier1`    | `ambe2-dmr` | DMR Tier I direct-mode — AMBE+2 3600x2450 |
 | `dmr-tier2`    | `ambe2-dmr` | DMR Tier II conventional         |
 | `dmr-tier3`    | `ambe2-dmr` | DMR Tier III trunked             |
@@ -99,7 +100,7 @@ voice.NewRecorder(voice.RecorderOptions{
     // testing, leave AMBE+2 alone:
     VocoderForProtocol: map[string]string{
         "p25":        "null",
-        "p25-phase2": "ambe2",
+        "p25-phase2": "ambe2-dmr",
         // …other defaults…
     },
 })
@@ -125,7 +126,8 @@ in-binary vocoders against a `.raw` frame stream out-of-band:
 
 ```sh
 gophertrunk decode -in call.raw -out call.wav -vocoder imbe
-gophertrunk decode -in dmr.raw  -out dmr.wav  -vocoder ambe2
+gophertrunk decode -in dmr.raw  -out dmr.wav  -vocoder ambe2-dmr   # also P25 Phase 2 / NXDN / dPMR / YSF
+gophertrunk decode -in dstar.raw -out dstar.wav -vocoder ambe2      # D-STAR only (AMBE 3600x2400)
 gophertrunk decode -list-vocoders   # enumerate registered names
 ```
 

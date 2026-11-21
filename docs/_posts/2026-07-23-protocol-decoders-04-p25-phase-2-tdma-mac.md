@@ -25,6 +25,17 @@ creates: grants that arrive with no source radio.*
 > source must be backfilled later — the exact seam the trunking engine's
 > source-RID recovery closes.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 11 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** the framing this post
+> describes — an ISCH on every sub-frame that names it as voice or MAC, and
+> the MAC path behind it — was GopherTrunk's working model of Phase 2 and
+> matched no reference decoder. The voice and MAC paths were rebuilt on the
+> real air format.
+> [Rebuilt From the Air, Part 11]({{ rfa_fix.url | relative_url }}) has what
+> changed.
+{% endif %}
+
 **Key takeaways**
 
 - The **ISCH** is how a receiver tells a voice sub-frame from a MAC sub-frame

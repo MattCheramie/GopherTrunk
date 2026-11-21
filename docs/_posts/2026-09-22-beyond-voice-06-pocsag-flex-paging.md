@@ -37,6 +37,16 @@ GopherTrunk decodes and which it only recognises.*
 > `GET /api/v1/pager/messages` and `/pagers`; `paging.wideband` puts several
 > channels on one SDR through a 48 kHz `tuner.DDCBank`.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 4 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** the FLEX framing
+> described here never matched the air — the mode code comes before the sync
+> marker, not after it — and the one-mode limit is gone. FLEX was rebuilt for
+> all four modes, with the 1600 bps path pinned on real-air frames.
+> [Rebuilt From the Air, Part 4]({{ rfa_fix.url | relative_url }}) has the
+> rebuild. The POCSAG sections are unaffected.
+{% endif %}
+
 **Key takeaways**
 
 - **Polarity is the classic FSK-over-FM trap, and the syncer eats it.** Both

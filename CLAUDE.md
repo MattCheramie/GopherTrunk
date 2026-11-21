@@ -175,6 +175,41 @@ confirmation before any close-as-completed.
   `rtl_sdr` grabs, not one recording, and five contain a hole (grid shifts fit whole dropped 16 KiB
   buffers): never concatenate them, and check S-ISCH spacing before blaming the receiver. What is
   still NOT confirmed: a source RID / talker alias from a live call (no call in these captures).
+- **P25 Phase 2 voice IS ON-AIR VERIFIED at the frame level (18 Nov Discord report), and "garbled noise,
+  as if it is encrypted" was the VOCODER TABLE SET, not the air path.** The reporter's wideband RTL rig
+  (867 MHz site, P1 CC + P2 voice, clear in DSD+) logged a clean call (`air_bursts=579 voice_bursts=115
+  corrected_bit_errs=10 mac_bursts=175 mac_pdus=175`) whose WAV was noise. `DefaultVocoderForProtocol` sent
+  `p25-phase2` to `ambe2`, the AMBE 3600x2400 tables only D-STAR uses; Phase 2 is AMBE+2 3600x2450 (TIA
+  half-rate), the `ambe2-dmr` decoder DMR / NXDN / dPMR / YSF use. The two layouts share the top four pitch
+  bits and nothing else, hence speech-shaped noise. Nothing caught it: every Phase 2 test used synthetic
+  frames and never judged the audio, and before v1.3.1 no real frame reached the vocoder. Proof on his
+  `.raw`: the 2450 b0 track (payload bits 0-3 + 37-39) glides and reads 124 on silence frames; mbelib
+  3600x2450 on the same bytes matches `unpackParams2450` on all 118 frames (w0 / L / voicing / gamma); his WAV
+  follows the 2400 decode (level-track r 0.86), not the 2450 one. Pinned by
+  `ambe2/p25p2_realair_test.go` on the committed call (r vs mbelib 0.22 old, 0.92 fixed). Triage rule: FEC
+  counters clean + audio noise ⇒ read b0 from the `.raw` before any DSP theory. `decode -h` and the docs
+  told operators to decode DMR with `-vocoder ambe2` (same trap, fixed), and `runtime.go`'s hand-kept
+  `vocoderProtocolMap` had drifted (`TestRuntimeVocoderMapMatchesRecorderDefaults`). Open from that log:
+  a second call (LCH 0, +787 kHz) had `corrected_bit_errs=356` over 48 voice bursts beside MAC 70/72
+  (~2 Golay corrections per voice frame, unexplained; needs `voice_iq_debug`); one tap got `air_bursts=0`
+  for a ts1 grant while another tap framed the same carrier; the 2V burst's ESS-B is not decoded (the ES
+  comes from MAC_PTT only); MAC opcodes 0x42 / 0x7C print unnamed. The daemon path with the fix is not yet
+  confirmed by the reporter (#764/#771).
+- **A Phase 2 traffic channel repeats GROUP_VOICE_CHANNEL_USER on every FACCH / SACCH burst (~60 ms), and
+  the chain published each one** (same report: 79 `call source update` INFO lines in 4 s over three calls,
+  one `call.source` bus event each). Invisible until MAC decoded on air (v1.3.1). `callSourceFilter`
+  (`composer/p25p2_voice.go`) passes an update only when talker or flags change; a hang-time update names
+  no radio (source 0) and counts as the last talker. The DMR chain had the same dedupe already
+  (`lastSrcUpd`); a new chain that publishes source updates needs one too.
+- **`config.Load` is a LENIENT decode: a key under the wrong section is dropped silently.** In the same
+  report the reporter pasted the `log:` / `recordings:` / `baseband:` blocks we asked for under the
+  trunking system, so no debug log and no `voice_iq_debug` file appeared and he copied the terminal instead.
+  `config.UnknownKeys` (a strict yaml.v3 decode; every setting is a plain struct field, so it has no
+  false-positive class, and `TestUnknownKeysQuietOnShippedConfigs` holds the shipped configs clean) now
+  feeds a start-up / reload WARN naming line, key and section. When a reporter says a setting "did
+  nothing", ask for the `config line N:` warnings first. When telling someone to add a section, say it goes
+  at the left margin and must be merged into an existing block of the same name (a second top-level
+  `recordings:` is a YAML duplicate-key error).
 - **"Recording far shorter than the call" (#1242 follow-up) is usually the HOLD, not lost audio —
   read `audio_pct` before chasing decode.** A call's duration is its wall-clock span (overs + gaps +
   hangtime); the WAV holds only decoded frames. Two defects made that look like loss: the sidecar's

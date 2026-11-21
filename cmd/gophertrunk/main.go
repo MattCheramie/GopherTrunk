@@ -33,12 +33,10 @@ import (
 	// This is the sole IMBE backend in default builds.
 	_ "github.com/MattCheramie/GopherTrunk/internal/voice/imbe"
 
-	// Blank import: pulls in the pure-Go AMBE+2 decoder so the
-	// daemon registers the "ambe2" vocoder name (P25 Phase 2, DMR,
-	// NXDN voice) regardless of build tags. The skeleton currently
-	// emits silence; PR-D plugs in 49-bit parameter unpacking and
-	// PR-E wires the shared mbe synthesis pipeline. See
-	// docs/vocoders.md for the AMBE+2 patent posture.
+	// Blank import: pulls in the pure-Go AMBE decoders so the daemon
+	// registers "ambe2-dmr" (AMBE+2 3600x2450: P25 Phase 2, DMR, NXDN,
+	// dPMR, YSF voice) and "ambe2" (AMBE 3600x2400: D-STAR) regardless
+	// of build tags. See docs/vocoders.md for the AMBE+2 patent posture.
 	_ "github.com/MattCheramie/GopherTrunk/internal/voice/ambe2"
 
 	// Blank import: pulls in the pure-Go TETRA ACELP decoder so the daemon
@@ -364,6 +362,13 @@ func runDaemon(args []string) {
 	preflightWarnings, err := preflight(cfg)
 	if err != nil {
 		rep.Fatal(2, err)
+	}
+	// Keys the file carries that no setting reads: logged for a headless
+	// run and pinned with the other start-up warnings for the launcher and
+	// the dashboard.
+	for _, w := range unknownKeyWarnings(*cfgPath) {
+		logger.Warn(w)
+		preflightWarnings = append(preflightWarnings, w)
 	}
 
 	// Single-instance lock. Two daemons aimed at the same config

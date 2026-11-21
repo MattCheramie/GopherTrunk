@@ -41,9 +41,8 @@ const (
 
 // mbeCookieForProtocol maps a Grant.Protocol to the dsd-fme container its
 // frames belong in; ok=false means the protocol has no dsd-fme playback
-// format. p25-phase2 is nominally AMBE+2 3600x2400, but dsd-fme files phase 2
-// under .amb alongside DMR/NXDN (openMbeOutFile: "dmr, nxdn, phase 2,
-// x2-tdma"), so we match that.
+// format. p25-phase2 is AMBE+2 3600x2450 like DMR and NXDN, and dsd-fme files
+// all of them under .amb (openMbeOutFile: "dmr, nxdn, phase 2, x2-tdma").
 func mbeCookieForProtocol(protocol string) (string, bool) {
 	switch protocol {
 	case "p25":

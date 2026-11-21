@@ -35,6 +35,15 @@ message decoders from trunked protocols, and lists what remains open.*
 > (`Protocol` enum, pipeline factory, composer voice kind, recorder vocoder
 > map). M17 shows a decoder that stopped short: REST but no panel.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 14 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** several items in the
+> open list below have since moved — FleetSync is on-air verified, the YSF
+> FICH model was found to be invented and was replaced, and D-STAR was
+> rebuilt. [Rebuilt From the Air, Part 14]({{ rfa_fix.url | relative_url }})
+> carries the current ledger.
+{% endif %}
+
 **Key takeaways**
 
 - **The pattern is the product.** Twelve physical layers reduce to one

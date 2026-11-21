@@ -36,6 +36,18 @@ a multiply and an FFT rather than a slicer.*
 > operator-held keys. Output: `KindLoRaFrame` → `lora_log`
 > → `GET /api/v1/lora/frames` → `/lora`. Synthetic-verified only.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 5 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** the bit layer described
+> here — whitening, CRC, header, Hamming layout, interleaver and chip mapping
+> — was the self-consistent layout this post warns about, and it did not match
+> Semtech's. It has been replaced and pinned bit-exact against two independent
+> references; the chirp, preamble and sync stages stand. It is still not
+> verified on a real capture.
+> [Rebuilt From the Air, Part 5]({{ rfa_fix.url | relative_url }}) has what
+> changed.
+{% endif %}
+
 **Key takeaways**
 
 - **Dechirp turns modulation into a bin index.** Multiply by the conjugate
