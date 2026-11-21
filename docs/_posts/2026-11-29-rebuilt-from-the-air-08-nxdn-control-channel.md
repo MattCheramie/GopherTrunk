@@ -22,11 +22,11 @@ reporter still could not do: keep that voice decoding as a dongle warmed up,
 and lock a trunked control channel. One eight-second capture answered both.*
 
 > **TL;DR:** Two symptoms on
-> [#1261](https://github.com/MattCheramie/GopherTrunk/issues/1261). "Works
-> 5–10 minutes, then fails until I change ppm by 1" was the NXDN timing loop
-> seeing the carrier offset: the AFC ran after the clock, so NXDN48 decoded
-> only within about ±700 Hz, and the reporter's dongle walked −645 → −679 Hz
-> in 8.7 s. `EnableCarrierTracking` — a frequency-locked loop on the
+> [#1261](https://github.com/MattCheramie/GopherTrunk/issues/1261). Voice
+> that "works for 5-10 minutes, then fails until I change ppm by 1" was the
+> NXDN timing loop seeing the carrier offset: the AFC ran after the clock, so
+> NXDN48 decoded only within about ±700 Hz, and the reporter's dongle walked
+> −645 → −679 Hz in 8.7 s. `EnableCarrierTracking` — a frequency-locked loop on the
 > discriminator mean, ahead of filter and clock, held whenever the
 > discriminator variance says "noise" — decodes across ±3 kHz. The control
 > channel never locked because `ControlChannel.Process` hunted an invented
@@ -55,7 +55,7 @@ and lock a trunked control channel. One eight-second capture answered both.*
 | | |
 |---|---|
 | Issue | [#1261](https://github.com/MattCheramie/GopherTrunk/issues/1261) — NXDN control channel never locks; conventional voice dies after minutes |
-| Symptom | no `cc.locked` on a real NXDN96 control channel; voice "works for 5–10 minutes, then fails until I change ppm by 1 and restart" |
+| Symptom | no `cc.locked` on a real NXDN96 control channel; voice "works for 5-10 minutes, then fails until I change ppm by 1 and restart" |
 | Wrong theories | the ppm calibration is off; the channel filter; NXDN cannot run carrier correction because the CAC has long constant-dibit runs |
 | Real cause | the AFC ran after the Mueller-Müller clock, which still saw the raw offset; the control path framed an invented FSW and LICH with no descrambler |
 | Fix | `EnableCarrierTracking` (`receiver/carrier_track.go`); `DecodeAirCAC` behind the shared `airFramer` in `ControlChannel.Process` |
@@ -69,14 +69,12 @@ and lock a trunked control channel. One eight-second capture answered both.*
 - **A tracker that knows when to hold** — the loop, the gate, the sub-blocks.
 - **The CAC on the real frame** — 150 dibits to 171 bits.
 - **The cross-check, the lock and the config crash** — the live run and a TUI panic.
-- **What this overturns, and what we keep** — Protocol Decoders 6, and the rules.
+- **What this overturns, and what we keep** — Protocol Decoders 6 and the rules.
 
 ## Two symptoms, one capture
 
-When Part 7 ended, NXDN voice decoded from two committed real-air slices and
-the comment at the top of `airframe.go` said what was left: "The
-control-channel (CAC) path still runs on the invented layout and needs the
-same rebuild against a capture."
+When Part 7 ended, NXDN voice decoded from two committed real-air slices,
+and the control-channel path still ran on the invented layout.
 
 The reporter had both problems on the bench. On a conventional 447.100 MHz
 channel voice decoded — for a while; the report, quoted in the test that now
@@ -90,8 +88,7 @@ seconds, dated 19 October by the committed slice's file name. Through the
 frame layer Part 7 had just built it framed 213 times at the real 20-bit
 sync word, each frame exactly 192 dibits after the last, every LICH with
 good parity and RF channel type 0 — a control channel. One second of it is
-committed as
-`testdata/nxdn96_rcch_cc_453775_19oct_48k.cs16`, and
+committed as `testdata/nxdn96_rcch_cc_453775_19oct_48k.cs16`, and
 `TestAirFramerFramesRealNXDNControlChannel` holds it to that spacing.
 
 So the frame layer was already right; nothing above it was. And the same
@@ -119,7 +116,6 @@ dongle that starts inside the good region drifts a ppm or two as it warms
 and lands in the dead band; moving the
 [ppm correction]({{ '/reference/ppm-frequency-correction/' | relative_url }})
 by one shifts the carrier 447 Hz out the other side, until the next drift.
-The workaround was real, and it was a description of the defect.
 
 Three theories left with that sweep. The calibration was not wrong — the
 capture was taken right after one and was still moving. The filter was not
@@ -160,9 +156,8 @@ its discriminator variance is under `carrierTrackNoiseFraction` (0.25) of
 what white noise produces through the same channel-filter taps, a figure
 measured at construction on fixed-seed noise (`noiseDiscVariance`). On the
 captures a carrier block sits at 0.07× (NXDN96) and 0.05× (NXDN48). It is the
-statistic behind the carrier gate in
-[DMR End to End Part 9]({{ '/blog/deep-dives/dmr-end-to-end-09-direct-mode-carrier-gate/' | relative_url }}):
-a phase increment is blind to gain, so no dBFS appears anywhere.
+gain-blind statistic behind the carrier gate in
+[DMR End to End Part 9]({{ '/blog/deep-dives/dmr-end-to-end-09-direct-mode-carrier-gate/' | relative_url }}).
 
 **The loop runs on its own block size.** The estimate corrects the *next*
 block, so `Receiver.Process` cuts its input into `tc/4` pieces; fed whole, an
@@ -173,11 +168,13 @@ depend on the caller's chunking.
 that used to fail: on the current tree it decodes 52 of the 56 frames at
 −1250 Hz and all 56 at ±1000 and +1250 Hz, with the tracker settled within
 3 Hz of the true offset. `TestNXDNVoiceCarrierTrackerHoldsOnNoise` keeps it
-within 300 Hz after five seconds of noise. One limit is open: on the live system a call that decoded
-406 frames cleanly ended with the tracker at its ±3 kHz bound. An
-unmodulated carrier passes the gate and pulls the loop — shown
-synthetically, unconfirmed on air; the end-of-call line now carries
-`carrier_offset_at_voice_hz` and `iq_samples` to diagnose it.
+within 300 Hz after five seconds of noise.
+
+One limit is open. On the live system a call that decoded 406 frames
+cleanly ended with the tracker at its ±3 kHz bound: an unmodulated carrier
+passes the gate and pulls the loop — shown synthetically, unconfirmed on
+air. The end-of-call line now carries `carrier_offset_at_voice_hz` to
+diagnose it.
 
 ## The CAC on the real frame
 
@@ -289,8 +286,7 @@ nineteen times and a SITE_INFO once. Across the whole capture it is 214 of
 ## The cross-check, the lock and the config crash
 
 A CRC proves 171 bits arrived intact, not which of them mean what. The field
-positions came from one reference decoder, so the capture was asked to check
-itself.
+positions came from one reference, so the capture was asked to check itself.
 
 SITE_INFO's 24-bit location reads `0x400AA1`. Its top two bits name a
 category that sets how the rest splits; category 1 is Local, a 17-bit system
@@ -324,15 +320,15 @@ NXDN48 and NXDN96 kept decoding through drift. NXDN trunked voice is
 **on-air verified**.
 
 What stood between the fix and that run was not DSP. An NXDN grant names a
-channel *number*; with no plan to turn it into hertz the daemon warns
-`nxdn system has no nxdn_band_plan; voice grants will be dropped
-(no-bandplan)`. The reporter went to enter one and the config TUI crashed:
-`configtui.resolve` walked its drill path with `FieldByName` straight onto
-the band-plan *pointer* (DMR's plan, the same shape, crashed too), and the
-web builder had no editor for it. The guard test `TestEveryLeafEditable`
-classifies field kinds and never drives a drill path;
-`bandplan_drill_test.go` now presses the keys. The key was missing from
-`config.example.yaml` as well:
+channel *number*; with no `nxdn_band_plan` to turn it into hertz the daemon
+warns that voice grants will be dropped (`no-bandplan`). The reporter went
+to enter one and the config TUI crashed: `configtui.resolve` walked its
+drill path with `FieldByName` straight onto the band-plan *pointer* (DMR's
+plan, the same shape, crashed too), and the web builder had no editor for
+it. The guard test `TestEveryLeafEditable` classifies field kinds and never
+drives a drill path; `bandplan_drill_test.go` now presses the keys. The key
+was missing from `config.example.yaml` as well. It is there now, and a plan
+looks like this:
 
 ```yaml
 trunking:
@@ -380,7 +376,6 @@ frame.
   was not, and both had green round trips.
 - **Ask the capture to check itself.** A site code and a RAN that must
   agree outweigh a second reading of one reference.
-- **A config editor is part of the decode path.** Its tests press keys.
 
 ## Where this goes next
 
@@ -395,29 +390,28 @@ the [NXDN page]({{ '/nxdn-scanner/' | relative_url }}) has the summary.
 ## FAQ
 
 **Why does NXDN decoding stop after a few minutes until I change the ppm setting?**
-Before this fix the receiver corrected carrier offset only after its
-symbol-timing loop, which failed at roughly ±750–1250 Hz on NXDN48. A
-drifting dongle walks into that band, and moving the ppm by one shifts the
-carrier 447 Hz back out. The voice chain now tracks the carrier ahead of the
-discriminator and decodes across ±3 kHz.
+The receiver used to correct carrier offset only after its symbol-timing
+loop, which failed at roughly ±750–1250 Hz on NXDN48. A drifting dongle
+walks into that band, and moving the ppm by one shifts the carrier 447 Hz
+back out. The voice chain now tracks the carrier ahead of the discriminator
+and decodes across ±3 kHz.
 
 **How does GopherTrunk decode an NXDN control channel?**
 It finds the 20-bit frame sync, descrambles the frame, checks the LICH, then
-takes the 150 CAC dibits through a 12×25 deinterleave, a 12-of-14 depuncture
-and a K=5 Viterbi decode to 171 bits under a CRC-16. SITE_INFO and SRV_INFO
-lock the channel; VCALL_ASSGN publishes a voice grant.
+deinterleaves, depunctures and Viterbi-decodes the 150 CAC dibits to 171
+bits under a CRC-16. SITE_INFO and SRV_INFO lock the channel; VCALL_ASSGN
+publishes a voice grant.
 
 **Is NXDN trunking verified on air in GopherTrunk?**
 Lock, grant following and recording are: the reporter's ten-channel system
-ran live on 21 October. In the repository, lock and the site broadcasts are
-capture-verified on a committed one-second slice. The VCALL_ASSGN layout is
-reference-pinned only, because the committed capture has no call on it.
+ran live on 21 October. Lock and the site broadcasts are also
+capture-verified on a committed slice. The VCALL_ASSGN layout is
+reference-pinned only, because that capture has no call on it.
 
 **Why are my NXDN voice grants dropped with a no-bandplan warning?**
 An NXDN grant carries a channel number, not a frequency. Add an
-`nxdn_band_plan` to the system — `linear` (base, spacing, offset) or a
-`table` of channel-to-frequency entries — and the grants resolve. Both config
-editors can enter it now.
+`nxdn_band_plan` to the system — `linear` or a `table` of
+channel-to-frequency entries — and the grants resolve.
 
 ## Series navigation
 

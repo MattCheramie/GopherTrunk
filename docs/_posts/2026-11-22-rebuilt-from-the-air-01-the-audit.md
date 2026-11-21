@@ -19,13 +19,13 @@ is verified today, and the earlier posts on this blog that the series
 corrects.*
 
 > **TL;DR:** Between September and November 2026, nine GopherTrunk decoders
-> turned out to implement framing that matched no transmitter: SmartNet,
-> MDC1200, the CTCSS and DCS tone gates, FLEX, the LoRa bit layer, System
-> Fusion's FICH, NXDN, D-STAR (with dPMR's voice Golay) and P25 Phase 2
-> TDMA. In each, the test encoder and the decoder came from one model — an
-> invented sync word, bit order, interleaver or line code — so every round
-> trip was green and the first real signal decoded nothing. Each was rebuilt
-> from implementations proven on air, pinned with literal vectors, and
+> turned out never to have matched a real transmitter: SmartNet, MDC1200,
+> the CTCSS and DCS tone gates, FLEX, the LoRa bit layer, System Fusion's
+> FICH, NXDN, D-STAR (with dPMR's voice Golay) and P25 Phase 2 TDMA. In
+> each, the tests and the decoder came from one model — an invented sync
+> word, bit order, interleaver or line code — so every round trip was green
+> and the first real signal decoded nothing. Each was rebuilt from
+> independent references proven on air, pinned with literal vectors, and
 > pinned again on a real-air slice where one exists. Today MDC1200, the tone
 > gates and NXDN trunked voice are **on-air verified**; FLEX at 1600 bps,
 > NXDN voice and control and an idle P25 Phase 2 carrier are
@@ -64,15 +64,15 @@ corrects.*
 - **The pattern** — one model, two halves, no radio.
 - **The roll call** — nine decoders, what was invented, where each stands.
 - **How each one surfaced** — a capture or a second reference, never CI.
-- **Why it kept happening** — four ordinary habits that add up to fabrication.
-- **What this series overturns** — the earlier posts that described these formats.
+- **Why it kept happening** — four ordinary habits.
+- **What this series overturns** — the earlier posts on these formats.
 - **Four words for how sure we are** — the vocabulary every part uses.
 
 ## The pattern: one model, two halves, no radio
 
 To test a decoder you need frames, so you write a frame builder, decode
 what it built, and assert that the payload survives. It is the natural
-first test and it is worth having.
+first test, and worth having.
 
 [From the Issue Tracker, Part 20]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }})
 named what that test cannot see — the
@@ -135,8 +135,8 @@ reach, with a test encoder written from the same model.
 
 Three things were true of every decoder here before its rebuild. The
 transmitter side lived next to the receiver side and had the same author. No
-value in the tests had been typed in from anywhere else. And no recording of
-a real transmitter had ever been through it.
+value in the tests had been typed in from anywhere else. No recording of a
+real transmitter had been through it.
 
 The gaps were often written down. The old FLEX package said its parse was
 "validated end-to-end against a synthetic encoder, with exact on-wire bit
@@ -148,8 +148,7 @@ finished.
 ## The roll call
 
 "Invented" means the code and its tests agreed on something no transmitter
-sends; the status column uses the vocabulary defined at the end of this
-post.
+sends; statuses use the vocabulary defined at the end of this post.
 
 | Decoder | What was invented | How it surfaced | Status now | Told in |
 |---|---|---|---|---|
@@ -192,17 +191,19 @@ until you learn the field being checked does not exist.
 
 **A second implementation.** FLEX, LoRa, the System Fusion FICH and D-STAR
 were found by reading a decoder known to work and comparing layouts. FLEX is
-the cleanest case: a request for the 3200 and 6400 bps modes meant reading
-multimon-ng's frame handling, and that reading showed the existing 1600 bps
-path hunting the mode code on the wrong side of the sync marker. Nobody had
-reported FLEX broken.
+the cleanest case: a request for 3200 and 6400 bps meant reading
+multimon-ng's frame handling, which showed the existing 1600 bps path
+hunting the mode code on the wrong side of the sync marker. Nobody had
+reported it.
 
-That second route is the uncomfortable one: a fabricated decoder with no
-local signal and no reporter stays fabricated until somebody has an
-unrelated reason to open the file — the case for
+That route is the uncomfortable one: a fabricated decoder with no local
+signal and no reporter stays fabricated until somebody has an unrelated
+reason to open the file — the case for
 [choosing the reference first]({{ '/blog/deep-dives/from-spec-to-shipping-02-choosing-references/' | relative_url }}).
-The references here are open-source decoders with years on real systems: OP25
-and SDRTrunk for P25, trunk-recorder for SmartNet, multimon-ng for FLEX,
+The references here are open-source decoders with years on real systems:
+[OP25]({{ '/reference/op25/' | relative_url }}) and SDRTrunk for P25,
+trunk-recorder for SmartNet,
+[multimon-ng]({{ '/reference/multimon-ng/' | relative_url }}) for FLEX,
 MMDVMHost and the MMDVM firmware for System Fusion, NXDN and D-STAR, DSD-FME
 for NXDN, gr-lora_sdr and LoRaPHY for LoRa. Several are GPL. They were read
 for protocol facts — constants, field positions, bit orders — and nothing
@@ -229,8 +230,8 @@ and nothing in the build distinguishes it from a real frame.
 **There was no capture to argue with.** A decoder with no local signal
 gets its only feedback from its own fixtures.
 
-**The caveat lived where operators do not read.** "Left for real-capture
-calibration" in a package comment is honest and inert.
+**The caveat lived where operators do not read.** A package comment that
+says the bit order awaits a real capture is honest and inert.
 
 A fifth habit recurs through the series: synthetic *transmitters* that
 behave like no radio, which give a real format that only decodes its
@@ -255,8 +256,7 @@ publishes.
 | [Beyond Voice, Part 11]({{ '/blog/deep-dives/beyond-voice-11-lora-chirp-receiver/' | relative_url }}) | the LoRa whitening, CRC, header and interleaver (the chirp receiver stands) | Part 5 |
 | [Beyond Voice, Part 13]({{ '/blog/deep-dives/beyond-voice-13-dstar-ysf-dpmr/' | relative_url }}) | D-STAR's sync `0xEAA060` and header FEC, the System Fusion FICH codec, dPMR's voice FEC | Parts 6 and 10 |
 
-Part 14 is the full errata, including items earlier series finales listed
-as open that have since closed.
+Part 14 is the full errata.
 
 ## Four words for how sure we are
 
@@ -281,8 +281,8 @@ no decoder is described above the rung its evidence reaches.
   gone," and only this
   [closes an issue]({{ '/blog/deep-dives/from-spec-to-shipping-10-the-on-air-gate/' | relative_url }}).
 
-A decoder waiting on the next rung is **on-air-gated**, and each part says
-what recording or live run would move it.
+A decoder waiting on the next rung is **on-air-gated**; each part says what
+recording or live run would move it.
 
 ## What we keep
 

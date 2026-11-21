@@ -70,9 +70,10 @@ correct, and whose receiver still never locked on a radio.*
 
 ## The symptom: the neighbour decoded, this one never locked
 
-GopherTrunk has decoded [MDC1200]({{ '/reference/mdc1200/' | relative_url }})
-— the data burst a radio keys at the start and end of an analog
-transmission — since the feature request in
+GopherTrunk has shipped an
+[MDC1200]({{ '/reference/mdc1200/' | relative_url }}) decoder — for the data
+burst a radio keys at the start and end of an analog transmission — since
+the feature request in
 [#438](https://github.com/MattCheramie/GopherTrunk/issues/438): an FFSK front
 end, a 40-bit sync framer, a 16×7 de-interleave, a CRC, a bus event, a log
 table, a web panel.
@@ -89,10 +90,10 @@ MDC1200 "never locked."
 
 That phrase is a precise symptom. The framer keeps three counters — sync
 words detected, bursts that failed CRC, bursts published — and they separate
-two different failures. The replay harness spells the triage out in its own
-verdict line: "sync locks with CRC failures mean the framing or field layout
-is the next suspect; zero sync locks on a clean signal means the line code
-or tones." This was the second kind.
+two failures. The replay harness spells the triage out in its verdict
+line: "sync locks with CRC failures mean the framing or field layout is the
+next suspect; zero sync locks on a clean signal means the line code or
+tones." This was the second kind.
 
 ## Four suspects, and what cleared each
 
@@ -102,8 +103,8 @@ FM discriminator, resample to 9600 Hz, the
 [FFSK]({{ '/reference/ffsk/' | relative_url }}) tone discriminator on the
 1200/1800 Hz pair, Mueller-Müller timing at eight samples per bit. FleetSync
 uses the same tones at the same baud and decoded on the same bench. A
-front-end defect big enough to hide every MDC1200 burst would not have left
-its neighbour at eight for eight.
+front-end defect that hid every MDC1200 burst would not have left its
+neighbour at eight for eight.
 
 **Discriminator polarity.** The framer already matched the sync word *and*
 its bitwise complement, inverting the payload on a complement lock. And the
@@ -111,8 +112,8 @@ question is moot for a tone decision: an FM discriminator with the opposite
 sense negates the audio, which does not change a tone's frequency.
 
 **The constants.** The sync word `0x07092A446F`, the 16×7 grid and the
-reflected CRC-16 are public protocol facts, and the rebuild later confirmed
-all three had been right from the start. The framing was not fabricated.
+reflected CRC-16 are public protocol facts, and the rebuild confirmed all
+three had been right from the start. The framing was not fabricated.
 
 **The slicer threshold.** MDC1200 sliced against a slow running mean.
 FleetSync had already measured why that is wrong for this tone pair — a
@@ -126,11 +127,12 @@ on every burst, and the arithmetic below fails on a perfectly sliced one.
 
 The way out of a
 [self-consistent trap]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }})
-is a fact the code under test did not produce. For MDC1200 that fact is the
-open-source reference modem, `mdc-encode-decode`, which the package comment
-describes as the decoder every MDC1200 tool in the field is built on. It is
-GPL; nothing from it is ported. It was read for the format and run to
-produce data.
+is a fact the code under test did not produce —
+[SmartNet's rebuild]({{ '/blog/deep-dives/from-spec-to-shipping-08-smartnet-rebuild/' | relative_url }})
+took its facts from OP25. For MDC1200 the fact is the open-source reference
+modem, `mdc-encode-decode`, which the package comment describes as the
+decoder every MDC1200 tool in the field is built on. It is GPL; nothing
+from it is ported. It was read for the format and run to produce data.
 
 Asked for one packet — op `0x01`, arg `0x80`, unit `0x1234`, a PTT ID — its
 encoder queues 26 bytes:
@@ -149,15 +151,15 @@ period — `1` for 1800 Hz, `0` for 1200 Hz. The first hundred:
 ```
 
 The leader bytes are `0x55` — the alternating pattern `01010101`. On the
-air they are a `0` followed by fifty-five `1`s: **one continuous 1800 Hz
-tone**. A receiver that reads tones as bits sees an unbroken run where the
-leader carries its bit-sync pattern. That single line is the diagnosis.
+air they are a `0` followed by fifty-five `1`s: after the first bit period,
+**one continuous 1800 Hz tone**. A receiver that reads tones as bits sees an
+unbroken run where the leader carries its bit-sync pattern. That single
+line is the diagnosis.
 
-It gets worse at the sync word. Bit periods 56–95 of that string carry the
-forty sync bits; rewritten in the receiver's own sense (1200 Hz = 1) they
-read `0x7B724099A7`. That is 24 bits away from `0x07092A446F` and 16 away
-from its complement. The framer's `gdThresh` allows five. No amount of
-signal quality closes that distance.
+Bit periods 56–95 of that string carry the forty sync bits; rewritten in
+the receiver's own sense (1200 Hz = 1) they read `0x7B724099A7`. That is 24
+bits from `0x07092A446F` and 16 from its complement. The framer's
+`gdThresh` allows five. No signal quality closes that distance.
 
 ## The real line code: 1800 Hz means "changed"
 
@@ -177,11 +179,11 @@ not need to identify a tone at all.
 
 GopherTrunk's front end does identify tones — that is what an FFSK
 discriminator is for — and that is a legitimate way to receive this signal,
-provided the precoding is undone afterwards. The data is the running XOR of
-the tone decisions:
+provided the precoding is undone. The data is the running XOR of the tone
+decisions:
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 230" width="680" height="230" role="img" aria-label="Twelve bit periods spanning the end of an MDC1200 leader and the first byte of the sync word. Four rows: the data bits; the tone sent for each, 1800 hertz when the bit changed and 1200 hertz when it did not; the old receiver's reading of tones as bits, which differs; and the running XOR of the tones, which reproduces the data.">
+<svg viewBox="0 0 680 230" width="680" height="230" role="img" aria-label="Twelve bit periods across the end of an MDC1200 leader and the first byte of the sync word. Four rows: the data bits; the tone sent for each, 1800 hertz when the bit changed and 1200 hertz when it did not; the old receiver reading tones as bits, which differs; and the running XOR, which reproduces the data.">
   <text x="208" y="16" text-anchor="middle" fill="var(--fg-muted)" font-size="9">end of leader (0x55…)</text>
   <text x="472" y="16" text-anchor="middle" fill="currentColor" font-size="9" font-weight="bold">first byte of the sync word (0x07)</text>
   <line x1="296" y1="6" x2="296" y2="200" stroke="var(--fg-muted)" stroke-dasharray="3 3"/>
@@ -239,7 +241,7 @@ the tone decisions:
 </figure>
 
 The old receiver pushed the third row into the framer. Its tests encoded
-the same way — a bit became a tone directly — so the round trip was exact.
+the same way — a bit became a tone — so the round trip was exact.
 
 ## The fix, and three pins that cannot share its mistake
 
@@ -261,12 +263,12 @@ A positive symbol is the 1200 Hz tone — hold. A non-positive one is 1800 Hz
 stage's output is DC-free by construction, and a tracked mean drifts toward
 exactly the kind of single-tone run the leader is.
 
-Two consequences are worth stating. The running XOR's start state is
-unknown, which complements the whole data stream — so the framer's
-complemented-sync lock is still needed, but it now absorbs the XOR state,
-not the discriminator's sense. And one wrong tone decision inverts every
-later bit of the burst; the CRC rejects such a burst as it would any other,
-and the reference's own sampler has the same per-bit error structure.
+Two consequences. The running XOR's start state is unknown, which
+complements the whole data stream — so the framer's complemented-sync lock
+is still needed, but it now absorbs the XOR state, not the discriminator's
+sense. And one wrong tone decision inverts every later bit of the burst;
+the CRC rejects such a burst as it would any other, and the reference's own
+sampler has the same per-bit error structure.
 
 The transmitter side was rewritten too (`mdc1200/synth.go`): `BurstBits`
 lays out leader, sync and interleaved block, `Precode` applies the line
@@ -287,9 +289,9 @@ something outside pins both. Three things do:
 | Reference audio | 17,921 samples of 48 kHz PCM the reference encoder itself produced, decoded through the production audio path in chunks of 4096, 1000 and 1 | `afsk/airformat_test.go`: `TestReceiverDecodesReferenceEncoderAudio` |
 | The other direction | GopherTrunk's synthesiser, decoded by the reference decoder | done offline; the reference stays outside the repository |
 
-The second pin is the one that "cannot share a wrong layout with anything
-in this repository," as its test comment puts it. The committed file is
-data the reference program produced, not its code — the distinction
+The second pin "cannot share a wrong layout with anything in this
+repository," as its test comment puts it. The committed file is data the
+reference program produced, not its code — the distinction
 [the clean-room rules]({{ '/blog/deep-dives/from-spec-to-shipping-05-clean-room-rules/' | relative_url }})
 turn on.
 
@@ -331,7 +333,7 @@ GT_MDC1200_IQ=<capture> GT_MDC1200_RATE=<Hz> GT_MDC1200_UNIT=<hex unit id> \
 ```
 
 The [operator page]({{ '/mdc1200.html' | relative_url }}) lists the other
-knobs, and
+knobs;
 [Cookbook Volume 2, Part 4]({{ '/blog/tutorials/cookbook-volume-2-04-fleet-signalling/' | relative_url }})
 has the config.
 
@@ -342,14 +344,14 @@ stands on the frame: the sync hunt and its five-error tolerance, the grid,
 the CRC, the opcode table, double packets and the bus-to-panel chain are as
 it describes. Four things in it are superseded:
 
-- **What `Push` receives.** Not "bits from the slicer" but the running XOR
-  of the slicer's tone decisions.
+- **What `Push` receives.** Not bits "one at a time from the slicer" but
+  the running XOR of the slicer's tone decisions.
 - **What the complement lock is for.** Not an inverted discriminator — a
   tone's frequency does not depend on that — but the XOR's start state.
 - **The redundancy.** One zero byte and seven convolutional parity bytes,
   not eight undifferentiated ones.
-- **The status.** "Synthetic-verified, no committed air capture" is now
-  on-air verified with a reference recording and a real-air slice in
+- **The status.** Synthetic-verified with no committed air capture then;
+  on-air verified now, with a reference recording and a real-air slice in
   `afsk/testdata`.
 
 [Beyond Voice, Part 2]({{ '/blog/deep-dives/beyond-voice-02-afsk-ffsk-fundamentals/' | relative_url }})
@@ -369,13 +371,11 @@ only.
 - **Commit reference data, not reference code.** Audio a GPL encoder
   produced is a fact about the protocol, and a fixture that cannot inherit
   your mistake.
-- **Slice the ugly capture.** A clipped real transmission is worth more
-  than a clean synthetic one.
 
 ## Where this goes next
 
 MDC1200 was one wrong step between two right layers. The tone gates on the
-same scan list were wrong in three unrelated ways at once.
+same scan list were wrong in several unrelated ways at once.
 [Part 3]({{ '/blog/solution-postmortem/rebuilt-from-the-air-03-ctcss-dcs-tone-gates/' | relative_url }})
 follows CTCSS and DCS through two rounds of the same issue: a threshold
 calibrated at the wrong sample rate, a Goertzel bin rounded onto the wrong
@@ -392,21 +392,20 @@ running XOR of the tone decisions rather than the tones themselves.
 **Why did GopherTrunk's MDC1200 decoder never lock on a real radio?**
 Its front end pushed each tone decision into the sync hunt as if it were
 the data bit. In that form the 40-bit sync word is 16 bits from the nearest
-pattern the framer accepts, against a tolerance of five, so no burst could
-ever lock. The decoder's own tests encoded bits as tones the same way, so
-they passed.
+pattern the framer accepts, against a tolerance of five. The decoder's own
+tests encoded bits as tones the same way, so they passed.
 
 **Does an inverted FM discriminator matter for MDC1200?**
 Not for the tone decision: inverting the discriminator negates the audio,
 which leaves every tone at the same frequency. The only ambiguity is the
-starting state of the running XOR, which complements the whole data stream;
-the framer accepts the complemented sync word and inverts the payload back.
+running XOR's start state, which complements the whole data stream; the
+framer accepts the complemented sync word and inverts the payload back.
 
 **Is the MDC1200 decoder verified on air?**
 Yes. On 28 Sep 2026 the reporter's live run decoded eleven PTT ID bursts,
 start and end, from unit `0x1777` on 447.100 MHz through a scan-list
 channel, and a slice of their recording is a committed regression. The
-convolutional parity bytes are not yet used to correct errors.
+parity bytes are not yet used to correct errors.
 
 **How do I check an MDC1200 capture of my own?**
 Record a keyup from a radio whose unit ID you know, then run

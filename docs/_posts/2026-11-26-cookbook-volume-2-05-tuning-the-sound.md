@@ -29,19 +29,20 @@ which decided where the audio is kept. This one decides how it sounds.*
 > tilt off and the rumble high-pass at 100 Hz). A profile only fills knobs
 > you left unset, so an explicit `tilt_hz` wins. `recordings.normalize`
 > rewrites each finished file to −16 LUFS with one linear gain;
-> `recordings.format: flac` halves the bytes; `audio_gain_db` on a scan-list
-> channel balances NFM against P25, which is about 10 dB louder by default.
-> Digital voice is always 8 kHz, whatever `recordings.sample_rate` says. A/B
-> offline with `gophertrunk decode -voice-profile` and `-legacy-synthesis`.
-> Measured and deliberately not changed: a +5 to +7 dB excess at 3–4 kHz
-> against OP25, and whole-LDU loss at the head of some P25 replies.
+> `recordings.format: flac` about halves the bytes; `audio_gain_db` on a
+> scan-list channel balances NFM against P25, which is about 10 dB louder
+> by default. Digital voice is always 8 kHz, whatever
+> `recordings.sample_rate` says. A/B offline with
+> `gophertrunk decode -voice-profile` and `-legacy-synthesis`. Measured but
+> not changed: a +5 to +7 dB excess at 3–4 kHz against OP25, and whole-LDU
+> loss at the head of some P25 replies.
 
 **Key takeaways**
 
 - **A voice profile is a choice between two references that disagree, not a
   quality setting.** mbelib-family decoders synthesise an unvoiced band at
   about 5.5 times a voiced harmonic; OP25 sits at the spec's equal-power
-  reading. The profile says which one you are used to.
+  reading.
 - **The profile fills defaults; anything you typed wins.** It touches only
   `unvoiced_gain`, `enhance.tilt_hz` and `enhance.hpf_hz`, and only while
   they are unset.
@@ -69,7 +70,7 @@ which decided where the audio is kept. This one decides how it sounds.*
 ## In this post
 
 - **What you're building** — the chain from frames to a finished file.
-- **The config** — one scan-list rig with every sound setting verified.
+- **The config** — one scan-list rig, every sound setting verified.
 - **First run — what healthy looks like** — the summary line and the offline A/B.
 - **What is measured, and what was left alone** — the figures behind the defaults; two known gaps.
 - **When it doesn't work** — symptom, cause, fix.
@@ -78,8 +79,8 @@ which decided where the audio is kept. This one decides how it sounds.*
 
 A rig whose audio is a set of decisions. The example is a one-dongle scan
 list with an NFM, a conventional P25 and an AM channel: the smallest rig on
-which every knob here is audible. Everything under `recordings:` and
-`audio:` applies unchanged to the trunked rigs of Volume 1.
+which every knob is audible. The `recordings:` and `audio:` blocks apply
+unchanged to Volume 1's trunked rigs.
 
 Each setting belongs to one stage of a short chain. Digital calls start at
 the vocoder: [IMBE]({{ '/reference/imbe/' | relative_url }}) for P25
@@ -101,8 +102,8 @@ skip the vocoder; their FM or AM chain has no AGC of its own, which is the
 root of the loudness gap this recipe closes.
 
 Status, plainly: the calibration figures below are measurements against
-dsd-neo and trunk-recorder / OP25 decodes of the same recorded frames, and
-the live-rate conversion and 8 kHz digital rate are pinned by tests. The
+dsd-neo and trunk-recorder / OP25 decodes of the same frames, and the
+live-rate conversion and 8 kHz digital rate are pinned by tests. The
 project's engineering notes record no listening panel and no operator
 confirmation of the `op25` profile or of `audio_gain_db`.
 
@@ -158,9 +159,6 @@ confirmation of the `op25` profile or of `audio_gain_db`.
 ## The config
 
 ```yaml
-log:
-  level: info
-
 storage:
   path: "../data/calls.db"
 
@@ -228,9 +226,9 @@ With enhance off, a profile changes the unvoiced level and nothing else.
 **Enhance is a trade, and it leans toward one reference.** Off, the output
 is the faithful decode. On, it is band-limited, tilted and louder, matched
 to dsd-neo: against OP25, recordings made with it on measured 4.4 dB of
-long-term log-spectral distance, against 3.6 dB for the plain decode of
-the same frames. It exists on the IMBE and AMBE+2 decoders only; TETRA's
-ACELP has neither it nor an unvoiced level.
+log-spectral distance, against 3.6 dB for the plain decode of the same
+frames. It exists on the IMBE and AMBE+2 decoders only; TETRA's ACELP has
+neither it nor an unvoiced level.
 
 **Normalisation is one gain per file, not a compressor.** The recording is
 measured, one linear gain moves it toward `target_lufs`, and the gain
@@ -250,11 +248,18 @@ hotter. Normalisation evens out the files; this knob evens out live
 listening too. Output clamps at full scale, so a large boost clips
 ([Squelch Part 13]({{ '/blog/deep-dives/squelch-13-operator-controls/' | relative_url }})).
 
+**FLAC costs nothing downstream.** It is lossless and about half the size
+for speech. Playback, normalisation, uploads, the retention sweep and
+transcription identify the container by its content, not its extension, so
+an archive can mix both
+([Volume 1 Part 10]({{ '/blog/tutorials/operator-cookbook-10-archival-rig/' | relative_url }})
+has the disk budget).
+
 **Two rates, and only one is yours to set.** Decoded digital voice is
-8 kHz by the vocoder's contract; `recordings.sample_rate` sets the rate of
-analog files only. `audio.sample_rate` is the speaker and web stream rate,
-and live audio of either kind is resampled into it, so any value from
-4000 to 48000 plays at the right speed.
+8 kHz by the vocoder's contract; `recordings.sample_rate` sets analog
+files only. `audio.sample_rate` is the speaker and web stream rate,
+and live audio is resampled into it, so any value from 4000 to 48000 plays
+at the right speed.
 
 ## First run — what healthy looks like
 
@@ -270,17 +275,15 @@ INF daemon: config summary systems=0 sample_rate_hz=2400000 ... rec_enhance=true
 
 `rec_voice_profile` is the canonical name: an empty key reads `mbelib`,
 `trunk-recorder` reads `op25`. A P25 call then shows the container and the
-vocoder
-([The Field Notebook Part 10]({{ '/blog/tutorials/field-notebook-10-recorder-lines/' | relative_url }})
-reads the recorder's other lines):
+vocoder:
 
 ```text
 INF recorder: call started device=00000001 wav=.../2147500002/....flac tg=2147500002 provoice=false vocoder=imbe
 INF recorder: call ended device=00000001 wav=... duration=... reason=...
 ```
 
-Now the A/B. Each digital call left a `.raw` sidecar beside its audio,
-and `decode` re-synthesises it without the radio:
+Now the A/B. Each digital call left a `.raw` sidecar, and `decode`
+re-synthesises it:
 
 ```bash
 gophertrunk decode -in call.raw -out a_mbelib.wav -vocoder imbe
@@ -295,27 +298,25 @@ voice stats: frames=... (voiced=... unvoiced=... silent=... idle_muted=... bad=.
 ```
 
 Use `-vocoder imbe` for P25 Phase 1, `ambe2` for P25 Phase 2, `ambe2-dmr`
-for DMR, NXDN and System Fusion, `tetra-acelp` for TETRA
-(`-list-vocoders` prints them). The command applies the recorder's
+for DMR, NXDN and System Fusion, `tetra-acelp` for TETRA; `-list-vocoders`
+prints them. The command applies the recorder's
 synthesis defaults — the spec-faithful amplitude enhancement and the
 unvoiced level the profile names — so files A and B differ in exactly one
 thing, and `-legacy-synthesis` turns both off. It does not run the enhance
 chain or `audio_gain_db`, and normalises only with `-normalize`; to hear a
 profile's tilt and high-pass half, change the config and restart. In the
-stats, natural speech has a crest factor around 8 to 15; a crest near 3
-or 4 with a non-zero `clip` is an over-hot AGC.
-
-For a decode that shares no code with GopherTrunk, give the `.imb` or
-`.amb` sidecar to dsd-neo or DSD-FME: the
-[vocoders guide]({{ '/vocoders.html' | relative_url }}) has the commands,
-[voice calibration]({{ '/voice-calibration.html' | relative_url }}) the
-harness.
+stats, natural speech has a crest factor around 8 to 15; a crest near 3 or
+4 with non-zero `clip` is an over-hot AGC.
 
 ## What is measured, and what was left alone
 
 Every default came from decoding the same frames with GopherTrunk and with
 a reference decoder, then comparing spectra
 ([Voice Coding Part 12]({{ '/blog/deep-dives/voice-coding-12-calibration-testing/' | relative_url }})).
+The `.imb` and `.amb` sidecars go straight into dsd-neo or DSD-FME, as
+the [vocoders guide]({{ '/vocoders.html' | relative_url }}) and
+[voice calibration]({{ '/voice-calibration.html' | relative_url }}) pages
+show.
 
 | Comparison on the same frames | Figure | What it settled |
 |---|---|---|
@@ -326,7 +327,7 @@ a reference decoder, then comparing spectra
 | 3–4 kHz against OP25, relative to 1 kHz | +5 to +7 dB, at every gain | not changed |
 | Length of seven P25 replies | 27.18 s against trunk-recorder's 30.42 s | not changed |
 
-The fourth row is why `op25` is a profile and not the default: the two
+The fourth row is why `op25` is a profile and not the default: the
 references disagree by several dB, and one conversation is not grounds for
 moving everyone. The last two rows are the honest part. The 3–4 kHz excess
 does not move with the unvoiced gain, so it sits in the high-harmonic
@@ -346,8 +347,8 @@ WRN recorder: voice audio quality — output clipping (vocoder gain too hot)
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Switched the profile to op25 and the low end did not change | the tilt and high-pass keys are set explicitly, or enhance is off | Delete `tilt_hz` and `hpf_hz` so the profile can fill them; confirm `rec_voice_profile=op25` in the summary line |
-| Enhance was switched on live and op25 sounds like mbelib | the live toggle uses the file's values; a profile's tilt and high-pass are resolved at start-up, and only if enhance is already enabled there | Set `enhance.enabled: true` in the config and restart, rather than `recordings_enhance_enabled` on `PATCH /api/v1/settings` |
+| Switched the profile to op25 and the low end did not change | the tilt and high-pass keys are set explicitly, enhance is off, or the key is misspelled (the loader ignores unknown keys) | Delete `tilt_hz` and `hpf_hz` so the profile can fill them; confirm `rec_voice_profile=op25` in the summary line |
+| Enhance was switched on live and op25 sounds like mbelib | the live toggle uses the file's values; a profile's tilt and high-pass are resolved at start-up, and only if enhance is already enabled there | Set `enhance.enabled: true` in the config and restart, instead of `recordings_enhance_enabled` on `PATCH /api/v1/settings` |
 | Audio is sped up or gapped, and a sample-rate change seemed to cure it | it cannot have: digital files are 8 kHz at any setting. The first WARN above is the usual cause | Fix the IQ loss upstream, then judge the sound |
 | The second WARN above, or harsh loud passages | the AGC target or a channel boost is too high | Lower `enhance.agc_target` toward 18000, or reduce `audio_gain_db` |
 | An encrypted call records as loud noise | the vocoder is rendering ciphertext | `recordings.mute_encrypted: true`, or a key ([Part 8]({{ '/blog/tutorials/cookbook-volume-2-08-your-own-keys/' | relative_url }})) |
@@ -363,16 +364,14 @@ P25 Phase 1 the voice chain says so itself, in a WARN that begins
 ### How this recipe shapes operator practice
 
 - **Change one stage at a time.** Profile, enhance, channel gain and
-  normalisation stack; an A/B that moves two of them tells you nothing.
+  normalisation stack; an A/B that moves two tells you nothing.
 - **Keep the frames.** `write_raw: true` costs a few hundred bytes per
-  second and makes every later sound decision reversible.
+  second and makes every sound decision reversible.
 - **Measure, then listen.** Band energy, crest factor and loudness are
-  numbers; "muffled" is where the search starts.
+  numbers; "muffled" is where a search starts.
 
 ## Variations
 
-- **The trunk-recorder balance.** `voice_profile: op25` and a restart —
-  provided `tilt_hz` and `hpf_hz` are unset as above.
 - **Faithful archive, pleasant feed.** `enhance.enabled: false` and
   `normalize.apply_to: distributed`: files on disk stay untouched and only
   the uploads of
@@ -380,8 +379,8 @@ P25 Phase 1 the voice chain says so itself, in a WARN that begins
   are levelled. `enhance.compress.enabled: true` adds a 2:1 compressor for
   a noisy room.
 - **European analog FM.** `fm_deemphasis: eu` selects the 50 µs curve and
-  `fm_channel_bandwidth_hz: 12500` narrows the IF filter to a 12.5 kHz
-  channel. Digital voice and AM (the airband rig of
+  `fm_channel_bandwidth_hz: 12500` a 12.5 kHz IF filter. Digital voice and
+  AM (the airband rig of
   [Part 1]({{ '/blog/tutorials/cookbook-volume-2-01-airband-rig/' | relative_url }}))
   are unaffected.
 - **DMR that still sounds synthetic.** The
@@ -390,8 +389,8 @@ P25 Phase 1 the voice chain says so itself, in a WARN that begins
 
 ## Where this goes next
 
-The calls now sound the way you chose, and most of them still do not need
-your attention.
+The calls now sound the way you chose; most still do not need your
+attention.
 [Part 6]({{ '/blog/tutorials/cookbook-volume-2-06-alerts/' | relative_url }})
 builds the `alerts:` section: rules for an emergency talkgroup, a tone-out
 match or one particular radio, pushed to a phone, an MQTT broker or a
@@ -408,19 +407,19 @@ recording, the live stream and uploads.
 **What is the difference between the mbelib and op25 voice profiles?**
 `mbelib`, the default, matches the dsd-neo / DSD-FME balance: unvoiced
 bands at 5.49 and, with enhance on, a 450 Hz tilt. `op25` uses the
-equal-power unvoiced level of 1 and, with enhance on, no tilt and a 100 Hz
-rumble high-pass. Either only fills settings you left unset.
+equal-power level of 1 and, with enhance on, no tilt and a 100 Hz
+high-pass. Either only fills settings you left unset.
 
 **Does changing recordings.sample_rate fix digital audio that plays at the wrong speed?**
 No. Decoded digital voice is always 8 kHz and the recorder forces that
 rate. Audio that sounds sped up or gapped usually lost IQ upstream; look
-for the partial-recording WARN first.
+for the partial-recording WARN.
 
 **Is the voice calibration verified by ear?**
 By measurement: the same frames decoded by GopherTrunk and by dsd-neo or
-OP25, compared by spectrum. Two gaps are documented and unfixed — a
+OP25, compared by spectrum. Two gaps are documented and unfixed: a
 3–4 kHz excess against OP25 and lost frames at the head of some P25
-replies — and neither is a profile setting.
+replies.
 
 ## Series navigation
 

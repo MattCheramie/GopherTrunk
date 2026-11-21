@@ -75,9 +75,9 @@ one thing you already know.*
 
 ## A cipher model nobody had checked
 
-NXDN radios from Kenwood and Icom ship with a built-in privacy mode the
-programming software calls a scrambler: a 15-bit key, 1 to 32767, set per
-channel or per key slot. On the air the call's SACCH carries a VCALL message
+NXDN radios from Kenwood and Icom offer a built-in privacy mode called a
+scrambler: a 15-bit key, 1 to 32767, programmed per channel or per key
+slot. On the air the call's SACCH carries a VCALL message
 that names a two-bit cipher type — 0 clear, 1 scrambler, 2 DES, 3 AES — and
 a six-bit key ID, and the 49-bit AMBE+2 payload of every voice slot is XORed
 with a [keystream]({{ '/reference/keystream/' | relative_url }}) from a
@@ -105,9 +105,8 @@ searches for one. Here the key was known from the start. What was unknown
 was whether the decoder's *model of the cipher* was right.
 
 It was not. Both captures decoded cleanly at every layer Part 7 had rebuilt
-— frame sync, LICH parity, Golay-clean AMBE codewords — and the voice came
-out as noise. Applying the tree's scrambler with the correct key changed
-nothing.
+— frame sync, LICH parity, Golay-clean AMBE codewords — and came out as
+noise, with or without the tree's scrambler and the correct key.
 
 ## Three unknowns, one symptom
 
@@ -132,9 +131,6 @@ decoder's source, read literally in the order its per-frame code runs,
 suggested another. And the phase could not be read at all: the package's
 `SACCHCRC6` verified none of the captures' SACCH blocks, so no VCALL
 assembled and nothing said "cipher 1, key ID 3" in the first place.
-
-Three unknowns multiplied together are a search space, and listening to WAV
-files is no way to search one.
 
 ## The instrument: one dump, many hypotheses, one rank
 
@@ -166,7 +162,7 @@ and sorted by continuity, and the question becomes one integer: where does
 the key the radios were programmed with land? A correct model must put it
 first. Among 32,768 candidates a few wrong keys score well above the floor
 by chance, and a nearly-right model lifts the true key off the floor without
-making it speech. Rank separates both from the real thing.
+making it speech; rank tells both from the real thing.
 
 The reference's literal per-frame order ranked the known key around 500th.
 Reseeding at the superframe start, at the right phase, ranked it **first**,
@@ -259,7 +255,7 @@ properties: key 1 must open `1000000000000001…`, where the old left-shift
 model produced `0000000000000001…`.
 
 **The schedule.** `VoiceCipherTracker.apply` is the figure in four lines: a
-frame's position in its superframe is `(index − sfStart) mod 4`; the register
+frame's position in its superframe is `(index - sfStart) mod 4`; the register
 is reset to the key, skipped forward `position × ScramblerBitsPerFrame`
 (4 × 49 = 196) bits, and the next 196 bits are that frame's; slot `v` takes
 `[49v, 49v+49)`. Every LICH-valid frame counts, voice or not.
@@ -321,33 +317,33 @@ different keys. The recipe is
 the [encryption page]({{ '/dmr-encryption.html' | relative_url }}) is the
 reference.
 
-Then a live log came back with a new complaint: after a call that failed to
-descramble, a *clear* call failed too. It had not failed. Its 104 voice
-frames were all counted clear — and then, late in the call, one VCALL
-superframe decoded as "scrambler, key 0". A SACCH block's CRC is six bits,
-so one corrupt block in 64 passes, and this call failed 12 of its 52. That
-single misread flipped the call to encrypted, and with
+Then a log from 27 October came back with a new complaint: after a call
+that failed to descramble, a *clear* call failed too. It had not failed. Its
+104 voice frames were all counted clear — and then, late in the call, one
+VCALL superframe decoded as "scrambler, key 0". A SACCH block's CRC is six
+bits, so one corrupt block in 64 passes, and this call failed 12 of its 52.
+That single misread flipped the call to encrypted, and with
 `recordings.skip_encrypted` set the recorder deleted a good clear recording.
 
-A VCALL does not change inside one transmission, so `takeVCALL` now trusts
-the first VCALL of a call at once — a scrambled call must start descrambling
-as soon as it can — and applies a *different* later one only when the next
-superframe repeats it. `VCALLUnconfirmed` counts the ones that never were,
-and `TestVoiceCipherTrackerIgnoresOneOffVCALLChange` replays the sequence.
-Rejecting key ID 0 outright was not an option; it is a real slot.
+A VCALL does not change inside one transmission, so since 2 November
+`takeVCALL` trusts the first VCALL of a call at once — a scrambled call must
+start descrambling as soon as it can — and applies a *different* later one
+only when the next superframe repeats it
+(`TestVoiceCipherTrackerIgnoresOneOffVCALLChange`). Rejecting key ID 0
+outright was not an option; it is a real slot.
 
 What is verified: both known-key captures descramble to speech through the
 production tracker, offline. What is not: the reporter's live run with the
-key on the scan-list channel. Until that recording exists this is
-**capture-verified** and on-air-gated. The offline check is one command:
+key on the scan-list channel. Until then this is **capture-verified** and
+on-air-gated. The offline check is one command:
 
 ```bash
 GT_NXDN_SCR_IQ=447.100MHz.cs16 GT_NXDN_SCR_RATE=2400000 GT_NXDN_SCR_KEY=32767 \
   go test ./cmd/gophertrunk -run TestNXDNScramblerReplay -v
 ```
 
-It prints the VCALL, the SACCH CRC yield and the continuity as received and
-descrambled; `GT_NXDN_SCR_BRUTE=1` adds the rank of the key you gave it.
+It prints the VCALL, the SACCH CRC yield and the pitch continuity as
+received and as descrambled with the key you hold.
 
 ## What this overturns
 
@@ -372,19 +368,18 @@ and under which cipher.
   period hold for every wrong register; only literal keystream bits and a
   known-key capture can disagree with you.
 - **Fix the checksum first.** A CRC that verifies nothing real hides every
-  field behind it, including the ones that explain the rest.
+  field behind it.
 - **Weigh a field by the strength of its check.** Six bits of CRC is enough
   to start a call's policy, not to reverse it.
 
 ## Where this goes next
 
-That is NXDN: frame, control channel, scrambler — three layers, each
-invented, each green, each settled by one reporter's captures. The next mode
-had no capture at all, only the firmware its hotspots run.
+That is NXDN: frame, control channel, scrambler — each invented, each
+green, each settled by one reporter's captures. The next mode had no capture
+at all, only the firmware its hotspots run.
 [Part 10]({{ '/blog/solution-postmortem/rebuilt-from-the-air-10-dstar/' | relative_url }})
-rebuilds D-STAR, where the sync words, the header FEC, the CRC, the voice
-bit schedule and the Golay code were all wrong at once — a whole framing,
-as in the
+rebuilds D-STAR, where sync words, header FEC, CRC, voice schedule and Golay
+code were all wrong at once — a whole framing, as in the
 [SmartNet rebuild]({{ '/blog/deep-dives/from-spec-to-shipping-08-smartnet-rebuild/' | relative_url }}).
 
 ## FAQ
@@ -392,15 +387,14 @@ as in the
 **Can GopherTrunk decode NXDN calls that use the built-in scrambler?**
 Yes, when you configure the key your radios are programmed with: an
 `encryption_keys` entry with `algorithm: scrambler`, the decimal key and the
-key ID the call's VCALL names. The voice chain then descrambles in-process
-and records clear speech. Without a matching key the call is recorded as
-ciphertext and flagged encrypted.
+key ID the call's VCALL names. Without a matching key the call is recorded
+as ciphertext and flagged encrypted.
 
 **Does GopherTrunk search for an NXDN scrambler key on its own?**
 No. The daemon descrambles only with keys the operator has configured for
-systems they are authorised to monitor. The all-keys sweep described here
-was a test instrument run offline against captures whose key was already
-known, to check the decoder's model of the cipher.
+systems they are authorised to monitor. The all-keys sweep here was a test
+instrument, run offline on captures whose key was already known, to check
+the decoder's model of the cipher.
 
 **Why was a clear NXDN call flagged as encrypted and its recording skipped?**
 A SACCH block is protected by a 6-bit CRC, so on a weak call a corrupt block
@@ -412,8 +406,8 @@ it.
 **Is the NXDN scrambler decode verified on air?**
 It is capture-verified: two captures made with known keys descramble to
 speech through the production tracker, and the known key ranks first of
-32,768 on both. A live daemon run with the key configured on the scan-list
-channel has not been confirmed yet, so the on-air gate is still open.
+32,768 on both. A live daemon run with the key on the scan-list channel has
+not been confirmed, so the on-air gate is open.
 
 ## Series navigation
 

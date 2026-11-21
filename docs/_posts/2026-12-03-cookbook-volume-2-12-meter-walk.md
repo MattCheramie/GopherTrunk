@@ -154,7 +154,8 @@ wmbusmeters' unencrypted test telegrams) and on-air verified by one
 reporter's phone walks
 ([#1256](https://github.com/MattCheramie/GopherTrunk/issues/1256)). Its two
 newest pieces — the tone-comparing detector and the burst gate — are
-measured on those walks' saved snippets and not yet run live on a phone.
+measured on those walks' saved snippets (the same 602 of the last walk's
+770 decode with and without the gate) and not yet run live on a phone.
 
 ## The shopping list
 
@@ -168,9 +169,8 @@ measured on those walks' saved snippets and not yet run live on a phone.
 
 There is no `config.yaml`: like `power` and `capture`, `wmbus` takes
 everything from flags (`gophertrunk help wmbus` lists them all). The recipe
-is four steps — a ten-second gain check before leaving, the walk itself
-(local dongle, or an unrooted phone through its driver app), and the
-replay at home:
+is four steps — a ten-second gain check before leaving, the walk itself on
+a local dongle or through a phone's driver app, and the replay at home:
 
 ```bash
 gophertrunk capture -freq 868950000 -sample-rate 1600000 -seconds 10 \
@@ -351,7 +351,7 @@ about the meter's signal, and replaying the saved snippet cannot recover
 it. The cure is on the host — usually a phone throttling the process.
 
 **Is the wM-Bus decoder verified on air?**
-Partly, and the split matters. It matches rtl-wmbus on that project's four
+Partly. It matches rtl-wmbus on that project's four
 real-air captures and wmbusmeters on its test telegrams, and a reporter's
 phone walks decoded real Qundis and Diehl meters. The tone-comparing
 detector and the burst gate were measured on those walks' saved snippets

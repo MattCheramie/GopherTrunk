@@ -292,11 +292,11 @@ decrypted too:
 INF composer: p25p1 key resolved — decrypting in-process serial=... system=Plant-P25 alg="0xAA (ADP/RC4)" key_id=1
 ```
 
-DMR and NXDN print the header they decoded; look at the last field:
+DMR and NXDN print the header they decoded; look for `key_configured`:
 
 ```text
 INF composer: dmr PI header — call is encrypted system=Yard-DMR ... algorithm=rc4 ... key_id=5 ... key_configured=true ...
-INF composer: nxdn VCALL — call is encrypted system=... cipher=scrambler cipher_type=1 key_id=2 key_configured=true
+INF composer: nxdn VCALL — call is encrypted system=... ... cipher=scrambler cipher_type=1 key_id=2 key_configured=true
 ```
 
 A call you hold no key for ends like this with the mute on; the last two
@@ -365,7 +365,7 @@ without its control channel grants nothing, so check ADP live.
 
 - **Read the ID off the air, never from memory.** The log prints the
   algorithm and key ID of every encrypted call whether or not you hold the
-  key. Configure from that line.
+  key.
 - **Prove a key once, offline.** A matched key and a correct key look the
   same in the log; only audio tells them apart.
 - **Keep the evidence while you are learning the system.** The NXDN work
@@ -375,29 +375,31 @@ without its control channel grants nothing, so check ADP live.
 
 ## Variations
 
-- **Keys encrypted at rest.** A system can load its keys from a
-  [KFDtool]({{ '/reference/key-loader-kfd/' | relative_url }}) `.ekc`
-  container. The daemon decrypts it at start-up, adds its traffic keys to
-  the system's list (an explicit entry with the same key ID wins) and
-  never writes them back:
+**Keys encrypted at rest.** A system can load its keys from a
+[KFDtool]({{ '/reference/key-loader-kfd/' | relative_url }}) `.ekc`
+container. The daemon decrypts it at start-up, adds its traffic keys to
+the system's list (an explicit entry with the same key ID wins) and never
+writes them back:
 
-  ```yaml
-  trunking:
-    systems:
-      - name: "Plant-P25"
-        protocol: p25
-        control_channels: [857_262_500]
-        encryption_key_files:
-          - path: "../config/keys.ekc"
-            password_env: GT_EKC_PASSWORD   # unset = asked at start-up
-            keyset: 0                       # 0 = every keyset
-  ```
+```yaml
+trunking:
+  systems:
+    - name: "Plant-P25"
+      protocol: p25
+      control_channels: [857_262_500]
+      encryption_key_files:
+        - path: "../config/keys.ekc"
+          password_env: GT_EKC_PASSWORD   # unset = asked at start-up
+          keyset: 0                       # 0 = every keyset
+```
 
-  `gophertrunk ekc -in keys.ekc` lists what would load without printing
-  key material, and `gophertrunk ekc import` moves a system's plain-text
-  keys into a container.
-- **A tighter tuner policy.** `encrypted_calls.mode: ignore` never ties up
-  a voice SDR on ciphertext; your own keyed calls are still followed.
+`gophertrunk ekc -in keys.ekc` lists what would load without printing key
+material, and `gophertrunk ekc import` moves a system's plain-text keys
+into a container.
+
+- **A tighter tuner policy.** `encrypted_calls.mode: ignore` gives up a
+  voice SDR as soon as a call names a key you do not hold; your own keyed
+  calls are still followed.
 - **NXDN on a trunked system.** Scrambler entries are accepted under an
   `nxdn` system's `encryption_keys` exactly as on a channel.
 
@@ -436,7 +438,7 @@ AES call has been decoded. P25 ADP is the on-air verified one.
 Record one of your own transmissions as IQ or discriminator audio, then
 run `gophertrunk replay` with `-record-voice` and `-key ALG:KEYID:HEXKEY`.
 It uses the daemon's voice path, so intelligible audio in the output WAV
-means the same key will work live.
+means the key is right.
 
 ## Series navigation
 

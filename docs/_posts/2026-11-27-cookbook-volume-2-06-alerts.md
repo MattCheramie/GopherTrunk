@@ -20,7 +20,7 @@ scanner, pointed at the places you actually look: a phone notification, a
 home-automation bus, a script of your own. It extends the tone-out
 detector of
 [Volume 1 Part 6]({{ '/blog/tutorials/operator-cookbook-06-analog-fm-tone-out/' | relative_url }}),
-whose matches used to end in a log line.*
+whose matches used to go no further than the log and the Tones panel.*
 
 > **TL;DR:** `alerts:` has two lists. `channels` are destinations, nine
 > types: `discord`, `slack`, `ntfy`, `pushover`, `telegram`, `gotify`,
@@ -241,8 +241,10 @@ template is optional; without it the text is a built-in line of the same
 kind, and on ntfy an emergency also carries the rotating-light tag.
 
 **Recipe 2 — MQTT on a tone-out.** The rule names the `tone_out` profile,
-not a talkgroup: a tone alert carries the profile, its alpha tag and the
-matched tone frequencies, and nothing about who was talking. The alert is
+not a talkgroup: a tone alert (the detector is
+[Beyond Voice Part 5]({{ '/blog/deep-dives/beyond-voice-05-two-tone-tone-out/' | relative_url }}))
+carries the profile, its alpha tag and the matched tone frequencies, and
+nothing about who was talking. The alert is
 published as JSON to `gophertrunk/alerts/station-1-tone-out` — the topic
 prefix, then `alerts`, then the rule name with spaces and slashes replaced
 by underscores, which is why these rule names have none. In Home Assistant
@@ -250,9 +252,12 @@ an MQTT trigger on that topic is the whole integration. Messages are QoS 0
 and not retained.
 
 **Recipe 3 — a script on one radio.** `radios` matches the source of the
-grant that opened the call. The command line is split on whitespace and
-run directly, so pipes, redirects and quoting belong inside the script.
-Save this as the `command` path and make it executable:
+grant that opened the call. A reply from another radio inside the same
+call raises no new `call.start`; a rule on `call.complete` matches the
+last radio heard on each finished recording instead, after the fact. The
+command line is split on whitespace and run directly, so pipes, redirects
+and quoting belong inside the script. Save this as the `command` path and
+make it executable:
 
 ```bash
 #!/bin/sh
@@ -324,9 +329,9 @@ fires behind it:
 INF toneout: profile matched profile=station-1-engine device=00000001 tones=[1042.2 1297.4]
 ```
 
-The delivered text reads `tone-out matched: Station 1 Engine · 1042.2 /
-1297.4 Hz · [00000001]`. Nothing more is logged at `info` unless a
-delivery fails.
+The delivered text reads
+`tone-out matched: Station 1 Engine · 1042.2 / 1297.4 Hz · [00000001]`.
+Nothing more is logged at `info` unless a delivery fails.
 
 ## When it doesn't work
 
@@ -382,6 +387,8 @@ WRN alerts: delivery queue full, dropping alert rule=... channel=...
   kinds no rule can watch, such as the MDC1200 and pager messages of
   [Part 4]({{ '/blog/tutorials/cookbook-volume-2-04-fleet-signalling/' | relative_url }})
   and [Part 2]({{ '/blog/tutorials/cookbook-volume-2-02-paging-rig/' | relative_url }}).
+  The mirror publishes from the manager's own loop, so a broker that hangs
+  can make the manager miss events; it still cannot block the decoder.
 
 ## Where this goes next
 
@@ -397,18 +404,13 @@ gets something to match.
 Define an `ntfy` (or `pushover`, `telegram`, `gotify`) channel under
 `alerts.channels` and a rule under `alerts.rules` with `talkgroups` listing
 the IDs and `channels` naming it. Add a `cooldown` so a busy talkgroup
-notifies once per window rather than on every transmission.
+notifies once per window.
 
 **Can a GopherTrunk alert run a script?**
 Yes. An `exec` channel runs the program in `command` once per alert, with
 the alert as JSON on stdin and the main fields in `GT_ALERT_*` environment
 variables. The command is split on whitespace with no shell, so anything
 beyond a path and plain arguments belongs inside the script.
-
-**Why did my alert fire twice for one call?**
-The rule lists both `call.start` and `grant`. A followed call produces
-both events, and the cooldown is tracked per event kind, so each fires
-once. List one kind.
 
 **Will a dead webhook or MQTT broker slow down decoding?**
 No. Deliveries run on two workers behind a 256-deep queue, each bounded by

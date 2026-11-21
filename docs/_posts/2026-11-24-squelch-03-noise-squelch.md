@@ -37,18 +37,17 @@ gate that reads the same at any gain.*
 
 - **Under an AGC a dBFS threshold screens nothing.** An automatic gain
   control raises whatever it receives, noise included, to its own target, so
-  an empty channel can sit tens of dB over any threshold an operator would
-  set.
+  an empty channel can sit tens of dB over the threshold.
 - **An FM discriminator already knows whether a carrier is there.** Its
   output on noise alone is large and wideband whatever the input level; a
-  carrier quiets it. Dividing by a per-rate noise reference turns that into
-  a number that is 1 on an empty channel.
+  carrier quiets it. Divided by a noise reference, that is a number that
+  reads 1 on an empty channel.
 - **Two tests, each covering the other's blind spot.** Noise above the
   level is stopped by the ratio; digital silence, which reads perfectly
   "quiet", is stopped by the level.
-- **The price is latency, and it is stated.** A channel opens one
-  measurement window, about 25 ms, after its carrier comes up, where the
-  level alone opened on the first chunk.
+- **The price is latency.** A channel opens one measurement window, about
+  25 ms, after its carrier comes up, where the level alone opened on the
+  first chunk.
 
 ## Cheat sheet
 
@@ -64,18 +63,22 @@ gate that reads the same at any gain.*
 
 ## In this post
 
-- **A call that opened 100 ms after start-up** — the report, and the one fact that is not known.
+- **A call that opened 100 ms after start-up** — the report, and what is not known.
 - **What a discriminator does with nothing** — why noise reads the same at every gain.
 - **The meter** — discriminate, high-pass, divide by a calibrated reference.
-- **What it reads** — the measured scale, from receiver noise to a real handheld.
+- **What it reads** — the measured scale, noise to handheld.
 - **Two tests that cover each other** — the AND with `squelch_dbfs`.
 - **What it costs, and what it misses** — latency and the blind spots.
 
 ## A call that opened 100 ms after start-up
 
-The reporter was scanning PMR446 on a PlutoSky with `squelch_dbfs: -60`.
-The scanner opened a call 100 ms after start-up on an empty channel and
-recorded noise: one recording ran 33 minutes, another 41.
+The reporter was scanning PMR446 on a PlutoSky — an AD936x board of the
+[PlutoSDR]({{ '/reference/plutosdr/' | relative_url }}) family, whose native
+driver is
+[Cookbook Volume 2 Part 13]({{ '/blog/tutorials/cookbook-volume-2-13-pluto-native/' | relative_url }}) —
+with `squelch_dbfs: -60`. The scanner opened a call 100 ms after start-up on
+an empty channel and recorded noise: one recording ran 33 minutes, another
+41.
 
 Nothing was broken in the sense Part 2 fixed. The power was being measured
 in the channel. It was simply above the threshold. The 17 Nov log shows the
@@ -88,9 +91,11 @@ counts time below the threshold, and noise does not go below it.
 One thing is **not known**: whether the 18 Nov run still had `gain: auto`.
 The gain line was not in the pasted log. The fix does not depend on the
 answer, because the symptom has two causes with one shape — an AGC, or a
-fixed gain with `squelch_dbfs` set under the receiver's noise floor. Either
-way the level answers "how is the gain set?" when the scanner needs "is a
-carrier there?".
+fixed gain with `squelch_dbfs` set under the receiver's noise floor
+([The Analog Edge Part 3]({{ '/blog/tutorials/analog-edge-03-gain-staging/' | relative_url }})
+is about never chasing such a threshold with the gain knob). Either way the
+level answers "how is the gain set?" when the scanner needs "is a carrier
+there?".
 [The Analog Edge Part 13]({{ '/blog/tutorials/analog-edge-13-coherence-not-dbfs/' | relative_url }})
 is that rule at length: never gate a decision on absolute dBFS when a
 scale-invariant statistic exists. AM channels already had one,
@@ -100,7 +105,9 @@ carrier-to-noise (Part 7), for exactly this reason. FM did not.
 
 FM has had the answer since long before software. An FM
 [discriminator]({{ '/reference/quadrature-demodulation/' | relative_url }})
-outputs the phase step between successive samples:
+outputs the phase step between successive samples
+([SDR in Pure Go Part 6]({{ '/blog/deep-dives/sdr-internals-06-demodulation/' | relative_url }})
+has the demodulators):
 
 ```go
 // internal/scanner/conventional/fm_noise_squelch.go (shape)
@@ -128,10 +135,10 @@ bursts, so modulation does not count as noise." A talker, a sub-audible
 tone or an MDC1200 burst puts energy below that line; only noise, and the
 discriminator's own out-of-band products, live above it.
 
-GopherTrunk has gated on a discriminator statistic once before:
+GopherTrunk has gated on a discriminator statistic before:
 [DMR End to End Part 9]({{ '/blog/deep-dives/dmr-end-to-end-09-direct-mode-carrier-gate/' | relative_url }})
-holds a simplex DMR receiver's trackers on the discriminator's variance, for
-the same reason. A phase increment is blind to amplitude.
+holds a simplex DMR receiver's trackers on the discriminator's variance,
+because a phase increment is blind to amplitude.
 
 ## The meter
 
@@ -173,8 +180,12 @@ never opens on a reading the meter has not made yet."
 
 The numbers below are from the test suite and the project's engineering
 notes. The receiver noise and the transmissions are real-air captures
-committed in the repository; the carrier-to-noise rows are a real handheld
-and synthetic FM speech with white noise added at a set level.
+committed in the repository; the
+[carrier-to-noise]({{ '/reference/carrier-to-noise-ratio/' | relative_url }})
+rows are a real handheld and synthetic FM speech with white noise added at a
+set level. The clipped tone is the capture
+[Rebuilt From the Air Part 13]({{ '/blog/solution-postmortem/rebuilt-from-the-air-13-read-the-capture-first/' | relative_url }})
+is about.
 
 | Input | Ratio |
 |---|---|
@@ -188,7 +199,7 @@ and synthetic FM speech with white noise added at a set level.
 | Real NFM handhelds, with and without CTCSS | under 0.001 |
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 196" width="680" height="196" role="img" aria-label="A logarithmic scale of the noise squelch ratio from 0.001 to 2. Real FM handhelds read under 0.001 at the far left; a clipped analog tone reads 0.02; FM at 10 decibels carrier-to-noise reads 0.03; a P25 Phase 2 carrier reads 0.12; FM at 4 decibels reads 0.2 and at 0 decibels about 0.5. The squelch opens at or below 0.5 and holds up to 0.6. The lowest noise window in two hours read 0.66, and receiver noise at any level reads between 0.98 and 1.04.">
+<svg viewBox="0 0 680 196" width="680" height="196" role="img" aria-label="A logarithmic scale of the noise squelch ratio. Real FM handhelds read under 0.001; a clipped tone 0.02; FM at 10, 4 and 0 decibels carrier-to-noise 0.03, 0.2 and about 0.5; an H-DQPSK carrier 0.12. The squelch opens at 0.5 and holds to 0.6. Receiver noise reads 0.98 to 1.04, never below 0.66.">
   <text x="340" y="13" text-anchor="middle" fill="currentColor" font-size="10" font-weight="bold">noise squelch ratio (log scale): 1 is an empty channel, at any gain</text>
   <line x1="60" y1="100" x2="640" y2="100" stroke="currentColor"/>
   <line x1="60" y1="96" x2="60" y2="104" stroke="currentColor"/>
@@ -235,9 +246,8 @@ and synthetic FM speech with white noise added at a set level.
 <figcaption>Every real transmission measured lands well left of the open threshold, and receiver noise sits at 1 whatever its level; the gap between them is the squelch.</figcaption>
 </figure>
 
-Three readings from that table set the thresholds. Noise never came closer
-than 0.66 in two hours, so `fmNoiseHoldRatio` at 0.6 is not reached by
-chance. The open threshold, `fmNoiseOpenRatio` at 0.5, corresponds to about
+Three readings set the thresholds. Noise never came closer than 0.66 in
+two hours, so `fmNoiseHoldRatio` at 0.6 is not reached by chance. The open threshold, `fmNoiseOpenRatio` at 0.5, corresponds to about
 0 dB carrier-to-noise, and `TestFMNoiseSquelchFollowsCarrierToNoise` pins
 the approach: at 4 dB every window is open, at 2 dB the median window is.
 Four decibels is under the FM threshold, where speech is not intelligible
@@ -269,21 +279,22 @@ own: an input with no noise at all. Digital silence — a stream of zeros, or
 a tuner with its gain so low that the converter sees nothing — makes the
 discriminator output exactly zero, which reads as the quietest carrier
 imaginable. The level stops that case; the ratio stops noise above the
-level. Neither alone is safe; together the blind spots do not overlap.
+level. The blind spots do not overlap.
 
 The dwell half matters as much as the open half: it ends a call when the
-transmitter drops although the channel never falls under `squelch_dbfs`. `TestScannerNoiseSquelchFollowsARealTransmission` plays
-real receiver noise, a real NFM handheld, then noise again, all above the
-threshold: exactly one call, opened on the transmission and ended by
-hangtime after it. With `NoiseSquelchOff` the same stream opens on the first
-chunk of noise and is still open when the test stops looking — the 41-minute
-recording in miniature.
+transmitter drops although the channel never falls under `squelch_dbfs`.
+`TestScannerNoiseSquelchFollowsARealTransmission` plays real receiver noise,
+a real NFM handheld, then noise again, all above the threshold: exactly one
+call, opened on the transmission and ended by hangtime after it. With
+`NoiseSquelchOff` the same stream opens on the first chunk of noise and is
+still open when the test stops looking — the 41-minute recording in
+miniature.
 
 The headline regression, `TestScannerNoiseAboveSquelchOpensNoCall`, rebuilds
 the report from real air: RTL-SDR noise raised to −37 dBFS in the channel,
-a `nfm` channel at 446.00625 MHz with `SquelchDbFS: -60`. No call may open.
-The scanner must also explain itself, once per channel, with the first five
-channels named and one closing line after that:
+an `nfm` channel at 446.00625 MHz with `SquelchDbFS: -60`. No call may open,
+and the scanner must explain itself once per channel (the first five are
+named, then one closing line):
 
 ```text
 conv: channel is above squelch_dbfs with no carrier on it (noise, or a signal that is not FM); the noise squelch is keeping it shut. squelch_dbfs is below the noise floor at this gain, or the gain is automatic, so the level is not screening this channel
@@ -292,7 +303,7 @@ conv: channel is above squelch_dbfs with no carrier on it (noise, or a signal th
 It carries `level_dbfs`, `squelch_dbfs` and `quieting_db`. Quieting is the
 ratio in an FM receiver's units, −10·log10(ratio): about 0 dB on noise, 3 dB
 at the open threshold, "15 and up on a usable signal". The same field is in
-`GET /api/v1/scanner` and on every `conv: squelch opened` line.
+`GET /api/v1/scanner` and on an FM channel's `conv: squelch opened` line.
 
 ## What it costs, and what it misses
 
@@ -312,7 +323,7 @@ Three pieces of the loop were adjusted so that 25 ms is all it costs:
 
 One existing scanner test fed a single chunk and expected an open; a
 carrier now takes a window to prove itself. The older fixture `loudChunk`, a
-constant value, still passes because a DC carrier is perfectly quiet. Noise
+constant value, still passes because a DC carrier is perfectly quiet; noise
 used as a stand-in "signal" would not.
 
 **Blind spots.**
@@ -324,11 +335,11 @@ used as a stand-in "signal" would not.
   wide-FM mode.
 - **A `p25` channel without `nac`.** The noise squelch is built only for
   `fm` and `nfm`. Digital channels rely on their call gates, and a `p25`
-  entry with no NAC has none: it still opens on the level alone. `nac:
-  "F7E"` — any NAC, but only P25 — is the remedy (Part 8).
+  entry with no NAC has none: it still opens on the level alone. The remedy
+  is `nac: "F7E"` — any NAC, but only P25 (Part 8).
 - **Something that is not FM on an `fm` channel.** That is what
-  `noise_squelch: false` is for, and it is also the A/B switch for
-  suspecting the gate itself.
+  `noise_squelch: false` is for; it is also the A/B switch when the gate
+  itself is suspected.
 
 **Status.** The statistic is measured on real air — an RTL-SDR's noise, an
 air-band receiver's, real handhelds — and the scan-list regression replays
@@ -343,44 +354,37 @@ on-air-gated.
   filter recalibrates the squelch.
 - **The meter rides the level meter.** One decimator and one channel filter
   feed both tests, and `channelPowerMeter.reset` clears both.
-- **"No reading yet" is a value.** `ratio()` returns +Inf before the first
-  window: neither open nor counted as noise.
-- **The loop distinguishes `levelOK` from `powerOK`.** Extensions and data
+- **The loop separates `levelOK` from `powerOK`.** Extensions and data
   decoders key off the first; opening keys off the second.
 
 ## Where this goes next
 
-Both squelch tests assume the channel filter is looking at the channel and
-nothing the tuner made up. A zero-IF tuner makes things up exactly there —
-a DC spur, an image, and on an overloaded ADC a tone at four times the
-carrier offset.
+Both squelch tests assume the channel filter sees the channel and nothing
+the tuner made up. A zero-IF tuner makes things up exactly there: a DC spur,
+an image, and on an overloaded ADC a tone at four times the carrier offset.
 [Part 4]({{ '/blog/deep-dives/squelch-04-offset-tuning/' | relative_url }})
-moves the LO off the channel, and explains why the obvious offset is the one
+moves the LO off the channel, and shows why the obvious offset is the one
 that must never be used.
 
 ## FAQ
 
 **Why does my SDR scanner record noise on an empty FM channel?**
-Because receiver noise in the channel is above `squelch_dbfs`: either the
-tuner is on automatic gain, which raises noise to its own target level, or
-the threshold is below the noise floor at the current gain. With the level
-as the only test, the channel opens and never closes.
+Because receiver noise in the channel is above `squelch_dbfs`: the tuner is
+on automatic gain, which raises noise to its own target level, or the
+threshold is below the noise floor at the current gain. With the level as
+the only test, the channel opens and never closes.
 
 **What is a noise squelch, and how is it different from squelch_dbfs?**
 `squelch_dbfs` compares the power in the channel with a fixed level. The
 noise squelch measures how noisy the FM discriminator's output is above
-5 kHz, relative to an empty channel: about 1 on noise at any gain, near 0 on
-a carrier. GopherTrunk requires both on `fm` and `nfm` scan-list channels.
-
-**Do I need to configure the noise squelch?**
-No. It measures a ratio, so there is no threshold to set, and it is on by
-default for `fm` and `nfm` channels. `noise_squelch: false` on a channel
-turns it off and leaves `squelch_dbfs` as the only carrier test.
+5 kHz, relative to an empty channel: 1 on noise at any gain, near 0 on a
+carrier. `fm` and `nfm` scan-list channels need both. It is on by default
+and has nothing to set; `noise_squelch: false` turns it off for a channel.
 
 **Does the noise squelch make weak signals harder to hear?**
 It opens from about 0 dB carrier-to-noise in the channel, and at 4 dB every
-measurement window is open. That is below the FM threshold, where speech is
-not intelligible. What it adds is about 25 ms before a channel opens.
+measurement window is open — below the FM threshold, where speech is not
+intelligible. What it adds is about 25 ms before a channel opens.
 
 **Is the noise squelch verified on a PlutoSDR?**
 No. It was measured on real-air captures from other receivers and pinned by

@@ -85,8 +85,9 @@ completed-call event
 after the loudness normalisation of
 [Part 5]({{ '/blog/tutorials/cookbook-volume-2-05-tuning-the-sound/' | relative_url }})
 if that is on. The transcriber hears the event and applies its filters:
-the system, the talkgroup, whether the call was encrypted, and whether it
-lasted at least `min_duration_ms`. What passes is queued. A worker reads
+the system, the [talkgroup]({{ '/reference/talkgroup/' | relative_url }}),
+whether the call was encrypted, and whether it lasted at least
+`min_duration_ms`. What passes is queued. A worker reads
 the file, converts it to 16 kHz mono WAV, posts it and waits for the text.
 
 The text then goes three places. It is stored on the call's row in the
@@ -166,7 +167,9 @@ own answer easy to get:
   divided by 1000, divided by `audio_seconds`, is the fraction of real time
   your server needs. Under 1 with one worker, it keeps up on average.
 - **The decoder is real time and the model is not.** On a small computer
-  such as a [Raspberry Pi]({{ '/reference/raspberry-pi/' | relative_url }}),
+  such as a [Raspberry Pi]({{ '/reference/raspberry-pi/' | relative_url }})
+  (Volume 1's
+  [closet appliance]({{ '/blog/tutorials/operator-cookbook-11-closet-appliance/' | relative_url }})),
   a model using every core competes with the DSP. If IQ-drop WARNs appear
   while a transcription runs, limit the server's threads or move it:
   `url` can point at any machine on your LAN.
@@ -231,7 +234,8 @@ is worth a request. `min_duration_ms` (default 1000) skips squelch tails,
 which a speech model turns into confident nonsense at the same cost as a
 real call, and `recordings.min_duration_ms` discards such recordings
 outright, before History or the transcriber see them. `skip_encrypted`
-defaults to true because ciphertext transcribes to nothing useful.
+defaults to true because ciphertext transcribes to nothing useful
+([encrypted-call handling]({{ '/reference/encrypted-call-handling/' | relative_url }})).
 
 **One worker keeps the text in order.** A local server serialises requests
 anyway and a hosted one rate-limits. There is a second reason: the
@@ -266,7 +270,7 @@ redistributing its content are different things
 ([scanner law, in plain English]({{ '/police-scanner-legal/' | relative_url }})).
 Stored transcripts deserve the same care as recordings. They live on the
 call row, so `retention.call_log_days` removes them; `files_days` removes
-only the audio, and the text outlives it if the two differ. An `api_key`
+only the audio, and the text outlives it when rows are kept longer. An `api_key`
 is a secret in a plain-text file: keep the API on loopback, as Part 6
 explains.
 
@@ -355,8 +359,8 @@ WRN transcribe: store failed path=... err=...
 
 ## Variations
 
-- **A hosted API.** Change two lines and add one. The privacy section
-  applies in full.
+- **A hosted API.** Change the `url` and add an `api_key`. The privacy
+  section applies in full.
 
 ```yaml
 transcription:
@@ -394,8 +398,9 @@ alerts:
 
 - **Your own consumer.** `call.transcript` carries `system`, `group_id`,
   `source_id`, `segment`, `audio_path` and `text`, on the event stream
-  described in the [events reference]({{ '/api-events.html' | relative_url }})
-  and, with Part 6's `mirror_events`, on MQTT.
+  ([Running It For Real Part 11]({{ '/blog/deep-dives/running-it-for-real-11-grant-webhooks/' | relative_url }}),
+  [events reference]({{ '/api-events.html' | relative_url }})) and, with
+  Part 6's `mirror_events`, on MQTT.
 
 The full key reference is the
 [transcription page]({{ '/transcription.html' | relative_url }}).

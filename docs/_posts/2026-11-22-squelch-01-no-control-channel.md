@@ -51,7 +51,7 @@ the thirteen parts that follow.*
 
 | Concern | What it does | Where it lives |
 |---|---|---|
-| Channel rotation | round robin that skips lockouts; a forced dwell and the priority interleave go first | `pickNextChannelLocked` in `internal/scanner/conventional/scanner.go` |
+| Channel rotation | round robin skipping lockouts; forced dwell and priority interleave first | `pickNextChannelLocked` in `internal/scanner/conventional/scanner.go` |
 | Scan window | one visit's time to open: 100 ms, raised to 350 / 600 / 500 ms when the list has a CTCSS / DCS / P25 NAC gate | `scanWindow`, `Options.MinDwellPerChannel`, `minToneDwell` |
 | Synthetic call | a grant flagged conventional, with bit 31 set in its group ID | `beginDwell` → `Engine.HandleSyntheticCall` |
 | Call end | hangtime countdown, 50 ms activity debounce, 3 dB close-side hysteresis | `Channel.Hangtime`, `ActivityDebounce`, `SquelchHysteresisDb` |
@@ -60,7 +60,7 @@ the thirteen parts that follow.*
 
 ## In this post
 
-- **What a control channel gives you for free** — and what a scan list works out instead.
+- **What a control channel gives you for free** — and what a scan list infers instead.
 - **The loop: pick, tune, window** — `Run`, `pickVisit` and the scan window.
 - **The dwell: a synthetic call and a countdown** — the grant, hangtime, debounce.
 - **The SDR the scanner owns** — the last voice device, and the IQ broker.
@@ -115,7 +115,9 @@ dwell (`DwellOn`, the TUI's Enter key), which beats even a lockout for one
 cycle; then, with `PriorityInterleave` set, the next channel carrying a
 `Priority` ([priority scan]({{ '/reference/priority-scan/' | relative_url }}),
 Part 13); otherwise the round-robin cursor, skipping `lockedOut`. An empty
-or fully locked-out list idles in 100 ms ticks.
+or fully locked-out list idles in 100 ms ticks. (The operator's view of
+those controls is
+[Cookbook Volume 2 Part 9]({{ '/blog/tutorials/cookbook-volume-2-09-hold-avoid-priority/' | relative_url }}).)
 
 **Tune.** The stream is cancelled and reopened every visit, "to drop any
 in-flight samples from the previous channel", and every per-channel meter
@@ -142,10 +144,10 @@ time", as the `callGate` comment puts it.
 When a channel opens the scanner logs what it measured: `conv: squelch
 opened` with `level_dbfs` and `squelch_dbfs`, or `conv: call gate opened`
 for a DMR, NXDN, D-STAR or System Fusion gate. Read that line first when a
-channel opens that should not have.
+channel opens wrongly.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 222" width="680" height="222" role="img" aria-label="The conventional scanner's dwell loop as a state machine: pick the next channel, tune and open a fresh IQ stream, then run a scan window of 100 milliseconds by default. If the window expires with nothing open, the loop returns to pick the next channel. If every gate on the open edge passes, the scanner starts a synthetic call and dwells; when activity stops, a 1500 millisecond hangtime countdown runs, and when it elapses the call ends and scanning resumes.">
+<svg viewBox="0 0 680 222" width="680" height="222" role="img" aria-label="The conventional scanner's dwell loop: pick the next channel, tune and open a fresh IQ stream, then run a 100 millisecond scan window. If nothing opens, the loop moves to the next channel. If every gate passes, a synthetic call starts; when activity stops, a 1500 millisecond hangtime countdown runs, then scanning resumes.">
   <text x="252" y="13" text-anchor="middle" fill="var(--fg-muted)" font-size="8">window expired, nothing open → next channel</text>
   <path d="M425 34 L425 20 L80 20 L80 34" fill="none" stroke="var(--fg-muted)" stroke-dasharray="3 3"/>
   <rect x="10" y="34" width="140" height="38" rx="4" fill="none" stroke="currentColor"/>
@@ -260,12 +262,12 @@ Two more things run inside the dwell. The debounced decision is published
 through `SquelchOpen`, so the composer's FM chain mutes during the countdown
 instead of recording 1.5 s of receiver noise on the end of every call. And a
 250 ms ticker checks that chunks are still arriving: `StreamStallTimeout`
-(3 s) without one ends the call with reason `error`, because hangtime counts
-silence in chunks and cannot fire on a stream that delivers none (Part 10).
+(3 s) without one ends the call with reason `error`, because hangtime cannot
+fire on a stream that delivers nothing (Part 10).
 
-While all this runs the scanner is deaf to every other channel. Both ways
-out are more receivers: channels can name a `device:` so each SDR runs its
-own scanner (#1260), and a `role: wideband` dongle can carry conventional
+Meanwhile the scanner is deaf to every other channel. Both ways out are
+more receivers: channels can name a `device:` so each SDR runs its own
+scanner (#1260), and a `role: wideband` dongle can carry conventional
 channels as fixed taps that never hop (#1288).
 
 ## The SDR the scanner owns
@@ -323,14 +325,15 @@ level, and
 [The Analog Edge Part 13]({{ '/blog/tutorials/analog-edge-13-coherence-not-dbfs/' | relative_url }})
 already showed what an absolute level does to a decision: it measures how
 the operator set the gain, not what is on the air. An idle DMR repeater
-holding the scanner on its channel, an analog test tone opened as "System
-Fusion", more than half an hour of noise recorded from an empty channel:
-each was a level standing in for a question it could not answer, and each
-fix answered it with a ratio, a decoded field or a frame. The package comment in `squelch.go` now says each
-mode pairs the level "with a test that does not depend on gain".
-`squelch_dbfs` survives as one of two tests, never the only one, with a
-single named exception: a `p25` channel configured without `nac` still opens
-on the level alone.
+holding the scanner on its channel, an analog test tone
+[opened as "System Fusion"]({{ '/blog/solution-postmortem/rebuilt-from-the-air-13-read-the-capture-first/' | relative_url }}),
+more than half an hour of noise recorded from an empty channel: each was a
+level standing in for a question it could not answer, and each fix answered
+it with a ratio, a decoded field or a frame. The package comment in
+`squelch.go` now says each mode pairs the level "with a test that does not
+depend on gain". `squelch_dbfs` survives as one of two tests, never the only
+one, with a single named exception: a `p25` channel configured without `nac`
+still opens on the level alone.
 
 ### How having no control channel shaped the Go code
 
@@ -342,26 +345,24 @@ on the level alone.
   `buildChannelDetector` chooses by mode, so a new gate is one
   implementation and one branch.
 - **Time on a channel is earned.** A call gate or data decoder extends a
-  visit only after the level has cleared, so a list of DMR or D-STAR
-  channels does not scan at the gate's pace. The tone and NAC gates are the
+  visit only after the level has cleared. The tone and NAC gates are the
   exception: they raise the window for the whole list.
 
 ## Where this goes next
 
 The first gate is the oldest, and for most of its life it measured the wrong
 thing: `squelch_dbfs` was compared with the power of the scanner's entire
-2.4 MHz span, so one strong carrier anywhere in view held every channel
-open.
+span, so one strong carrier anywhere in view held every channel open.
 [Part 2]({{ '/blog/deep-dives/squelch-02-channel-power/' | relative_url }})
-is the fix and the bandwidth arithmetic behind it.
+is the fix and the arithmetic behind it.
 
 ## FAQ
 
 **How does GopherTrunk know a call exists on a conventional channel?**
 It measures the channel's own IQ during a short scan window (100 ms by
-default) and opens only if every gate configured for that channel passes:
-in-channel power, plus a noise squelch on FM, carrier-to-noise on AM, a tone
-detector if one is set, or a call gate on a digital channel.
+default) and opens only if every gate on that channel passes: in-channel
+power, plus a noise squelch on FM, carrier-to-noise on AM, a tone detector
+if one is set, or a call gate on a digital channel.
 
 **What is a synthetic call in the GopherTrunk log?**
 `synthetic call started` is the trunking engine registering a call that did

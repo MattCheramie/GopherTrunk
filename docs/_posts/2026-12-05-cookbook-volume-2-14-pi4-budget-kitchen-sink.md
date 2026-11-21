@@ -111,9 +111,10 @@ then decode in parallel, each on its own 144 kHz tap with four same-carrier
 voice taps. The shape matters: list the same two systems behind one
 `role: control` or `auto` tuner and the daemon warns, at startup, that they
 `share ONE control SDR` — the hunter decodes them one at a time and camps
-on the first that locks, so on a healthy site the second is never hunted.
-[Volume 1 Part 7]({{ '/blog/tutorials/operator-cookbook-07-multi-system-pool/' | relative_url }})
-is the pool behind that rule.
+on the first that locks, so on a healthy site the second is never hunted
+([following multiple systems]({{ '/guide-advanced.html#following-multiple-systems-and-sites' | relative_url }});
+the pool behind the rule is
+[Volume 1 Part 7]({{ '/blog/tutorials/operator-cookbook-07-multi-system-pool/' | relative_url }})).
 
 Healthy looks like one engine line and a lock per cell; every loss has
 written its own line, with a reason, since this issue:
@@ -214,8 +215,8 @@ treat that as this recipe's open gate.
 
 ### How this recipe shapes operator practice
 
-- **Verify a cell count, then stop.** Headroom on a Pi 4 is measured, not
-  assumed; the [overruns lines]({{ '/blog/tutorials/field-notebook-07-overruns-host-drops/' | relative_url }})
+- **Verify a cell count, then stop.** Headroom on a Pi 4 is measured; the
+  [overruns lines]({{ '/blog/tutorials/field-notebook-07-overruns-host-drops/' | relative_url }})
   say when you have crossed it.
 - **Name the build in every report.** It settles more than a log excerpt.
 - **Put parallel work on the wideband path.** Anything behind one control
@@ -286,7 +287,7 @@ trunking:
 
 scanner:
   scan_mode: all                    # all | list; hold / avoid are runtime ← Part 9
-  priority_interleave: 4            # priority check every 4 picks  ← Part 9
+  priority_interleave: 4            # a priority channel every 4    ← Part 9
   conventional:
     - label: "Tower"
       frequency_hz: 118_700_000

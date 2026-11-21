@@ -79,8 +79,8 @@ A pocket receiver for the jobs that happen away from the desk: a band
 survey from a hilltop, a walk past the utility meters, a capture of a
 signal you can only reach on foot.
 
-Two facts shape everything. First, an Android app cannot hand a USB
-device to a Termux program. The dongle is therefore reached the way a
+Two facts shape everything. First, Android will not hand a USB dongle
+straight to a Termux program. The dongle is therefore reached the way a
 remote SDR is: an **rtl_tcp driver app** claims the USB device and serves
 it on a local port, and GopherTrunk connects to that port — the same
 [rtl_tcp]({{ '/reference/rtl-tcp/' | relative_url }}) path Volume 1 used
@@ -97,7 +97,7 @@ which were Linux binaries, crashed before `main` on exactly the phones
 that had the Termux:API package installed. Releases since are built by
 `scripts/build-android.sh`: `GOOS=android`, cgo against the Android NDK,
 API level 21 (Android 5.0), and `-tags nolibasound` because Android has
-no ALSA. `scripts/check-android.sh` then fails the build unless the
+no libasound. `scripts/check-android.sh` then fails the build unless the
 binary's interpreter is `/system/bin/linker` or `linker64`, it links only
 Android system libraries, and it carries no `syscall.faccessat2` symbol.
 
@@ -106,14 +106,14 @@ Android system libraries, and it carries no `syscall.faccessat2` symbol.
   <rect x="8" y="92" width="86" height="40" rx="4" fill="none" stroke="currentColor"/>
   <text x="51" y="116" text-anchor="middle" fill="currentColor" font-size="10">RTL-SDR</text>
   <line x1="94" y1="112" x2="148" y2="112" stroke="currentColor"/>
-  <text x="121" y="104" text-anchor="middle" fill="var(--fg-muted)" font-size="8">USB OTG</text>
+  <text x="113" y="104" text-anchor="middle" fill="var(--fg-muted)" font-size="8">USB OTG</text>
   <rect x="134" y="14" width="538" height="204" rx="8" fill="none" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
   <text x="403" y="30" text-anchor="middle" fill="var(--fg-muted)" font-size="10">Android phone (5.0 or later)</text>
   <rect x="148" y="84" width="150" height="56" rx="4" fill="none" stroke="currentColor"/>
   <text x="223" y="108" text-anchor="middle" fill="currentColor" font-size="10">rtl_tcp driver app</text>
   <text x="223" y="124" text-anchor="middle" fill="var(--fg-muted)" font-size="9">owns the USB device</text>
   <line x1="298" y1="112" x2="368" y2="112" stroke="var(--accent)"/>
-  <text x="333" y="104" text-anchor="middle" fill="var(--accent)" font-size="9">127.0.0.1:1234</text>
+  <text x="333" y="104" text-anchor="middle" fill="var(--accent)" font-size="8">127.0.0.1:1234</text>
   <rect x="368" y="44" width="150" height="136" rx="4" fill="none" stroke="var(--accent)"/>
   <text x="443" y="62" text-anchor="middle" fill="var(--fg-muted)" font-size="9">Termux</text>
   <text x="443" y="86" text-anchor="middle" fill="var(--accent)" font-size="10">gophertrunk</text>

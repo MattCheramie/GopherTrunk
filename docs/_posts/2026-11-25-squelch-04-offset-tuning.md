@@ -38,7 +38,8 @@ sitting in the channel when it pointed straight at it.*
 
 - **Tuned exactly on channel, a tuner's flaws land in the audio.** The DC
   spur, the I/Q image and clipping products all sit within a few multiples
-  of the carrier offset — a few hundred hertz — which is the voice band.
+  of the carrier offset, and a few hundred hertz times four is the voice
+  band.
 - **Clipping has a fingerprint.** Samples pinned between 1.0 and 1.414 in
   magnitude, and an audio line at exactly four times the carrier offset.
   Look for both before any other theory.
@@ -63,26 +64,31 @@ sitting in the channel when it pointed straight at it.*
 
 ## In this post
 
-- **A tone that tracked the transmitter** — the report, the fingerprint, and why a first look missed it.
+- **A tone that tracked the transmitter** — the report, and why a first look missed it.
 - **Why a square constellation sings at 4δ** — the arithmetic of per-axis clipping.
-- **Three products, one cure** — the DC spur, the image, the clipping harmonics, and the wrapper that moves all three.
+- **Three products, one cure** — DC spur, image, clipping, and the wrapper that moves them.
 - **Never fs/4** — why the offset is searched, and what the search scores.
-- **The pin and the WARN** — the simulated front end, and what the scanner tells the operator.
+- **The pin and the WARN** — the simulated front end, and what the operator is told.
 - **What is verified** — and the same exposure left in `dc_avoid`.
 
 ## A tone that tracked the transmitter
 
 The report on #1184, dated 23 Sep in the project's engineering notes, was
 analog FM with "noise/tone on an on-frequency signal": Kenwood radios keyed
-on 447.100 MHz came out of the recorder with a high-pitched tone under the
-voice. The same channel in SDR# sounded clean. A cheaper handheld on the
-same frequency sounded *better* than the Kenwoods.
+on 447.100 MHz came out of the recorder with a high-pitched noise under the
+voice, while a Radtel handheld on the same frequency sounded *better*. (The
+same issue carried the tone-gate investigation of
+[Rebuilt From the Air Part 3]({{ '/blog/solution-postmortem/rebuilt-from-the-air-03-ctcss-dcs-tone-gates/' | relative_url }}).)
 
 An earlier pass over the reporter's six captures had concluded that all of
 them decoded cleanly, and that conclusion was wrong for a specific reason:
 nobody had checked how many samples sat at the ADC rail, and nobody had
 searched the demodulated audio for a line at a multiple of the carrier
-offset. Both checks take minutes. Run them and the captures sort themselves:
+offset. It is the lesson of
+[Nineteen Dibits]({{ '/blog/solution-postmortem/from-the-issue-tracker-08-nineteen-dibits/' | relative_url }})
+and of
+[Rebuilt From the Air Part 13]({{ '/blog/solution-postmortem/rebuilt-from-the-air-13-read-the-capture-first/' | relative_url }}):
+read the capture first. Run the two checks and the files sort themselves:
 
 | Capture | Raw IQ | Carrier offset δ | Line in the audio |
 |---|---|---|---|
@@ -119,26 +125,28 @@ into a tone at 4|δ| and its harmonics.
 
 With the LO on the channel, δ is whatever is left between the transmitter's
 frequency and the dongle's idea of it: on a real rig, a few hundred hertz.
-Four times a few hundred hertz is one to three kilohertz. −420 Hz gives a
-tone near 1.68 kHz; −850 Hz gives one near 3.4 kHz. The measured lines are
-1676 Hz and 3381 Hz.
+Four times that is one to three kilohertz. −420 Hz gives a tone near
+1.68 kHz; −850 Hz gives one near 3.4 kHz. The measured lines are 1676 Hz and
+3381 Hz.
 
 ## Three products, one cure
 
-Clipping dominated these captures, but it is one of three things a
-direct-conversion ([zero-IF]({{ '/reference/zero-if/' | relative_url }}))
-tuner places at multiples of δ when it is tuned straight onto a carrier:
+Clipping dominated these captures, but it is one of three things that land
+at multiples of δ when the LO is tuned straight onto a carrier
+([zero-IF]({{ '/reference/zero-if/' | relative_url }}) tuning):
 
-- the **DC spur** (LO leakage, converter offset) sits at the LO and beats
-  with the carrier at δ;
-- the **I/Q-imbalance image** of the carrier sits at −δ and beats at 2δ;
+- the **DC spur** (LO leakage, converter
+  [offset]({{ '/reference/dc-offset/' | relative_url }})) sits at the LO and
+  beats with the carrier at δ;
+- the **[I/Q-imbalance]({{ '/reference/iq-imbalance/' | relative_url }})
+  image** of the carrier sits at −δ and beats at 2δ;
 - the **clipping products** beat at 4δ and its harmonics.
 
 All three are in the channel, and so in everything Parts 2 and 3 measure and
-everything the FM chain demodulates. They share a cure, and it is the one
-SDR# and SDR++ apply by default, which is why the same RF sounded clean
-there: do not put the LO on the channel. `convScannerFrontEnd` wraps the
-scanner SDR's IQ broker and does two things.
+everything the FM chain demodulates. They share a cure: do not put the LO on
+the channel. SDR# and SDR++ tune their LO off the VFO, which is why they
+never show the effect. `convScannerFrontEnd` wraps the scanner SDR's IQ
+broker and does two things.
 
 ```go
 // cmd/gophertrunk/conv_offset.go (shape)
@@ -158,16 +166,18 @@ func (f *convScannerFrontEnd) StreamIQ(ctx context.Context) (<-chan []complex64,
 
 The hardware is tuned `offsetHz` below the channel, so the channel arrives
 at +offset in the raw stream; `mixToChannel` runs a `dsp.NCO`
-([numerically controlled oscillator]({{ '/reference/numerically-controlled-oscillator/' | relative_url }}))
-that shifts it back to the centre. The scanner — squelch, tone detectors,
-data decoders — never knows. Neither does the voice path: the FM chain's
-`convScanVoiceSource` subscribes to the same broker and passes its
-subscription through the same `mixToChannel` with the same offset.
+([numerically controlled oscillator]({{ '/reference/numerically-controlled-oscillator/' | relative_url }});
+[SDR in Pure Go Part 5]({{ '/blog/deep-dives/sdr-internals-05-tuning-channelization/' | relative_url }})
+covers this kind of digital retune) that shifts it back to the centre. The
+scanner — squelch, tone detectors, data decoders — never knows. Neither does
+the voice path: the FM chain's `convScanVoiceSource` subscribes to the same
+broker and passes its subscription through the same `mixToChannel` with the
+same offset.
 
 After the mix the three products are no longer near the carrier. The DC spur
-is at −offset. The image is at −2·offset. The clipping products are at
-∓4k·offset, folded into the sampled band. All that remains is to choose an
-offset for which none of those folds back onto the channel.
+is at −offset, the image at −2·offset, the clipping products at ∓4k·offset,
+folded into the sampled band. All that remains is to choose an offset for
+which none of those folds back onto the channel.
 
 ## Never fs/4
 
@@ -213,11 +223,10 @@ deviation, so the search assumes 5 kHz deviation and widens the product at
 | 2.4 MS/s | 518 kHz | 290.5 kHz | negative: overlaps |
 | 3 MS/s | 647 kHz | 374.5 kHz | negative: overlaps |
 
-At 250 kS/s the range is empty and the scanner tunes on channel, as before,
-logging the reason.
+At 250 kS/s the range is empty; the scanner tunes on channel and logs why.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 246" width="680" height="246" role="img" aria-label="Three spectra of a 2.4 megasample per second stream after the channel has been mixed back to the centre. With the local oscillator on the channel, the DC spur, the image and the clipping products all fall inside the channel. With the oscillator a quarter of the sample rate below, the DC spur and image move away but every clipping product aliases back onto the channel. With the searched 518 kilohertz offset, the DC spur sits at minus 518 kilohertz, the image at minus 1036 kilohertz, and the clipping products are spread across the band, the nearest at plus and minus 328 kilohertz, leaving the channel clear.">
+<svg viewBox="0 0 680 246" width="680" height="246" role="img" aria-label="Three spectra after the channel is mixed back to centre. With the oscillator on the channel, the DC spur, image and clipping products fall inside it. A quarter of the sample rate below, the clipping products alias back onto the channel. At the searched 518 kilohertz offset every product lands elsewhere, the nearest 328 kilohertz away.">
   <text x="72" y="16" fill="currentColor" font-size="9" font-weight="bold">LO on the channel (zero-IF): DC spur, image and clipping products all within a few δ of the carrier</text>
   <line x1="72" y1="46" x2="648" y2="46" stroke="var(--fg-muted)"/>
   <rect x="352" y="24" width="16" height="22" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
@@ -268,10 +277,10 @@ logging the reason.
 
 `TestConvScannerOffsetTuningRemovesClippingWhistle` simulates the captures
 rather than replaying them. Its `clippingFrontEnd` synthesises an FM
-transmitter at 447.100 MHz, 420 Hz below the channel, carrying a 1 kHz tone
-at 2.5 kHz deviation; overdrives it three times past full scale; adds a
-small DC offset; clips I and Q separately and quantises to 8 bits. Crucially
-it synthesises relative to wherever `SetCenterFreq` put the LO, so the same
+transmitter 420 Hz below a 447.100 MHz channel, carrying a 1 kHz tone at
+2.5 kHz deviation; drives it at three times full scale; adds a small DC
+offset; clips I and Q separately and quantises to 8 bits. Crucially it
+synthesises relative to wherever `SetCenterFreq` put the LO, so the same
 "transmitter" can be received on channel or offset. The audio is then
 demodulated and two things are measured: the level of the line at 4×420 Hz
 relative to the wanted tone, and the audio
@@ -280,19 +289,19 @@ relative to the wanted tone, and the audio
 | LO placement | Line at 4δ, relative to the wanted tone | SINAD |
 |---|---|---|
 | on channel (a negative offset setting) | −23.9 dB | 0.5 dB |
-| fs/4, 600 kHz | not the limit: the aliased product is | 0.5 dB |
+| fs/4, 600 kHz | not logged by the test | 0.5 dB |
 | searched, 518 kHz | −108.0 dB | 56.1 dB |
 
 The test fails first by construction: it asserts that the on-channel case is
-still wrecked, so a fixture that stopped reproducing the damage could not
-pass quietly. `TestPickClipSafeLOOffset` then checks ten sample rates from
+still wrecked, so a fixture that stopped reproducing the damage cannot pass. `TestPickClipSafeLOOffset` then checks ten sample rates from
 960 kS/s to 10 MS/s: every picked offset scores clear, and none is fs/4.
 
 The operator's side is small. `scanner.lo_offset_hz` is `0` by default,
-which searches; a positive value pins the offset in hertz, refused above
-35 % of the sample rate; a negative value restores on-channel tuning for an
-A/B. What was chosen is logged at start-up as `conv: scanner LO offset
-tuning`, with `serial`, `lo_offset_hz`, `mode` and `sample_rate_hz`.
+which searches; a positive value pins the offset in hertz (above 35 % of the
+sample rate it is refused and the scanner tunes on channel); a negative
+value restores on-channel tuning for an A/B. What was chosen is logged at
+start-up as `conv: scanner LO offset tuning`, with `serial`, `lo_offset_hz`,
+`mode` and `sample_rate_hz`.
 
 And the scanner now says when the fingerprint is present. `observeRaw` sees
 each chunk *before* the mix and counts samples whose I or Q is at or beyond
@@ -303,8 +312,8 @@ once every five minutes:
 conv: front end overloaded — IQ pinned to the ADC rail; a strong nearby transmitter is clipping the SDR, which distorts analog FM audio (a whistle/tone at 4x the carrier offset when tuned on-channel). Reduce gain or add attenuation (do NOT raise gain). issue #1184
 ```
 
-That WARN matters because the fix is cosmetic in one respect. In the type's
-own comment: "the mix hides the artefacts but a clipped front end still
+That WARN matters because the fix is cosmetic in one respect: in the type's
+own comment, "the mix hides the artefacts but a clipped front end still
 loses weak signals."
 [DMR End to End Part 9]({{ '/blog/deep-dives/dmr-end-to-end-09-direct-mode-carrier-gate/' | relative_url }})
 found that a 36–40 % clipped capture can still decode; that is a statement
@@ -315,16 +324,16 @@ about one strong signal, not about anything weaker sharing the band with it.
 The diagnosis is measured on the reporter's captures: the rail-pinned
 samples and the 4δ lines are in the files. The fix is
 **synthetic-verified** — a simulated front end, with the damage reproduced
-and removed — and is **still on-air-gated**: the notes record no run by the
-reporter on a build with it.
+and removed — and the project's engineering notes still list it as
+**on-air-gated**.
 
-One exposure is deliberately left open. `dc_avoid`, the equivalent option
+One exposure is left open. `dc_avoid`, the equivalent option
 for control and voice SDRs, auto-selects `sample_rate/4` when
 `dc_avoid_offset_hz` is `0`. That offset does its stated job — it moves the
 channel off the DC spur and its own image — but for a clipped signal it has
-exactly the alias described above, and it was not changed here. An operator
-running `dc_avoid` on an overloaded front end can pin a different
-`dc_avoid_offset_hz`; reducing the gain is the better answer.
+exactly the alias described above, and it was not changed here.
+`dc_avoid_offset_hz` exists to pin a different offset; the better answer to
+an overloaded front end is less gain.
 
 ### How offset tuning shaped the Go code
 
@@ -338,13 +347,13 @@ running `dc_avoid` on an overloaded front end can pin a different
 - **The picker is reused.** The dedicated narrowband decoders of Part 12
   call the same `pickClipSafeLOOffsetHz` to place their dongles.
 - **The regression asserts its own premise.** If the simulated on-channel
-  case ever stops being bad, the test fails rather than passing vacuously.
+  case stops being bad, the test fails rather than passing vacuously.
 
 ## Where this goes next
 
 With the channel measured in the right place, by a statistic that ignores
 gain, on a stream the tuner has not decorated, the next question is whose
-carrier it is.
+carrier this is.
 [Part 5]({{ '/blog/deep-dives/squelch-05-ctcss/' | relative_url }})
 is the CTCSS gate: sub-audible tones 2.3 Hz apart, and a detector that has
 to tell them from each other in a quarter of a second.
@@ -360,10 +369,9 @@ tuning moves the tone out of the channel but does not undo the overload.
 
 **What is offset tuning in an SDR receiver?**
 Tuning the hardware's local oscillator away from the wanted channel and
-shifting the channel back digitally. The tuner's own artefacts — the DC
-spur, the I/Q image and clipping products — are tied to the LO, so they land
-away from the channel instead of inside it. GopherTrunk's conventional
-scanner does this by default.
+shifting the channel back digitally. The tuner's own artefacts — DC spur,
+I/Q image, clipping products — are tied to the LO, so they land away from
+the channel. GopherTrunk's conventional scanner does this by default.
 
 **Why not offset by a quarter of the sample rate?**
 Because clipping products appear at multiples of four times the offset, and
@@ -375,13 +383,12 @@ all, against 56 dB at the searched 518 kHz.
 **How do I change or disable the scanner's LO offset?**
 Set `scanner.lo_offset_hz`: `0` searches for a clip-safe offset, a positive
 value pins it in hertz (at most 35 % of the sample rate), and a negative
-value disables it and tunes on channel. The start-up log line `conv: scanner
-LO offset tuning` reports what is in use.
+value tunes on channel. The start-up line `conv: scanner LO offset tuning`
+reports what is in use.
 
 **Is offset tuning verified on air?**
 Not yet. The 4× tone was measured on a reporter's real captures and the fix
-removes it in a simulated clipped front end, but no on-air run on a build
-with the fix has been reported, so it remains on-air-gated.
+removes it in a simulated clipped front end, but it remains on-air-gated.
 
 ## Series navigation
 

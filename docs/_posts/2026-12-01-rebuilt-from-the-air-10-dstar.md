@@ -79,15 +79,14 @@ frame, not on power — and D-STAR was next. A `dstar` channel still squelched
 on in-channel power alone, so any carrier on the frequency opened a "dstar"
 call that recorded nothing.
 
-A call gate is built on sync words, and GopherTrunk's D-STAR sync constants,
-laid beside the receive patterns in the MMDVM firmware — the code D-STAR
-hotspots and repeaters run — matched neither, in either polarity. A gate
-built on them would have shut out every real transmission; the comment at
-the top of `dstar_gate.go` records that the hole "could not be closed until
-the D-STAR air format was rebuilt."
+A call gate is built on sync words. Laid beside the receive patterns in the
+MMDVM firmware — the code D-STAR hotspots and repeaters run — neither of
+GopherTrunk's two D-STAR sync constants was a pattern a radio sends, in
+either polarity. A gate built on them would have shut out every real
+transmission; the comment at the top of `dstar_gate.go` records that the
+hole "could not be closed until the D-STAR air format was rebuilt."
 
-That turned a feature into an audit, and the audit did not stop at the sync
-words.
+That turned a feature into an audit, and it did not stop at the sync words.
 
 ## The wrong theory: calibration
 
@@ -101,16 +100,15 @@ list.
 It is the same word the LoRa bit layer hid behind in
 [Part 5]({{ '/blog/solution-postmortem/rebuilt-from-the-air-05-lora-bit-layer/' | relative_url }}).
 "Calibration" assumes the shape is right and a table needs tuning. Here the
-shape was wrong: a different constraint length, a different interleaver
-geometry, a different scrambler polynomial, a different CRC — and, under the
-voice path, a defect nobody had listed at all, because that post called the
-AMBE FEC "shared with DMR and NXDN" and so presumed it correct.
+shape was wrong: a different constraint length, interleaver geometry,
+scrambler polynomial and CRC — and, under the voice path, a defect nobody
+had listed at all, because that post called the AMBE FEC "shared with DMR
+and NXDN" and so presumed it correct.
 
-Every test was green, for the reason this series keeps returning to. The
+Every test was green, for the reason this series keeps returning to: the
 encoder that built each fixture and the decoder that read it shared one
 invented layout — the
-[self-consistent trap]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }}),
-this time with no correct layer anywhere in the stack to stumble over.
+[self-consistent trap]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }}).
 
 ## The diagnostic: the firmware's own bits
 
@@ -130,11 +128,11 @@ Two checks per burst — decode it to the header bytes with a zero path
 metric, and re-encode those bytes to the same bits — make eight
 (`TestDStarHeaderFECMatchesMMDVMEncoder`). The old chain failed all eight.
 
-For voice the firmware supplied one more vector for free: the nine-byte
-null AMBE frame it transmits for silence. A real AMBE frame has structure a
-decoder can test without a vocoder — its first two sub-vectors must be exact
-Golay codewords. Under the old schedule and Golay the null frame needed
-three corrections. Under the right ones it needs none.
+For voice the firmware supplied one more vector: the nine-byte null AMBE
+frame it transmits for silence. A real AMBE frame has structure a decoder
+can test without a vocoder — its first two sub-vectors must be exact Golay
+codewords. Under the old schedule and Golay the null frame needed three
+corrections. Under the right ones it needs none.
 
 ## Sync, header and CRC as they are sent
 
@@ -240,8 +238,7 @@ generates from the all-ones state (`framing.DStarPN`, period 127). Its first
 
 The invented chain appended four tail bits, ran a K=5 code, punctured four
 bits, applied a 15-bit PN and a 22×30 block interleave. It, too, arrived at
-660 — one matching length is all a fabricated framing needs to pass a
-casual look.
+660 bits.
 
 **The CRC.** The header checksum is CRC-16/X-25 — the reflected polynomial
 `0x8408`, initial value and final XOR `0xFFFF` — carried low byte first.
@@ -322,11 +319,11 @@ point — one start in ten — the
 hung for one or two sync cycles before pulling in. The gate therefore runs
 two receivers, the second fed half a symbol later, so one always starts near
 its best phase. The voice chain had the same hang and got the same answer
-(`dstarVoiceLanes`): frames are settled per 10 ms block, the first lane to
-decode owns the output, and the other takes over only after five frames the
-owner missed. `TestDStarVoiceLanesJoinFromEveryPhase` measures it on the
-current tree: a lone receiver loses up to 1.42 s of a joined call (1.72 s
-inverted); the pair loses 0.04 s.
+(`dstarVoiceLanes`): the first lane to decode owns the output, and the other
+takes over only after five frames the owner missed.
+`TestDStarVoiceLanesJoinFromEveryPhase` measures it on the current tree: a
+lone receiver loses up to 1.42 s of a joined call (1.72 s inverted); the
+pair loses 0.04 s.
 
 One more piece of speech was being discarded. The cadence can only be
 anchored on a slow-data sync, so a receiver that joins mid-cycle had already
@@ -338,21 +335,21 @@ long as each is plausibly voice.
 count, and it is the wrong one: mbelib's convention counts corrected *data*
 bits, and a third of random frames pass it. The walk instead re-encodes each
 payload and counts the on-air bits that differ; noise lands within
-`retroMaxErrors` (2) of a codeword pair about once in 4000 frames.
-`TestVoiceChannelLateEntryIgnoresNonVoice` feeds 200 transmissions preceded
-by random bits and allows at most one stray frame.
+`retroMaxErrors` (2) of a codeword pair about once in 4000 frames
+(`TestVoiceChannelLateEntryIgnoresNonVoice`).
 
 ## What this overturns
 
-[Beyond Voice Part 13]({{ '/blog/deep-dives/beyond-voice-13-dstar-ysf-dpmr/' | relative_url }})'s
-D-STAR and dPMR sections. It gave the frame sync as `0xEAA060` and the
-slow-data sync as `0x552D16`; the header FEC as a K=5 code, a PN15 scrambler
-and a 22×30 interleave behind a `FECOff` default; the CRC as CRC-CCITT
-`0x1021` pinned to `0x29B1`; and both voice chains as correct FEC over a
-placeholder interleave. All of that describes the model, not the air. The
-frame layout it gave — a 41-byte header, 96-bit DV frames, a sync every 21
-frames — was right, and the D-STAR interleave is no longer a placeholder.
-dPMR's still is. Its System Fusion section is corrected in
+This part replaces the D-STAR and dPMR sections of
+[Beyond Voice Part 13]({{ '/blog/deep-dives/beyond-voice-13-dstar-ysf-dpmr/' | relative_url }}).
+That post gave the frame sync as `0xEAA060` and the slow-data sync as
+`0x552D16`; the header FEC as a K=5 code, a PN15 scrambler and a 22×30
+interleave behind a `FECOff` default; the CRC as CRC-CCITT `0x1021` pinned
+to `0x29B1`; and both voice chains as correct FEC over a placeholder
+interleave. All of that describes the model, not the air. The frame layout
+it gave — a 41-byte header, 96-bit DV frames, a sync every 21 frames — was
+right, and the D-STAR interleave is no longer a placeholder. dPMR's still
+is. Its System Fusion section is corrected in
 [Part 6]({{ '/blog/solution-postmortem/rebuilt-from-the-air-06-ysf-fich/' | relative_url }}).
 
 ## What we keep
@@ -368,8 +365,7 @@ dPMR's still is. Its System Fusion section is corrected in
 - **Know what an error count counts.** Re-encode and compare on-air bits
   when the decoder's own number is not a distance.
 - **Reference-pinned is not on-air verified.** Nothing here has met a real
-  D-STAR signal; the voice chain logs that it is experimental, and a capture
-  is the gate.
+  D-STAR signal; a capture is the gate.
 
 ## Where this goes next
 
@@ -384,16 +380,16 @@ twelve timeslots, and the two that swap.
 
 **Can GopherTrunk decode D-STAR?**
 The code now follows the on-air format the MMDVM firmware transmits: the
-header decodes through its real FEC and CRC, and DV voice frames reach the
-AMBE vocoder through the right bit schedule and Golay code. It is pinned to
-that firmware's own encoder output but has not yet decoded a real D-STAR
-capture, so audio is labelled experimental.
+header decodes through its real FEC and CRC, and voice frames reach the
+vocoder through the right bit schedule and Golay code. It is pinned to that
+firmware's own output but has not decoded a real D-STAR capture, so audio is
+labelled experimental.
 
 **Why did a clean D-STAR voice frame decode to the wrong audio?**
 The voice FEC used a Golay(23,12) decoder for a different code than the one
-AMBE uses. Both correct three errors, but a valid codeword of one is not a
-codeword of the other, so the decoder altered correct bits and returned
-different data. D-STAR and dPMR now use the Golay code the DMR decoder
+AMBE uses. Both correct three errors, but a valid codeword of one is
+generally not a codeword of the other, so the decoder altered correct bits
+and returned different data. D-STAR and dPMR now use the Golay code the DMR decoder
 carries; dPMR's on-air interleave is still a placeholder.
 
 **What are the real D-STAR sync words?**
@@ -403,10 +399,10 @@ sync carried every 21 DV frames, and a 48-bit end pattern. A receiver may
 see everything inverted, so both polarities are searched.
 
 **How does GopherTrunk join a D-STAR transmission that is already under way?**
-It anchors on the slow-data sync, then decodes the frames it had already
-demodulated before that sync from history — up to 0.42 seconds — accepting
-each only if re-encoding its payload reproduces the received bits within two.
-Two receivers half a symbol apart keep a bad starting phase from costing a
+It anchors on the slow-data sync, then decodes from history the frames it
+had already demodulated — up to 0.42 seconds — accepting each only if
+re-encoding its payload reproduces the received bits within two. Two
+receivers half a symbol apart keep a bad starting phase from costing a
 second or more.
 
 ## Series navigation

@@ -133,7 +133,9 @@ link and over the LAN, from Linux with and without libiio and from Termux
 over WLAN. The board's own device listing is the driver's test fixture, and
 every attribute the driver writes is checked against it. The daemon's
 decode path — tune, stream, lock a control channel — is reference-pinned
-and synthetic-tested, and **not yet confirmed on air**.
+and synthetic-tested, and **not yet confirmed on air**. The operator
+reference is the
+[hardware guide's Pluto section]({{ '/hardware.html#adalm-pluto-plutosky-and-other-ad936x-boards' | relative_url }}).
 
 ## The shopping list
 
@@ -348,7 +350,8 @@ trunking:
   with a Pluto either.
 - **A band sweep.** A reporter's PlutoSky sweep is where Part 11's DC-line
   work came from: the tuner's DC line survived in its busiest hops — an AGC
-  stepping its gain is the inferred cause — so sweep with a fixed `-gain`.
+  stepping its gain is the inferred cause — so sweep with a fixed `-gain`
+  ([power sweep reference]({{ '/power-sweep.html' | relative_url }})).
 
 ## Where this goes next
 
@@ -381,8 +384,7 @@ each of them.
 **What sample rates can a Pluto run with the native driver?**
 From 25 MHz/96, about 260.4 kS/s, to the AD9361's 61.44 MS/s, without a FIR
 filter loaded. Below about 2.083 MS/s the board's RX core decimates by 8.
-What the link can carry is a separate question: the stream is four bytes
-per complex sample.
+What the link can carry is separate: four bytes per complex sample.
 
 **Is the native Pluto driver verified on air?**
 Partly. The read-only probe, the settings read-back and a sample read at

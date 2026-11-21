@@ -97,11 +97,12 @@ func PowerDbFS(iq []complex64) float64 {
 Mean of |s|², in decibels; a unit-amplitude tone reads 0
 [dBFS]({{ '/reference/dbfs/' | relative_url }}). The scanner called it on
 each chunk of its IQ stream and compared the result with the channel's
-`squelch_dbfs`. The defect was in the noun. The scanner's stream is not a
-channel. It is everything the tuner digitised: 2.4 MHz of spectrum at an
-RTL-SDR's usual rate. The mean of |s|² over that stream is the total power
-of all of it — the channel, every other transmitter in view, and all the
-noise in between.
+`squelch_dbfs` — the "absolute IQ-power gate" of
+[The Operator's Cookbook Part 6]({{ '/blog/tutorials/operator-cookbook-06-analog-fm-tone-out/' | relative_url }}).
+The defect was in the noun. The scanner's stream is not a channel. It is
+everything the tuner digitised: 2.4 MHz of spectrum at an RTL-SDR's usual
+rate. The mean of |s|² over that stream is the total power of all of it —
+the channel, every other transmitter in view, and all the noise in between.
 
 Two symptoms followed, and the reporter on #1239 saw both.
 
@@ -116,7 +117,9 @@ open on carrier *and* tone. With the carrier half stuck true, the conjunction
 collapsed to its other term. The reporter's words, preserved in the
 regression test's comment: "Tone only, not CSQ AND Tone." That matters
 beyond tidiness, because the dwell loop from Part 1 ends a call when either
-half goes false, and half of it could no longer go false.
+half goes false, and half of it could no longer go false. (The tone
+detectors had troubles of their own, told in
+[Rebuilt From the Air Part 3]({{ '/blog/solution-postmortem/rebuilt-from-the-air-03-ctcss-dcs-tone-gates/' | relative_url }}).)
 
 There was a third case the same sentence in `channel_power.go` names: "the
 noise floor an AGC tuner holds near full scale." An automatic gain control
@@ -182,8 +185,9 @@ The two stages are deliberately the ones the tone detectors already had (the
 file comment: "the same decimate-to-~48 kHz + ±toneChannelCutoffHz channel
 filter the tone detectors use"):
 
-- **Decimation.** `channelRateFor` takes `m = int(sampleHz / 48000)` — 50 at
-  2.4 MS/s, landing on exactly 48 kHz; 42 at 2.048 MS/s, a little above — and
+- **Decimation.** `channelRateFor` divides the sample rate by
+  `toneRefRateHz` (48 kHz) and truncates to an integer `m` — 50 at 2.4 MS/s,
+  landing on exactly 48 kHz; 42 at 2.048 MS/s, a little above — and
   `dsp.NewResampler(1, m, m*8+1, 8.6)` is a Kaiser low-pass of 8m+1 taps that
   keeps one sample in m
   ([decimation]({{ '/reference/decimation/' | relative_url }})).
@@ -215,7 +219,7 @@ compare in-channel power with `squelch_dbfs`. The number is also published:
 honest instrument for choosing a threshold.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 232" width="680" height="232" role="img" aria-label="Left: a 2.4 megahertz span with an empty channel at the centre, a flat noise floor, and one carrier at minus 20 dBFS sitting 500 kilohertz above the channel. The old squelch measured the power of the whole span; the new one measures only a narrow slot of plus and minus 8 kilohertz around the channel. Right: two meters against a squelch threshold of minus 50 dBFS. The whole-span meter reads minus 20 dBFS and opens; the channel meter reads only noise, about minus 112 dBFS, and stays shut.">
+<svg viewBox="0 0 680 232" width="680" height="232" role="img" aria-label="A 2.4 megahertz span with an empty channel at its centre and one carrier at minus 20 dBFS, 500 kilohertz away. Against a squelch threshold of minus 50 dBFS, a whole-span power meter reads minus 20 and opens, while a meter limited to plus or minus 8 kilohertz reads only noise, about minus 112, and stays shut.">
   <text x="250" y="14" text-anchor="middle" fill="currentColor" font-size="10" font-weight="bold">the #1239 regression fixture: one 2.4 MHz span</text>
   <rect x="40" y="26" width="420" height="140" fill="none" stroke="var(--fg-muted)" stroke-dasharray="4 3"/>
   <text x="48" y="40" fill="var(--fg-muted)" font-size="8">before: PowerDbFS summed all of this</text>
@@ -255,9 +259,9 @@ The regression test builds the situation the figure draws, and it builds a
 *span*, not a channel. `spanChunks` synthesises 2.4 MS/s chunks holding any
 number of carriers at given offsets plus white noise at a stated total
 power. That matters: the scanner's older tests fed it `loudChunk`, a
-constant `0.7+0.7i` — a carrier at exactly zero offset and nothing else —
-and a fixture with one signal in it cannot tell a channel meter from a span
-meter. It is the
+constant `complex(0.7, 0.7)` — a carrier at exactly zero offset and nothing
+else — and a fixture with one signal in it cannot tell a channel meter from
+a span meter. It is the
 [self-consistent trap]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }})
 in its mildest form: the test world was smaller than the real one.
 
@@ -354,12 +358,13 @@ level is a decision about the gain knob.
 ### How the whole-span squelch shaped the Go code
 
 - **One definition of "the channel".** `channelRateFor` and
-  `channelFilterFor` are shared helpers; the level meter, the tone
-  detectors' front end and the noise squelch's calibration all build the
-  same 63-tap filter, so they cannot disagree about what is in the channel.
+  `channelFilterFor` serve the level meter and the noise squelch's
+  calibration, and the tone detectors' front end builds the same 63-tap
+  design, so all three agree about what is in the channel.
 - **The loop does not know its statistic.** `squelchMeasure` returns a
-  function and the threshold to compare it with; adding the AM meter later
-  changed no line of `scanWindow`.
+  function and the threshold to compare it with, so `scanWindow` and
+  `beginDwell` run the same code for AM carrier-to-noise, in-channel power
+  and the whole-span fallback.
 - **Stateful meters reset per visit.** Anything with filter history is
   cleared when the scanner retunes, and holds its last reading rather than
   inventing silence.
@@ -401,11 +406,6 @@ Not for thresholds set against real signals: a carrier on the channel reads
 the same dBFS as before, which `TestChannelPowerMeterCalibration` pins. What
 changed is the idle reading, which is roughly 22 dB lower at 2.4 MS/s, so a
 threshold that was raised to fight false opens can usually come back down.
-
-**How do I give one scan-list channel its own gain?**
-Add `gain` to the channel entry, as `"auto"` or tenths of a dB (`"280"` is
-28.0 dB). It is written to the scanner's SDR before that channel is tuned,
-and channels without one run at the device's configured gain.
 
 ## Series navigation
 

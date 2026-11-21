@@ -52,7 +52,7 @@ separate ways and took two rounds of one issue to find.*
 | | |
 |---|---|
 | Issue | [#1184](https://github.com/MattCheramie/GopherTrunk/issues/1184) — two rounds on the conventional scanner's tone gates |
-| Symptom | round 1: no CTCSS tone ever opened a gate. Round 2: 162.2 Hz stayed shut on its own tone and opened on 159.8; narrowband radios opened nothing; no DCS code was detected, normal or inverted |
+| Symptom | round 1: no CTCSS tone ever opened a gate. Round 2: 162.2 Hz stayed shut on its own tone and opened on 159.8; on narrow FM no configured tone opened; no DCS code was detected, normal or inverted |
 | Wrong theories | that 48 kHz unit tests covered a detector fed 2.4 MS/s; that DCS, slicing by sign, was rate-invariant and so probably fine |
 | Real cause | a rad/sample threshold at the wrong rate over an unfiltered band; a Goertzel bin on a 5 Hz grid; a level above a narrowband tone; a DCS word and bit order shared only with its own test synthesiser |
 | Fix | `toneFrontEnd`; `NewGoertzelExact` with 250 ms blocks and EIA neighbours as reverse bins; `ctcssMinDeviationHz`; `tonecode.DCSCodeword` in on-air order; `tone.dcs_polarity` |
@@ -72,13 +72,12 @@ separate ways and took two rounds of one issue to find.*
 A scan-list channel can carry a `tone:` block. With it the scanner opens
 only when the carrier is present *and* the configured
 [CTCSS]({{ '/reference/ctcss/' | relative_url }}) tone or
-[DCS]({{ '/reference/dcs/' | relative_url }}) code is detected — the way a
-shared frequency is split between users. The detectors' design is the
-subject of
+[DCS]({{ '/reference/dcs/' | relative_url }}) code is detected. The
+detectors' design is the subject of
 [Squelch, Part 5]({{ '/blog/deep-dives/squelch-05-ctcss/' | relative_url }})
 and
 [Part 6]({{ '/blog/deep-dives/squelch-06-dcs/' | relative_url }}); this post
-is how they came to need redesigning.
+is how they came to be redesigned.
 
 The reporter of #1184 — the bench that had already supplied the
 [FleetSync captures]({{ '/blog/deep-dives/beyond-voice-04-fleetsync-wav-that-lied/' | relative_url }})
@@ -89,7 +88,7 @@ The detector chain was short: FM-discriminate the IQ, low-pass at about
 500 Hz, run a
 [Goertzel]({{ '/reference/goertzel-algorithm/' | relative_url }}) resonator
 at the tone, compare its magnitude with a threshold. The trap is in the
-second word of that sentence. A discriminator's output is the phase step
+first step. A discriminator's output is the phase step
 between consecutive samples: a
 [deviation]({{ '/reference/fm-deviation/' | relative_url }}) of Δf at sample
 rate fs is 2π·Δf/fs radians per sample. The threshold had been set against
@@ -100,14 +99,14 @@ Goertzel reports squared amplitude, so the rate alone costs a factor of
 2,500, and a real tone of a few hundred hertz sat about 3,000 times under
 the threshold. Nothing could open it.
 
-There was a second fault under the first. At 2.4 MS/s the discriminator was
-looking at the whole tuner span, and the FM noise of the rest of the band
-swamps a sub-audible tone in one channel. The
+A second fault sat under the first. At 2.4 MS/s the discriminator saw the
+whole tuner span, and the FM noise of the rest of the band swamps a
+sub-audible tone in one channel. The
 [channel-power squelch]({{ '/blog/deep-dives/squelch-02-channel-power/' | relative_url }})
 had the same blind spot.
 
-No round trip could have caught either. The tests and the detector agreed
-on a sample rate the scanner never uses — the
+No round trip could catch either. The tests and the detector agreed on a
+sample rate the scanner never uses — the
 [self-consistent trap]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }})
 with a shared *world* instead of a shared constant. The fix puts one front
 end ahead of both tone detectors:
@@ -137,9 +136,9 @@ With the front end the tone was detected in 81 % of chunks on the
 reporter's captures — the misses being the first Goertzel block and the
 gaps around each keyup — while the neighbouring 94.8, 103.5 and 107.2 Hz
 gates and the tone-free transmission stayed shut. That shipped in v1.2.0.
-(One limit: an interpolated slice carries real voice, tone and receiver
-noise at the production rate, but no out-of-channel energy, so it pins the
-unit and not the band-noise half.)
+(One limit: an interpolated slice has real voice, tone and receiver noise
+at the production rate but no out-of-channel energy, so it pins the unit,
+not the band-noise half.)
 
 The notes from that round carry one more sentence: the DCS detector "slices
 by sign (rate-invariant); it has not been checked on air."
@@ -149,11 +148,11 @@ by sign (rate-invariant); it has not been checked on air."
 With gates opening at last, the reporter could test whether they opened on
 the *right* thing. Three reports came back. A channel configured for
 162.2 Hz stayed shut on 162.2 and opened when the radio sent 159.8, the
-next tone down the table. With narrowband transmitters no configured tone
-opened at all. And DCS detected no code, normal or inverted.
+next tone down the table. "With narrow FM TX the squelch does not open for
+any configured tone." And DCS detected no code, normal or inverted.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 260" width="680" height="260" role="img" aria-label="Top: a frequency axis from 155 to 165 hertz with the old five-hertz bin grid. A gate set to 162.2 hertz was evaluated at the 160 hertz bin, 0.2 hertz from a 159.8 hertz tone and 2.2 hertz from its own. Bottom: the 23 bits of DCS code 023 in on-air order: nine code bits, a fixed 0 0 1, eleven parity bits.">
+<svg viewBox="0 0 680 260" width="680" height="260" role="img" aria-label="Top: a frequency axis from 155 to 165 hertz with the old five-hertz bin grid. A gate set to 162.2 hertz was evaluated at 160 hertz, 0.2 hertz from a 159.8 hertz tone and 2.2 from its own. Bottom: the 23 bits of DCS code 023 in on-air order: nine code bits, a fixed 001, eleven parity bits.">
   <text x="340" y="14" text-anchor="middle" fill="currentColor" font-size="10" font-weight="bold">CTCSS: a 162.2 Hz gate on a 5 Hz bin grid (200 ms block)</text>
   <line x1="60" y1="74" x2="620" y2="74" stroke="var(--fg-muted)"/>
   <line x1="60" y1="69" x2="60" y2="79" stroke="var(--fg-muted)"/>
@@ -231,8 +230,9 @@ that pair would separate.
 **The level.** The threshold was a fixed magnitude of 5e-4. Run backwards
 through the detector's gain, that is about 540 Hz of tone deviation. A
 radio puts roughly 15 % of its peak deviation into CTCSS — about 350 Hz on a
-2.5 kHz narrowband channel, 750 Hz on a 5 kHz one. Only wide-FM radios ever
-cleared it. The threshold is now computed from a stated deviation:
+2.5 kHz narrowband channel, 750 Hz on a 5 kHz one. A typical narrowband
+tone sat under the bar. The threshold is now computed from a stated
+deviation:
 
 ```go
 // internal/scanner/conventional/ctcss.go (shape)
@@ -260,7 +260,9 @@ DCS cycles a 23-bit Golay(23,12) word at 134.4 bit/s under the voice. The
 old detector built that word with the code in the high bits and a "100" in
 the low bits, and shifted received bits in MSB-first. Its test synthesiser,
 `synthesizeDCSIQ`, transmitted the same layout. Every unit test passed; no
-radio could match. Two front-end faults sat on top: the discriminator ran
+radio could match — fabricated framing of the
+[SmartNet]({{ '/blog/deep-dives/from-spec-to-shipping-08-smartnet-rebuild/' | relative_url }})
+kind, in 23 bits. Two front-end faults sat on top: the discriminator ran
 on the whole 2.4 MHz span, and the bits were sliced on the raw sign, so a
 carrier offset — a DC term on a discriminator — pinned every bit to one
 value. "Rate-invariant" had been true and beside the point.
@@ -279,21 +281,20 @@ equations instead — P0 = C0+C1+C2+C3+C4+C7 and so on — in a function written
 and checks the literal `0x763813`. A second test holds the word to
 properties only a real DCS word has, taken from a reference modulator's
 code tables: read from a different start bit, 023 is also 340 and 766; and
-023 inverted is 047. The test transmitter was rewritten to behave like one
-too — `synthDCSOnAir` sends bit 0 first at a narrowband 350 Hz deviation,
-600 Hz off frequency, from a random start bit and sub-bit phase, at
-2.4 MS/s.
+023 inverted is 047. And a new test transmitter behaves like a radio:
+`synthDCSOnAir` sends bit 0 first at a narrowband 350 Hz deviation, 600 Hz
+off frequency, from a random start bit and sub-bit phase, at 2.4 MS/s.
 
-The detector under it changed to match the air: the shared front end, a
+The detector changed to match the air: the shared front end, a
 slicing level halfway between the recent high and low, four staggered
 bit-clock phases, a 23-bit window compared with all 46 rotations at Hamming
 distance ≤ 2, and sixteen consecutive matching bits before the gate opens.
 
 ## On air: the log field that pinned the polarity
 
-One fact no reference could supply: which electrical sense a radio's "N"
-setting is. So the detector reported it. `Inverted()` records the polarity
-of the match, and the scanner logs it:
+One fact was still open: which electrical sense a radio's "N" setting is.
+So the detector reported it. `Inverted()` records the polarity of the
+match, and the scanner logs it:
 
 ```text
 conv: DCS gate opened freq_hz=… label=… dcs_code=025 nrz_inverted=false
@@ -333,8 +334,8 @@ has the working recipe.
 said in July that "CTCSS is fully wired; DCS parses and validates but its
 detector is a tracked follow-up." The wiring was real. The CTCSS gate behind
 it had never opened on a radio, and the DCS detector that followed matched
-a word nothing transmits. Read that sentence now as: both gates are on-air
-verified as of 24 Sep 2026, with `tone.dcs_polarity` defaulting to normal.
+a word nothing transmits. Both gates are on-air verified as of 24 Sep 2026,
+with `tone.dcs_polarity` defaulting to normal.
 The recipe in
 [The Operator's Cookbook, Part 6]({{ '/blog/tutorials/operator-cookbook-06-analog-fm-tone-out/' | relative_url }})
 stands.
@@ -343,7 +344,7 @@ stands.
 
 - **Give every threshold a unit that survives a rate change.** A deviation
   in hertz does; a magnitude in radians per sample does not. Derive the
-  number from the physical quantity in code, as `ctcssToneMagnitude` does.
+  number from the physical quantity, as `ctcssToneMagnitude` does.
 - **Pin the production rate, not the convenient one.** A real-air slice
   interpolated back to 2.4 MS/s tests what the scanner runs.
 - **Know what a shared primitive rounds.** `NewGoertzel` was correct for the
@@ -356,8 +357,8 @@ stands.
 
 ## Where this goes next
 
-The tone gates were small detectors with small tests. The next decoder had
-a whole protocol stack and an encoder to match.
+The tone gates were small detectors. The next decoder had a whole protocol
+stack and an encoder to match.
 [Part 4]({{ '/blog/solution-postmortem/rebuilt-from-the-air-04-flex-four-modes/' | relative_url }})
 is FLEX paging: a decoder that hunted its mode code on the wrong side of
 the sync marker, and a rebuild that pins 1600 bps on five frames off the

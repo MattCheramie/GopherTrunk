@@ -319,12 +319,12 @@ The body takes `duration` (a Go duration such as `30m` or `2h`) or
 followed again with no further action. To end it early,
 `curl -s -X DELETE "$API/api/v1/talkgroups/9230/avoid"`.
 
-**21:10 — a quiet night; open the list up, and promote Fire Dispatch.**
+**21:10 — a quiet night; open the list up, and promote Fire Tac 2.**
 
 ```sh
 curl -s -X PATCH "$API/api/v1/scanner" \
   -H 'Content-Type: application/json' -d '{"scan_mode":"all"}'
-curl -s -X PATCH "$API/api/v1/talkgroups/9001" \
+curl -s -X PATCH "$API/api/v1/talkgroups/9014" \
   -H 'Content-Type: application/json' -d '{"priority":1}'
 ```
 
