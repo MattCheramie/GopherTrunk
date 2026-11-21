@@ -360,8 +360,7 @@ the frequency. The composer's `resolveKey` tries the grant's system first
 and that name second. Two channels on one frequency pool their keys
 (`TestConventionalChannelKeysResolveByFrequency`).
 
-The documented use today is an NXDN channel's 15-bit
-[scrambler]({{ '/reference/nxdn-scrambler/' | relative_url }}) keys —
+The documented use today is an NXDN channel's 15-bit scrambler keys —
 `algorithm: scrambler`, a decimal key, `key_id` as the radios' signalling
 names it. The cipher itself is capture-verified on the reporter's two
 known-key captures

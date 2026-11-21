@@ -71,18 +71,19 @@ blog that described the formats these decoders used to implement.*
 
 ## The four words
 
-Everything below uses four terms, and none implies the next:
+[Part 1]({{ '/blog/solution-postmortem/rebuilt-from-the-air-01-the-audit/' | relative_url }})
+defined four terms, and everything below uses them. None implies the next:
 
 - **Synthetic-verified** — it decodes what the project's own encoder
   produced. That is consistency, which is all
   [the self-consistent trap]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }})
   needs.
 - **Reference-pinned** — it matches literal output of an independent
-  implementation that works on air.
-- **Capture-verified** — it decodes a recording of a real transmitter,
-  offline, in a test.
-- **On-air verified** — a reporter ran a build with the fix against live
-  radios and confirmed it.
+  implementation proven on air.
+- **Capture-verified** — a recording of a real transmitter decodes
+  offline, and a slice of it is committed.
+- **On-air verified** — an operator ran the live daemon against their own
+  radios, it decoded, and they said so.
 
 ## The audit checklist
 
@@ -214,7 +215,7 @@ this is the index.
 | [Beyond Voice 6]({{ '/blog/deep-dives/beyond-voice-06-pocsag-flex-paging/' | relative_url }}), FLEX half | a mode code hunted after the sync marker, and one mode only | [Part 4]({{ '/blog/solution-postmortem/rebuilt-from-the-air-04-flex-four-modes/' | relative_url }}) |
 | [Beyond Voice 11]({{ '/blog/deep-dives/beyond-voice-11-lora-chirp-receiver/' | relative_url }}), bit layer | invented whitening, CRC, header, Hamming layout, interleaver and chip mapping | [Part 5]({{ '/blog/solution-postmortem/rebuilt-from-the-air-05-lora-bit-layer/' | relative_url }}) |
 | [Beyond Voice 13]({{ '/blog/deep-dives/beyond-voice-13-dstar-ysf-dpmr/' | relative_url }}) | the YSF FICH codec; D-STAR's sync words, header FEC and voice tables; dPMR's voice Golay | [Part 6]({{ '/blog/solution-postmortem/rebuilt-from-the-air-06-ysf-fich/' | relative_url }}), [Part 10]({{ '/blog/solution-postmortem/rebuilt-from-the-air-10-dstar/' | relative_url }}) |
-| [Protocol Decoders 6]({{ '/blog/deep-dives/protocol-decoders-06-nxdn-dpmr/' | relative_url }}), NXDN half | a 16-bit frame sync, a 32-dibit SACCH, no scrambler | [Part 7]({{ '/blog/solution-postmortem/rebuilt-from-the-air-07-nxdn-frame-layer/' | relative_url }}), [8]({{ '/blog/solution-postmortem/rebuilt-from-the-air-08-nxdn-control-channel/' | relative_url }}), [9]({{ '/blog/solution-postmortem/rebuilt-from-the-air-09-nxdn-scrambler/' | relative_url }}) |
+| [Protocol Decoders 6]({{ '/blog/deep-dives/protocol-decoders-06-nxdn-dpmr/' | relative_url }}), NXDN half | a 16-bit frame sync, a 32-dibit SACCH, no scrambler | [Part 7]({{ '/blog/solution-postmortem/rebuilt-from-the-air-07-nxdn-frame-layer/' | relative_url }}), [8]({{ '/blog/solution-postmortem/rebuilt-from-the-air-08-nxdn-control-channel/' | relative_url }}), [9]({{ '/blog/solution-postmortem/rebuilt-from-the-air-09-nxdn-scrambler/' | relative_url }}); dPMR in 10 |
 | [Protocol Decoders 4]({{ '/blog/deep-dives/protocol-decoders-04-p25-phase-2-tdma-mac/' | relative_url }}), [P25 End to End 7]({{ '/blog/deep-dives/p25-end-to-end-07-phase2-tdma/' | relative_url }}) | a Golay-protected ISCH, alternating slots, a trellis → RS(24,16,9) MAC chain | [Part 11]({{ '/blog/solution-postmortem/rebuilt-from-the-air-11-p25-phase2-airframe/' | relative_url }}), [Part 12]({{ '/blog/solution-postmortem/rebuilt-from-the-air-12-pn44-gardner-real-carrier/' | relative_url }}) |
 
 Two earlier finales listed open items that have since moved. From

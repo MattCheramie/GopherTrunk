@@ -28,7 +28,7 @@ frames the decoder had never actually found.*
 > `internal/radio/nxdn` modelled a 16-bit FSW `0xC55A`, a 32-dibit SACCH and
 > no scrambler; the air carries a 20-bit FSW `0xCDF59`, an 8-dibit LICH, a
 > 30-dibit SACCH and 144 information dibits, with every dibit after the sync
-> inverted by a PN9 sequence. `airframe.go` now frames that, and
+> scrambled by a PN9 sequence. `airframe.go` now frames that, and
 > `DecodeAirVoice` hands each 72-bit voice frame to
 > `dmrvoice.DecodeAMBEFrame`, because the layout is DMR's verbatim. Both
 > captures sat about 400 Hz off, so the voice receiver gained `EnableAFC` and

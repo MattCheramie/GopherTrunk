@@ -226,6 +226,7 @@ iiod 0.25.… at 192.168.2.1:30431
   hw_model:          Analog Devices PlutoSDR Rev.C (Z7020-AD9361)
   fw_version:        v0.38
   ad9361-phy,model:  ad9361
+  hw_serial:         …
   devices:
     iio:device0   ad9361-phy               11 channels
     …
@@ -287,11 +288,11 @@ That fix has not been run on a PlutoSky either.
 | “NOT USABLE by sdr.iio: not a Pluto-style AD936x board” | the board lacks the two standard devices | The line lists the devices it does have; attach the XML from `-out` to a report |
 | Config rejected: “sdr.sample_rate … is below the AD9361's … Hz floor without a FIR filter” | a rate under 25 MHz/96 | Raise `sdr.sample_rate` to about 260.4 kS/s or more |
 | A one-shot tool says “no SDRs found” though the Pluto is in config.yaml | the power and capture tools read no config file | Pass `-iio <addr>`; the error now names that flag for each network radio the config lists |
-| Scan list opens on empty channels, or levels wander | the AGC is moving the gain | Use a fixed `gain`; leave `noise_squelch` on |
+| Scan list opens calls on empty channels | the AGC lifts noise over the level threshold, and the noise squelch is off or the build predates it | Leave `noise_squelch` on (the default) and use a fixed `gain` |
 | “iio: IQ stream ended” | the stream socket closed: link, power, or the board | Check the link; the line carries how long it ran and the error |
 | A power sweep keeps a spike at each hop's centre | the tuner's offset moved during the hop, as an AGC stepping its gain does | Sweep with a fixed `-gain`: [Part 11]({{ '/blog/tutorials/cookbook-volume-2-11-band-survey/' | relative_url }}) |
 
-Two smaller things the reporter's board taught the driver. The AD9361's
+Two smaller things real boards taught the driver. The AD9361's
 kernel driver reads a sample rate back with its fraction cut off — 4,800,000
 comes back as 4,799,999 — so a read-back one hertz off the written rate is
 now taken as the written rate; before that, every hop of a power sweep
@@ -304,7 +305,7 @@ in a new place, closed by committing the board's real listing.
 ### How this recipe shapes operator practice
 
 - **Ask the board, read-only, before changing anything.** A probe that
-  writes nothing is safe to run against a radio someone else is using.
+  writes nothing cannot leave the board in a state you did not choose.
 - **Fix the gain when you want to read a level.** An AGC makes every dBFS
   figure a statement about the AGC — the
   [gain-staging]({{ '/blog/tutorials/analog-edge-03-gain-staging/' | relative_url }})

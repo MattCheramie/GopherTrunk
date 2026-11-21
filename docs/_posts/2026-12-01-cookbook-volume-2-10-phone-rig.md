@@ -264,7 +264,8 @@ wmbus: WARNING — the SDR has dropped ... IQ chunk(s) (... since the last line)
 
 USB delivered every sample; the process was not allowed to run. Every
 such line also rings the terminal bell, which Termux turns into a
-vibration. The daemon, for its part, should show:
+vibration. The daemon, for its part, should show a connection, a lock
+and, at the first voice grant, one WARN:
 
 ```text
 INF rtltcp: connected addr=127.0.0.1:1234 tuner=... gain_count=...
@@ -281,14 +282,15 @@ behaviour; a phone is the only real test. Reporters have supplied these:
 
 - **The failure and the fix.** The v1.2.3 builds died with `SIGSYS` on a
   Galaxy S5 running LineageOS and on an Android 14 phone; a Galaxy S5 Neo
-  without Termux:API ran them, which is what pointed at the lookup.
+  without the Termux:API package ran them.
 - **`power`.** Measured in #1230: a Galaxy S5 kept up at 2.4 MS/s from its
   fourth hop on; an S5 Neo managed about 38 % and needs a lower `-rate`.
 - **`wmbus`.** Several walks on a Galaxy S5 with later releases, v1.4.0
-  among them, with the dongle opened directly as root. They are where the
-  drop warning's wording, the `-reconnect` behaviour and the bell came
-  from. On those runs the diagnostics box read `cpus=2` on a four-core
-  phone: Android had taken cores offline.
+  among them, with the dongle opened directly over USB (the rooted path
+  under *Variations*). They are where the drop warning's wording, the
+  `-reconnect` behaviour and the bell came from. On those runs the
+  diagnostics box read `cpus=2` on a four-core phone: Android had taken
+  cores offline.
 
 Not confirmed on a phone: the daemon in any configuration; host-name
 resolution in the Android build (use a numeric address); and the burst
