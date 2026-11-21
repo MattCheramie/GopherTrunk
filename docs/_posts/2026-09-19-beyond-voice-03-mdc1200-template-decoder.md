@@ -37,6 +37,17 @@ the honest gap in what its tests prove.*
 > the `/mdc1200` panel. No on-air fixture is committed, so MDC1200 is
 > **synthetic-verified**.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 2 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** the receiver described
+> here fed the sliced tones to the sync hunt as data bits, and it never
+> decoded a real radio. MDC1200 is XOR-precoded: the data is the running XOR
+> of the tone decisions. With that fixed it is on-air verified, and a real-air
+> slice is committed.
+> [Rebuilt From the Air, Part 2]({{ rfa_fix.url | relative_url }}) is the
+> postmortem.
+{% endif %}
+
 **Key takeaways**
 
 - **The sync word is the protocol's only anchor.** No preamble check, no

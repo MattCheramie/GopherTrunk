@@ -25,6 +25,17 @@ serves three protocols by swapping a table, not a codepath.*
 > IMBE uses. Two rate configurations (3600×2400 and 3600×2450) differ only
 > in bit positions and tables; the synthesis core never knows which one ran.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 12 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** the rate table in this
+> post is wrong for two protocols. P25 Phase 2 and NXDN both use AMBE+2
+> 3600x2450 — the `ambe2-dmr` decoder that DMR uses — and the 3600x2400
+> `ambe2` table set is D-STAR's alone. GopherTrunk routed Phase 2 to the wrong
+> set until the first live call came out as noise.
+> [Rebuilt From the Air, Part 12]({{ rfa_fix.url | relative_url }}) has the
+> story.
+{% endif %}
+
 **Key takeaways**
 
 - AMBE+2 is the same **Multi-Band Excitation** algorithm family as
