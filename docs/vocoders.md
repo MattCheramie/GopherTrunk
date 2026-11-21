@@ -77,7 +77,7 @@ Default mapping (see `voice.DefaultVocoderForProtocol`):
 | `dmr-tier2`    | `ambe2-dmr` | DMR Tier II conventional         |
 | `dmr-tier3`    | `ambe2-dmr` | DMR Tier III trunked             |
 | `nxdn`         | `ambe2-dmr` | NXDN VCH — AMBE+2 3600x2450 (EHR); unverified on air |
-| `dpmr`         | `ambe2-dmr` | dPMR Mode 3 — AMBE+2 3600x2450; unverified on air |
+| `dpmr`         | `ambe2-dmr` | dPMR — AMBE+2 3600x2450, the frame layout DMR and NXDN use; unverified on air |
 | `dstar`        | `ambe2` | D-STAR DV — original AMBE 3600x2400 (the base decoder's codebook); unverified on air |
 | `tetra`        | `tetra-acelp` | full-rate ACELP; up to 4 concurrent same-carrier timeslots |
 | `tetra-dmo`    | `tetra-acelp` | TETRA Direct Mode — same TCH/S speech frames |

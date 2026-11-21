@@ -69,14 +69,20 @@ FM (incl. analog trunking), DMR, P25 Phase 1 / 2, TETRA TMO + DMO
 voice is verified bit-exact against the ETSI EN 300 395-2 reference
 codec (via the env-gated harness in
 `internal/voice/acelp/etsi_reference_test.go` — the ETSI vectors are
-copyrighted and not committed). NXDN, dPMR, and D-STAR are wired
-end-to-end through the composer but not yet verified on air: each
-chain's AMBE interleave table is a documented placeholder awaiting a
-real voice capture (`internal/radio/{nxdn,dpmr,dstar}/voice_ambe.go`
-— dPMR anchors on the FS1/FS2 voice syncs and renders through the
-AMBE+2 3600x2450 "ambe2-dmr" decoder; D-STAR anchors its 96-bit DV
+copyrighted and not committed). NXDN voice is checked on real
+captures. dPMR and D-STAR voice follow their air formats as reference
+decoders have them but have not decoded a real transmission yet.
+dPMR voice frames a traffic channel per ETSI
+TS 102 658 (FS2 sync word, channel code, the 72-bit control channel,
+four vocoder frames per 80 ms) and renders through the AMBE+2
+3600x2450 "ambe2-dmr" decoder; the frame layout is pinned to the
+standard and to two decoders that receive dPMR on the air. **Nothing
+on the air can start a dPMR call yet:** the voice chain runs only on a
+grant from the dPMR Mode 3 control channel, and that control channel
+is still an older model that cannot frame a real beacon; the scan
+list has no dPMR channel mode either. D-STAR anchors its 96-bit DV
 cadence on the Slow Data sync and renders through the base
-AMBE 3600x2400 "ambe2" decoder). TETRA DMO (direct mode,
+AMBE 3600x2400 "ambe2" decoder. TETRA DMO (direct mode,
 `protocol: tetra-dmo`) records audio through the same ACELP vocoder
 but is experimental: call source / destination identity is not
 decoded (recordings file under group 0) and the chain still awaits

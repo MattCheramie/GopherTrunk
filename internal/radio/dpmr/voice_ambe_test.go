@@ -3,8 +3,6 @@ package dpmr
 import (
 	"encoding/hex"
 	"testing"
-
-	dmrvoice "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/voice"
 )
 
 // mkTCHInfo builds a deterministic 49-bit AMBE payload from a seed (a
@@ -20,10 +18,113 @@ func mkTCHInfo(seed uint32) []byte {
 	return out
 }
 
-// TestTCHFrameRoundTrip checks that Encode→Decode over many payloads
-// reproduces the exact 49-bit input. It is self-consistent: it passed
-// while both sides used the wrong Golay code (#1374), so it cannot pin
-// the FEC to the codec. TestTCHFrameDecodesDMRSilenceWithMbelibGolay does.
+// ambeSilenceOnAir is the 72-bit frame an AMBE+2 3600x2450 vocoder puts
+// on the air for silence, as MMDVMHost carries it (DMR_SILENCE). dPMR
+// fills the rest of a superframe with it when the PTT is released
+// (TS 102 658 clause 11: "silence data is the vocoder output data when no
+// sound is input"), so it is a frame a real dPMR radio transmits.
+const ambeSilenceOnAir = "b9e881526173002a6b"
+
+// ambeSilencePayload is the 49-bit vocoder payload of that frame. Its b0
+// (bits 0..3 and 37..39) is 124, the AMBE+2 silence code.
+const ambeSilencePayload = "1111100000000001101010011001111110001100111000001"
+
+func bitsOfHex(t *testing.T, s string) []byte {
+	t.Helper()
+	raw, err := hex.DecodeString(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]byte, 8*len(raw))
+	for i := range out {
+		out[i] = raw[i/8] >> uint(7-i%8) & 1
+	}
+	return out
+}
+
+func bitString(b []byte) string {
+	s := make([]byte, len(b))
+	for i, v := range b {
+		s[i] = '0' + v&1
+	}
+	return string(s)
+}
+
+// ambeSchedule is the vocoder-frame interleave schedule the two decoders
+// that receive dPMR voice on the air carry for dPMR: dsdcc (dpmr.cpp, rW..rZ)
+// and DSD-FME (dpmr_const.h, dPmrW..dPmrZ), which agree element for
+// element. Dibit i of the 36 puts its high bit in cell [W[i]][X[i]] and its
+// low bit in cell [Y[i]][Z[i]] of the four sub-vectors C0..C3.
+var ambeSchedule = [4][36]int{
+	{0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2},
+	{23, 10, 22, 9, 21, 8, 20, 7, 19, 6, 18, 5, 17, 4, 16, 3, 15, 2, 14, 1, 13, 0, 12, 10, 11, 9, 10, 8, 9, 7, 8, 6, 7, 5, 6, 4},
+	{0, 2, 0, 2, 0, 2, 0, 2, 0, 3, 0, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3},
+	{5, 3, 4, 2, 3, 1, 2, 0, 1, 13, 0, 12, 22, 11, 21, 10, 20, 9, 19, 8, 18, 7, 17, 6, 16, 5, 15, 4, 14, 3, 13, 2, 12, 1, 11, 0},
+}
+
+// ambeSilenceSubVectors are the C0..C3 sub-vectors of the silence frame
+// (cell j of each string is C_k[j]): C0 and C1 are Golay (23,12) codewords
+// of the vocoder's own FEC, so they do not depend on any radio protocol.
+var ambeSilenceSubVectors = [4]string{
+	"000100101000000000011111",
+	"10110000101010000010101",
+	"00111111001",
+	"10000011100110",
+}
+
+// TestTCHFrameIsTheAMBESilenceFrame pins the layout of a dPMR voice TCH
+// block. Three literals have to agree: the silence frame as transmitted,
+// its sub-vectors, and the schedule that maps one to the other. The frame
+// must then decode with no Golay correction to the silence payload.
+//
+// With the sequential C0|C1|C2|C3 split this package used as a placeholder,
+// the same 72 bits are not Golay codewords at all and decode to a different
+// payload.
+func TestTCHFrameIsTheAMBESilenceFrame(t *testing.T) {
+	onAir := bitsOfHex(t, ambeSilenceOnAir)
+
+	// The schedule takes the transmitted frame to the sub-vectors.
+	var sub [4][24]byte
+	for i := 0; i < 36; i++ {
+		sub[ambeSchedule[0][i]][ambeSchedule[1][i]] = onAir[2*i]
+		sub[ambeSchedule[2][i]][ambeSchedule[3][i]] = onAir[2*i+1]
+	}
+	for k, want := range ambeSilenceSubVectors {
+		if got := bitString(sub[k][:len(want)]); got != want {
+			t.Fatalf("sub-vector C%d = %s, want %s", k, got, want)
+		}
+	}
+
+	payload, corrected, err := DecodeTCHFrame(onAir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if corrected != 0 {
+		t.Errorf("silence frame needed %d Golay corrections, want 0", corrected)
+	}
+	if got := bitString(payload); got != ambeSilencePayload {
+		t.Fatalf("payload %s\nwant    %s", got, ambeSilencePayload)
+	}
+	b0 := 0
+	for _, i := range []int{0, 1, 2, 3, 37, 38, 39} {
+		b0 = b0<<1 | int(payload[i])
+	}
+	if b0 != 124 {
+		t.Errorf("b0 = %d, want 124 (AMBE+2 silence)", b0)
+	}
+
+	enc, err := EncodeTCHFrame(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bitString(enc) != bitString(onAir) {
+		t.Errorf("re-encoded silence frame differs from the transmitted one")
+	}
+}
+
+// TestTCHFrameRoundTrip checks that Encode then Decode reproduces the
+// 49-bit input. It is self-consistent and cannot pin the layout;
+// TestTCHFrameIsTheAMBESilenceFrame does.
 func TestTCHFrameRoundTrip(t *testing.T) {
 	for seed := uint32(0); seed < 128; seed++ {
 		info := mkTCHInfo(seed)
@@ -34,44 +135,43 @@ func TestTCHFrameRoundTrip(t *testing.T) {
 		if len(frame) != dpmrAMBEOnAirBits {
 			t.Fatalf("encoded frame = %d bits, want %d", len(frame), dpmrAMBEOnAirBits)
 		}
-		got, _, err := DecodeTCHFrame(frame)
+		got, errs, err := DecodeTCHFrame(frame)
 		if err != nil {
 			t.Fatalf("DecodeTCHFrame(seed=%d): %v", seed, err)
 		}
-		for i := range info {
-			if got[i] != info[i] {
-				t.Fatalf("seed=%d bit %d: got %d want %d", seed, i, got[i], info[i])
-			}
+		if errs != 0 {
+			t.Fatalf("seed=%d: clean frame needed %d corrections", seed, errs)
+		}
+		if bitString(got) != bitString(info) {
+			t.Fatalf("seed=%d: payload changed in the round trip", seed)
 		}
 	}
 }
 
-// TestTCHFrameCorrectsErrors confirms the Golay(23,12) layer corrects up
-// to 3 bit errors injected into each of the C0 and C1 sub-vectors (the
-// FEC-protected regions), recovering the exact payload.
+// TestTCHFrameCorrectsErrors flips three bits in each of the two Golay
+// codewords. In the schedule the high bits of the even dibits 0..22 belong
+// to C0 and those of the odd dibits 1..21 to C1.
 func TestTCHFrameCorrectsErrors(t *testing.T) {
 	info := mkTCHInfo(42)
 	frame, err := EncodeTCHFrame(info)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	// C0 occupies on-air positions 0..23, C1 24..46 (sequential
-	// placeholder layout). Flip 3 bits in C0's codeword and 3 in C1's.
 	corrupt := append([]byte(nil), frame...)
-	for _, pos := range []int{1, 5, 12, 24, 30, 40} {
-		corrupt[pos] ^= 1
+	for _, dibit := range []int{0, 4, 8, 1, 5, 9} {
+		corrupt[2*dibit] ^= 1
 	}
 	got, errs, err := DecodeTCHFrame(corrupt)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if errs == 0 {
-		t.Errorf("expected corrected-error count > 0, got 0")
+	// The count is of corrected data bits, as mbelib reports it, so it is
+	// at most the six flipped and at least one.
+	if errs < 1 || errs > 6 {
+		t.Errorf("corrected %d bits, want 1..6", errs)
 	}
-	for i := range info {
-		if got[i] != info[i] {
-			t.Fatalf("bit %d not corrected: got %d want %d", i, got[i], info[i])
-		}
+	if bitString(got) != bitString(info) {
+		t.Fatalf("payload not recovered")
 	}
 }
 
@@ -81,67 +181,5 @@ func TestDecodeTCHFrameRejectsBadLength(t *testing.T) {
 	}
 	if _, err := EncodeTCHFrame(make([]byte, 48)); err == nil {
 		t.Error("expected error for 48-bit payload")
-	}
-}
-
-// dmrSilenceSubVectors are the C0..C3 sub-vectors of MMDVMHost's
-// DMR_SILENCE AMBE+2 frame (on-air bytes B9 E8 81 52 61 73 00 2A 6B),
-// deinterleaved with DSD's DMR rW/rX/rY/rZ schedule: cell j of each
-// string is fr[k][j]. They are codec-level vectors, the same for every
-// protocol that carries AMBE+2 3600×2450, so they are exact mbelib
-// Golay(23,12) codewords whatever the on-air interleave.
-var dmrSilenceSubVectors = [4]string{
-	"000100101000000000011111",
-	"10110000101010000010101",
-	"00111111001",
-	"10000011100110",
-}
-
-// TestTCHFrameDecodesDMRSilenceWithMbelibGolay pins dPMR's AMBE+2 FEC to
-// mbelib's. Until this test, DecodeTCHFrame and EncodeTCHFrame used
-// framing.GolayDecode23_12 / GolayEncode23_12, a different (23,12) Golay
-// code: the round trip above passed because both sides shared it, while a
-// real AMBE+2 frame decoded to the wrong vocoder parameters. Laid out with
-// dPMR's own interleave, the silence frame's sub-vectors must decode to the
-// same 49 bits the DMR decoder (bit-identical to mbelib) gives for
-// DMR_SILENCE, with no Golay correction, and re-encode bit for bit.
-func TestTCHFrameDecodesDMRSilenceWithMbelibGolay(t *testing.T) {
-	dmrSilence, _ := hex.DecodeString("b9e88152617300" + "2a6b")
-	dmrBits := make([]byte, 72)
-	for i := range dmrBits {
-		dmrBits[i] = (dmrSilence[i/8] >> uint(7-i%8)) & 1
-	}
-	want, errs, err := dmrvoice.DecodeAMBEFrame(dmrBits)
-	if err != nil || errs != 0 {
-		t.Fatalf("DMR silence decode: errs=%d err=%v", errs, err)
-	}
-
-	var fr [4][24]uint8
-	for k, s := range dmrSilenceSubVectors {
-		for j, c := range s {
-			fr[k][j] = uint8(c - '0')
-		}
-	}
-	frame := dpmrAMBEInterleave(fr)
-
-	got, corrected, err := DecodeTCHFrame(frame)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if corrected != 0 {
-		t.Errorf("silence frame needed %d Golay corrections, want 0", corrected)
-	}
-	if string(got) != string(want) {
-		t.Fatalf("payload %v\nwant (DMR silence) %v", got, want)
-	}
-
-	enc, err := EncodeTCHFrame(want)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i := range frame {
-		if enc[i] != frame[i] {
-			t.Fatalf("re-encoded silence frame differs at on-air bit %d", i)
-		}
 	}
 }
