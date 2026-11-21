@@ -43,7 +43,7 @@ this is also the first part where "does it work on air?" has a dated answer.*
   channel stays shut, which is the intended failure.
 - **Frequency error matters less than it did.** A carrier tracker ahead of
   the discriminator follows about ±3 kHz of tuner error and drift. `ppm` is
-  still worth setting: it is what the first frames depend on.
+  still worth setting: the smaller the starting error, the sooner it locks.
 - **Each path has its own evidence.** Trunked follow was confirmed live;
   conventional voice and the control channel are pinned on real-air
   captures; the scan-list gate has no live report yet.
@@ -78,9 +78,9 @@ out the names. One dongle camps the
 [control channel]({{ '/reference/control-channel/' | relative_url }}) and
 decodes its messages: site information, and a voice-call assignment each time
 a [talkgroup]({{ '/reference/talkgroup/' | relative_url }}) keys up. The
-assignment says "talkgroup 21, radio 8814, channel 4". A band plan turns
-"channel 4" into hertz, a second dongle tunes there, and the call is decoded,
-recorded and, if you want, uploaded.
+assignment names a talkgroup, a radio and a channel *number*. A band plan
+turns that number into hertz, a second dongle tunes there, and the call is
+decoded, recorded and, if you want, uploaded.
 
 **Recipe B** is NXDN without trunking: a business or plant channel where
 radios simply key up. It goes on the scan list of
@@ -161,9 +161,9 @@ and the
 | UHF or VHF antenna | $0–$30 | for the band the system is licensed in |
 | The system's frequency list | $0 | control channel, plus every voice channel with its channel number |
 
-A dongle with a TCXO earns its price here. NXDN48's inner symbols are only
-±350 Hz from centre, so half a kilohertz of tuner error is a different
-symbol.
+A dongle with a TCXO earns its price here: NXDN48's inner symbols sit only
+±350 Hz from centre, so a few hundred hertz of uncorrected tuner error is
+enough to lose them.
 
 ## The config
 
@@ -230,10 +230,10 @@ arrangement for P25 and DMR Tier III; it does not list NXDN, so this recipe
 keeps the classic split. Voice grants can then land anywhere the voice
 dongle tunes.
 
-**`ppm`.** Set it. The receivers track the carrier now, but tracking starts
-from wherever the dongle is, and a cheap dongle moves: in one reporter
-capture it drifted from −645 Hz to −679 Hz in under nine seconds, just after
-a calibration.
+**`ppm`.** Set it. The receivers track the carrier now, but a smaller
+starting error means a faster first frame, and a cheap dongle moves: in one
+reporter capture it drifted from −645 Hz to −679 Hz in under nine seconds,
+just after a calibration.
 
 **`broadcast.rdioscanner`.** Optional. Each completed call is uploaded with
 its talkgroup and source radio ID;
@@ -278,8 +278,9 @@ scanner:
       talkgroup_id: 2147500202
 ```
 
-`squelch_dbfs` is still there, and still an absolute in-channel level, but
-it only nominates the channel. The gate decides: a frame sync, then another
+The frequencies in both files are placeholders. `squelch_dbfs` is still
+there, and still an absolute in-channel level, but it only nominates the
+channel. The gate decides: a frame sync, then another
 exactly 192 dibits later, with a valid link-information field marking a
 traffic frame. Once the level breaks, the scan window stretches to half a
 second for `nxdn` and a full second for `nxdn48` so the gate can hear that
@@ -308,14 +309,13 @@ INF cc-hunt: locked system=Plant-NXDN freq_hz=453775000 nac=1
 INF nxdn: site info system=Plant-NXDN ran=1 location_id=4197025 category=local system_code=85 site_code=1 control_channel_1=1 control_channel_2=0 adjacent_sites=2
 ```
 
-The lock arrived 90 ms after the hunt started. `site info` is the line to
-copy into your notes: system 85, site 1, RAN 1, two adjacent sites, and
-`control_channel_1=1` — the control channel is channel 1, which is the first
-row of the table. That capture is idle, so it cannot show a grant. On a live
-system each call adds `call started` with a grant reading
-`Plant-NXDN/nxdn tg=… src=… freq=…`, then `composer: nxdn voice chain
-started`, `recorder: call started` and, with the feed enabled, `broadcast:
-call streamed`.
+In that replay the lock arrived 90 ms after the hunt started. `site info`
+is the line to copy into your notes: system 85, site 1, RAN 1, two adjacent
+sites, and `control_channel_1=1` — the control channel is channel 1, the
+first row of the table. The capture is idle, so it cannot show a grant. On a
+live system each call adds `call started` with a grant reading
+`Plant-NXDN/nxdn tg=… src=… freq=…`, then the voice-chain and recorder lines
+below and, with the feed enabled, `broadcast: call streamed`.
 
 Recipe B, from the committed real-air NXDN96 voice slice replayed through
 the `Plant ops` entry:
@@ -328,14 +328,14 @@ INF composer: nxdn voice chain started serial=replay-01 system=scanner group=214
 INF composer: nxdn voice chain ended serial=replay-01 voice_frames=1236 frames=617 lich_ok=617 carrier_offset_hz=395 carrier_offset_at_voice_hz=426 iq_samples=59429888 sacch_ok=617 sacch_fail=0 sacch_superframes=154 src=8814 dst=0 cipher=clear
 ```
 
-The last line is the one worth learning. `lich_ok` equal to `frames` means
-every frame was recognised; `carrier_offset_hz=395` is the tuner error the
-receiver tracked out, which across calls shows your dongle drifting; `src` is
+The last line is the one worth learning (the slice is 0.8 s, looped, hence
+the totals). `lich_ok` equal to `frames` means every frame was recognised;
+`carrier_offset_hz=395` is the tuner error the receiver tracked out; `src` is
 the radio ID read from the slow signalling; `cipher=clear` says the call was
 not scrambled. The NXDN48 slice on the `Yard 6.25` entry printed the same
 sequence with `scanner/nxdn48` and `symbol_rate=2400`. And the test that
-matters most: the NXDN96 slice fed to an `nxdn48` entry sat at −5.4 dBFS, 45
-dB over its squelch, and never opened.
+matters most: the NXDN96 slice fed to an `nxdn48` entry sat at −5.4 dBFS,
+about 45 dB over its squelch, and never opened.
 
 **Status, in one sentence each.** Trunked voice is on-air verified: on
 21 Oct a reporter locked their 10-channel 453 MHz system, followed grants and
@@ -359,15 +359,14 @@ pinned on those slices, and has no live report yet.
 | Locks and grants, nothing recorded, a WARN about no voice source | no voice dongle | Add a `role: voice` SDR |
 | No lock at all | wrong control frequency, weak signal, or not an NXDN96 control channel | Read the diagnosis on `cchunt: hunt failed — no control-channel lock`; check the frequency first |
 | Worked for minutes, then failed until the correction was nudged | a build from before carrier tracking | Update, and set `ppm`; the tracker follows drift the old receiver could not |
-| A call ends early with the tracked offset near 3000 | the tracker reached its bound | Compare `carrier_offset_at_voice_hz` with `carrier_offset_hz` on the ended line; the first is where it sat while speech decoded. Correct `ppm` |
+| A call's ended line shows an offset near 3000 | the tracker ran to its ±3 kHz bound; in the one case on record the speech had already decoded | Compare `carrier_offset_at_voice_hz` with `carrier_offset_hz`: if only the second is large and `voice_frames` is healthy, the tail wandered and nothing was lost; if both are large, set `ppm` |
 | A scan-list channel shows a strong level and never opens | wrong width, or the carrier is not NXDN traffic | Swap `mode` between `nxdn` and `nxdn48`. A control channel or an analog carrier never opens, by design |
 | The audio is noise though every frame decodes | the radios use the scrambler | The log says `composer: nxdn VCALL — call is encrypted`; see the key variation |
 | A filter switch seemed to fix decoding on an RTL-SDR | coincidence | `narrowband_filter` exists only on a HackRF Pro; elsewhere it logs a WARN and does nothing |
 
-That last row has a story. A reporter saw decoding recover after setting
-`narrowband_filter: true` on an RTL-SDR, where the key is a no-op. The real
-causes were the ones in the rows above it. When a config change "fixes"
-something it cannot touch, keep looking.
+That last row has a story: a reporter saw decoding recover after setting
+`narrowband_filter: true` on an RTL-SDR, where the key is a no-op. When a
+config change "fixes" something it cannot touch, keep looking.
 
 ### How this recipe shapes operator practice
 
@@ -410,9 +409,9 @@ something it cannot touch, keep looking.
 - **Continuous channels.** A `role: wideband` dongle's `conventional:` list
   accepts `nxdn` and `nxdn48` entries, each on an always-on tap, so nothing
   is missed while the scanner is elsewhere.
-- **More systems.** Several NXDN systems share dongles under the pool rules
-  of
-  [Volume 1, Part 7]({{ '/blog/tutorials/operator-cookbook-07-multi-system-pool/' | relative_url }}).
+- **More systems.** The pool rules of
+  [Volume 1, Part 7]({{ '/blog/tutorials/operator-cookbook-07-multi-system-pool/' | relative_url }})
+  apply unchanged.
 
 ## Where this goes next
 
@@ -433,7 +432,7 @@ and the same grants are followed.
 **How do I find the channel numbers for an NXDN band plan?**
 Start from the system's frequency list. The `nxdn: site info` log line gives
 the control channel's own number, and every grant the plan cannot place logs
-its channel number in a warning, so a short session fills in the rest.
+its channel number in a warning.
 
 **What is the difference between mode nxdn and nxdn48?**
 `nxdn` is the 12.5 kHz NXDN96 mode at 4800 symbols per second; `nxdn48` is
@@ -444,8 +443,8 @@ valid frame pair.
 **Is NXDN trunking in GopherTrunk verified on air?**
 Yes: on 21 Oct a reporter locked a 10-channel 453 MHz system, followed voice
 grants and uploaded calls with talkgroup and radio ID. The control-channel
-decode is additionally pinned on a real capture; the grant message has no
-capture pin because that capture is idle.
+decode is also pinned on a real capture; the grant message is not, because
+that capture is idle.
 
 **Can GopherTrunk decode scrambled NXDN?**
 Only with the key. For the built-in 15-bit scrambler it descrambles calls

@@ -83,7 +83,7 @@ Two readings of the log were wrong before the right one. The first was the
 reporter's, and reasonable: the log carried lines about Motorola opcodes
 "named, not field-decoded", which looked like grants the decoder could not
 read. They are site broadcasts with constant payloads — opcodes `0x05` and
-`0x09` — now logged once per distinct payload as
+`0x09` — now logged once per payload as
 `p25: motorola opcode (site broadcast, not a call grant …)`.
 
 The second was a silence. A grant naming a channel ID the site had never
@@ -91,8 +91,8 @@ announced was dropped at DEBUG, so a site that followed nothing looked like
 a site with no traffic. It now warns, rate-limited, that "voice grants name
 a channel ID the site has not announced".
 
-Neither was the bug. The grants were read correctly and resolved to the
-wrong place.
+Neither was the bug: grants were read correctly and resolved to the wrong
+place.
 
 ## Layer one: logical channels
 
@@ -277,8 +277,8 @@ the **S-ISCH** — the 40-bit
 it is an **I-ISCH**: a (40,9,16) codeword that names the timeslot it opens
 as location × 4 + channel, and corrects seven bit errors. `iischCodewords`
 is generated from SDRTrunk's generator matrix XORed with `0x184229d461`, and
-`TestIISCHCodewordsMatchOP25Table` holds eight of the results to literal
-entries of OP25's 128-word table.
+`TestIISCHCodewordsMatchOP25Table` holds eight of them to literal entries of
+OP25's 128-word table.
 
 **The DUID.** What a burst carries is an 8-bit data-unit ID spread over body
 dibits 0, 37, 122 and 159 — a 16-word code of distance 4 — not a field in
@@ -286,9 +286,9 @@ the ISCH. `TestDUIDMatchesOP25Lookup` checks it against OP25's 256-entry
 lookup.
 
 **Voice.** A VOICE-4 burst holds four 72-bit AMBE+2 frames at body dibits 1,
-38, 86 and 123; VOICE-2 holds the first two. The codeword layout is DMR's
-exactly, so `ExtractAirVoiceFrames` hands each to `dmrvoice.DecodeAMBEFrame`
-after descrambling with the timeslot's slice of the PN44 sequence.
+38, 86 and 123; VOICE-2 holds the first two. The codeword layout is DMR's,
+so `ExtractAirVoiceFrames` hands each to `dmrvoice.DecodeAMBEFrame` after
+descrambling with the timeslot's slice of the PN44 sequence.
 
 ```go
 // internal/radio/p25/phase2/airframe.go (shape)
