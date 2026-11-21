@@ -180,14 +180,14 @@ There were only two ways.
 
 **A reporter's signal.** SmartNet, MDC1200, the tone gates, NXDN and P25
 Phase 2 were found because somebody pointed a radio at GopherTrunk and said
-what happened. The best reports carried a control experiment. The
-MDC1200 reporter's lab decoded Kenwood FleetSync bursts through the same
-DSP chain while MDC1200 "never locked", which clears that chain in one line.
-Slices of the NXDN reporter's two captures framed nothing under the old
-layout and thirty-six and fifty-six voice frames under the new one. A Phase
-2 capture had failed its ISCH on 46–62 %
-of sub-frames under the old model — a number that reads like a weak signal
-until you learn the field being checked does not exist.
+what happened. The best reports carried a control experiment. The MDC1200
+reporter's lab decoded Kenwood FleetSync bursts through the same DSP chain
+while MDC1200 "never locked", which clears that chain in one line. Slices
+of the NXDN reporter's two captures framed nothing under the old layout and
+thirty-six and fifty-six voice frames under the new one. A Phase 2 capture
+had failed its ISCH on 46–62 % of sub-frames under the old model — a number
+that reads like a weak signal until you learn the air does not carry the
+field being checked.
 
 **A second implementation.** FLEX, LoRa, the System Fusion FICH and D-STAR
 were found by reading a decoder known to work and comparing layouts. FLEX is
@@ -216,7 +216,7 @@ apply throughout.
 Four habits, none of them careless on its own.
 
 **The encoder was written as the decoder's inverse.** The MDC1200 test
-helper describes itself as "the transmitter-side inverse of `deinterleave`."
+helper describes itself as "the transmitter-side inverse of deinterleave."
 That is a statement about the code, not about a radio; an encoder defined
 that way cannot disagree with its decoder even in principle.
 

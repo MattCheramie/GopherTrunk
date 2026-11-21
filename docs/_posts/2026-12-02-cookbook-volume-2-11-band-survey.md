@@ -82,8 +82,9 @@ into one continuous spectrum.
 
 It is the slow, patient complement to
 [The Hunt]({{ '/blog/deep-dives/the-hunt-02-wideband-sweep-engine/' | relative_url }})'s
-own sweep. `hunt` crosses a band once, finds carriers and tries to
-identify them. `power` identifies nothing; it records levels over time,
+own sweep. `hunt` crosses a band once,
+[finds carriers]({{ '/blog/deep-dives/the-hunt-03-peak-occupancy-detection/' | relative_url }})
+and tries to identify them. `power` identifies nothing; it records levels over time,
 which is what tells you a control channel (always there) from a voice
 channel (there in bursts) from a neighbour's weather station (there every
 few minutes).
@@ -316,11 +317,13 @@ frequencies directly.
 ### How this recipe shapes operator practice
 
 - **Fix the gain before you compare anything.** A survey taken on `auto`
-  is a record of the AGC's opinions.
+  is a record of the AGC's opinions;
+  [gain staging]({{ '/blog/tutorials/analog-edge-03-gain-staging/' | relative_url }})
+  is how to pick the number.
 - **Survey long, hunt short.** An hour of `power` costs nothing and tells
   you which three frequencies deserve `hunt`'s attention.
 - **Keep the stderr with the CSV.** The plan and the notes are the
-  survey's metadata; redirect them to a file beside it.
+  survey's metadata.
 
 ## Variations
 
@@ -329,8 +332,8 @@ frequencies directly.
   is the driver's own recipe.
 - **Fine bins on a narrow band.** `-f 446.0M:446.2M:1k` is a single hop
   with a 4096-point FFT and bins of about 586 Hz.
-- **A heatmap.** The CSV is rtl_power's, so the heatmap script written
-  for rtl_power takes it as is: `python3 heatmap.py fm.csv fm.png`.
+- **A heatmap.** The heatmap script written for rtl_power takes the CSV
+  as is: `python3 heatmap.py fm.csv fm.png`.
 
 The reference is the
 [power sweep doc page]({{ '/power-sweep.html' | relative_url }}); the
@@ -342,8 +345,7 @@ A sweep looks at everything and decodes nothing.
 [Part 12]({{ '/blog/tutorials/cookbook-volume-2-12-meter-walk/' | relative_url }})
 does the opposite on a single frequency: 868.95 MHz, where heat
 allocators and water meters send a few milliseconds of Wireless M-Bus
-every few minutes — a walk, a dongle, and a decoder that only wakes up
-for bursts.
+every few minutes.
 
 ## FAQ
 

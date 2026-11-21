@@ -50,7 +50,7 @@ one thing you already know.*
   key ID, superframe phase — becomes readable.
 - **Six bits of CRC is not evidence that a call changed cipher.** One corrupt
   block flipped a clear call to "scrambler, key 0" and deleted its
-  recording; a change now needs two agreeing superframes.
+  recording.
 
 ## Cheat sheet
 
@@ -98,11 +98,11 @@ The reporter on #1261 runs their own NXDN radios. Once
 [Part 7]({{ '/blog/solution-postmortem/rebuilt-from-the-air-07-nxdn-frame-layer/' | relative_url }})
 made their clear calls decode they turned the scrambler on, recorded two
 calls on 447.100 MHz — one with the radios programmed to key 32767, one to
-key 12345 — and supplied the keys with the captures. That is the premise of
-this post. GopherTrunk descrambles only with a key the operator has
-configured, for systems they are authorised to monitor; the daemon never
-searches for one. Here the key was known from the start. What was unknown
-was whether the decoder's *model of the cipher* was right.
+key 12345 — and supplied the keys with the captures. GopherTrunk
+descrambles only with a key the operator has configured, for systems they
+are authorised to monitor; the daemon never searches for one. Here the key
+was known from the start. What was unknown was whether the decoder's *model
+of the cipher* was right.
 
 It was not. Both captures decoded cleanly at every layer Part 7 had rebuilt
 — frame sync, LICH parity, Golay-clean AMBE codewords — and came out as
@@ -128,14 +128,13 @@ the SACCH's CRC.
 Each had a plausible wrong answer on the table. The register was the
 working model's. The schedule was "restart every frame". A reference
 decoder's source, read literally in the order its per-frame code runs,
-suggested another. And the phase could not be read at all: the package's
-`SACCHCRC6` verified none of the captures' SACCH blocks, so no VCALL
-assembled and nothing said "cipher 1, key ID 3" in the first place.
+suggested another. And the phase could not be read at all: `SACCHCRC6`
+verified none of the captures' SACCH blocks, so no VCALL assembled and
+nothing said "cipher 1, key ID 3" in the first place.
 
 ## The instrument: one dump, many hypotheses, one rank
 
-The method that settled it has three parts, and each removes a way to fool
-yourself.
+The method that settled it has three parts.
 
 **Dump the FEC-decoded frames once.** The production receiver and
 `TrafficChannel` ran over each capture a single time and wrote out what
@@ -388,7 +387,7 @@ code were all wrong at once — a whole framing, as in the
 Yes, when you configure the key your radios are programmed with: an
 `encryption_keys` entry with `algorithm: scrambler`, the decimal key and the
 key ID the call's VCALL names. Without a matching key the call is recorded
-as ciphertext and flagged encrypted.
+as ciphertext.
 
 **Does GopherTrunk search for an NXDN scrambler key on its own?**
 No. The daemon descrambles only with keys the operator has configured for
@@ -397,11 +396,10 @@ instrument, run offline on captures whose key was already known, to check
 the decoder's model of the cipher.
 
 **Why was a clear NXDN call flagged as encrypted and its recording skipped?**
-A SACCH block is protected by a 6-bit CRC, so on a weak call a corrupt block
-occasionally passes and can misread the VCALL as scrambled. Before the fix
-one such block flipped the call and `recordings.skip_encrypted` deleted the
-file. A VCALL change now takes effect only when the next superframe repeats
-it.
+A SACCH block has a 6-bit CRC, so on a weak call a corrupt block
+occasionally passes and can misread the VCALL as scrambled. One such block
+flipped the call and `recordings.skip_encrypted` deleted the file. A VCALL
+change now takes effect only when the next superframe repeats it.
 
 **Is the NXDN scrambler decode verified on air?**
 It is capture-verified: two captures made with known keys descramble to

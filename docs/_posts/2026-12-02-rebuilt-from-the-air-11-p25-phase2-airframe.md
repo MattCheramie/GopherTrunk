@@ -48,8 +48,7 @@ matched nothing on the air.*
   I-ISCH table from one and the generator matrix from the other produce the
   same 128 codewords, and the tests pin one against the other.
 - **Slot parity is almost right, which is worse than wrong.** Ten of twelve
-  timeslots alternate; the last pair is swapped, and only the grant's
-  timeslot names the channel.
+  timeslots alternate; the last pair is swapped.
 
 ## Cheat sheet
 
@@ -58,15 +57,15 @@ matched nothing on the air.*
 | Issue | [#1273](https://github.com/MattCheramie/GopherTrunk/issues/1273) — hybrid Phase 1 control / Phase 2 voice site never follows a call |
 | Symptom | the control channel locks and decodes grants, and no call is ever followed; a Phase 2 control channel publishes its grants at 0 Hz |
 | Wrong theories | the Motorola "site broadcast" opcodes are undecoded grants; the site has no traffic; the framing is a working model one constant away from right |
-| Real cause | channel numbers resolved as carriers, from an invented channel-type table; and a fabricated framing: one sync per superframe, a Golay ISCH, contiguous unscrambled voice, a trellis + RS(24,16) MAC chain |
+| Real cause | channel numbers resolved as carriers; and a fabricated framing: one sync per superframe, a Golay ISCH, contiguous unscrambled voice, a trellis + RS(24,16) MAC chain |
 | Fix | `BandPlan.Frequency` / `Timeslot` with `SlotsPerCarrier`; TDMA identifier forms `0x73` / `0xF3`; `AirFramer`, `DecodeAirMAC`, `ExtractAirVoiceFrames` |
-| Diagnostic | payloads built from OP25's bit positions; literal I-ISCH, DUID and mask values from both references; five packets decoded by OP25's own code |
+| Diagnostic | payloads built from OP25's bit positions; literal I-ISCH, DUID and mask values from the references; five packets decoded by OP25's own code |
 | Status | reference-pinned and synthetic-verified; the reporter's site is still the on-air gate; Part 12 has the first real carrier |
 
 ## In this post
 
 - **A hybrid site that never followed a call** — the symptom and two wrong readings.
-- **Layer one: logical channels** — the divide, the slot, a pin that was our own arithmetic.
+- **Layer one: logical channels** — the divide, the slot, a self-made pin.
 - **Layer two: a model that matched no reference** — why the slot exposed the framing.
 - **The real timeslot** — ISCH, DUID, voice positions, and the swap.
 - **The MAC path** — RS(63,35), two CRCs and a length table.
@@ -89,8 +88,8 @@ read. They are site broadcasts with constant payloads — opcodes `0x05` and
 
 The second was a silence. A grant naming a channel ID the site had never
 announced was dropped at DEBUG, so a site that followed nothing looked like
-a site with no traffic. It now warns, rate-limited — "voice grants name a
-channel ID the site has not announced" (`TestUnresolvedChannelIDGrantsWarn`).
+a site with no traffic. It now warns, rate-limited, that "voice grants name
+a channel ID the site has not announced".
 
 Neither was the bug. The grants were read correctly and resolved to the
 wrong place.
@@ -105,10 +104,10 @@ gave the arithmetic as one line: base + number × spacing. That is right for
 FDMA. For TDMA it is wrong by a factor.
 
 The TDMA identifier (`IDEN_UP_TDMA`, opcode `0x33`) carries a four-bit
-channel type, and the type says how many logical channels one carrier holds.
-Two independent decoders agree on the table — SDRTrunk's `ChannelType`
-values 0 to 5 and OP25's `slots_per_carrier` list `[1,1,1,2,4,2]`: types 0–2
-are FDMA, 3 and 5 are 2-slot TDMA, 4 is 4-slot. A grant's channel number
+channel type that says how many logical channels one carrier holds. Two
+independent decoders agree on the table — SDRTrunk's `ChannelType` values
+0 to 5 and OP25's `slots_per_carrier` list `[1,1,1,2,4,2]`: types 0–2 are
+FDMA, 3 and 5 are 2-slot TDMA, 4 is 4-slot. A grant's channel number
 counts *logical* channels, carrier × slots + slot:
 
 ```go
@@ -132,8 +131,8 @@ number GopherTrunk had computed itself. A literal in a test is evidence only
 if it came from somewhere else
 ([From Spec to Shipping Part 3]({{ '/blog/deep-dives/from-spec-to-shipping-03-literal-vectors/' | relative_url }})).
 
-The replacement pin does. `TestBandPlanTDMAGrantResolvesToCarrierNotLogicalChannel`
-builds its `0x33` payloads from OP25's bit positions, with a helper that
+The replacement, `TestBandPlanTDMAGrantResolvesToCarrierNotLogicalChannel`,
+builds its `0x33` payloads from OP25's bit positions with a helper that
 shares nothing with GopherTrunk's assembler.
 
 The same hole was deeper on a Phase 2 *control* channel. It parsed only the
@@ -142,10 +141,8 @@ FDMA identifier form (MAC opcode `0x7D`), never the TDMA forms `0x73` and
 to 0 Hz. Both are parsed now (`phase2.ParseIdentifierUpdateTDMA`) and listed
 as known opcodes, or strict validation would drop them. One table serves
 both decoders — `p25.ParseTDMAChannelType`, in a package of its own because
-`phase2` cannot import `phase1`. Everything that resolves a channel from the
-topology snapshot divides the same way (`TopoBandPlanSlot.ChannelHz`), and
-an operator can seed a TDMA band the site never announces, under the
-system's entry:
+`phase2` cannot import `phase1`. An operator can also seed a TDMA band the
+site never announces, under the system's entry:
 
 ```yaml
       p25_band_plan:
@@ -165,13 +162,13 @@ channel, and the chain had been recording every voice burst on the carrier
 into one file. Recording only the granted channel means knowing which
 timeslot each burst is.
 
-That question is what the framing answers, and the framing in
-`superframe.go`, `isch.go` and `voice.go` could not. It was, by its own
-comments, a working model: one sync word per superframe, in sub-frame 0; a
-12-bit ISCH under Golay(24,12) carrying an invented `SlotType` and counter;
-voice frames laid contiguously after it; no scrambling on voice. The
-earlier posts said so plainly and argued that containment made it safe — a
-wrong constant would be a one-file fix.
+That is what framing answers, and the framing in `superframe.go`,
+`isch.go` and `voice.go` could not. It was, by its own comments, a working
+model: one sync word per superframe, in sub-frame 0; a 12-bit ISCH under
+Golay(24,12) carrying an invented `SlotType` and counter; voice frames laid
+contiguously after it; no scrambling on voice. The earlier posts said so
+plainly and argued that containment made it safe — a wrong constant would
+be a one-file fix.
 
 It was not one constant. Set beside OP25's TDMA decoder and SDRTrunk's
 Phase 2 module — two implementations proven on live air, which agree on
@@ -186,7 +183,7 @@ The model's encoder built every fixture, so every test passed — the
 [self-consistent trap]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }})
 at the scale of the
 [SmartNet rebuild]({{ '/blog/deep-dives/from-spec-to-shipping-08-smartnet-rebuild/' | relative_url }}):
-not a wrong table inside a right frame, but a frame.
+a whole frame, not a table.
 
 ## The real timeslot
 
@@ -281,18 +278,17 @@ it is an **I-ISCH**: a (40,9,16) codeword that names the timeslot it opens
 as location × 4 + channel, and corrects seven bit errors. `iischCodewords`
 is generated from SDRTrunk's generator matrix XORed with `0x184229d461`, and
 `TestIISCHCodewordsMatchOP25Table` holds eight of the results to literal
-entries of OP25's 128-word table — one reference pinned against the other.
+entries of OP25's 128-word table.
 
 **The DUID.** What a burst carries is an 8-bit data-unit ID spread over body
 dibits 0, 37, 122 and 159 — a 16-word code of distance 4 — not a field in
-the ISCH. `TestDUIDMatchesOP25Lookup` checks every correctable word against
-OP25's 256-entry lookup.
+the ISCH. `TestDUIDMatchesOP25Lookup` checks it against OP25's 256-entry
+lookup.
 
 **Voice.** A VOICE-4 burst holds four 72-bit AMBE+2 frames at body dibits 1,
 38, 86 and 123; VOICE-2 holds the first two. The codeword layout is DMR's
 exactly, so `ExtractAirVoiceFrames` hands each to `dmrvoice.DecodeAMBEFrame`
-after descrambling with the timeslot's slice of the 4320-bit PN44 superframe
-sequence.
+after descrambling with the timeslot's slice of the PN44 sequence.
 
 ```go
 // internal/radio/p25/phase2/airframe.go (shape)
@@ -301,9 +297,8 @@ var airDUIDBody = [4]int{0, 37, 122, 159}      // most significant dibit first
 var airSlotLCH = [AirSlotsPerSuperframe]int{0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0}
 ```
 
-**The swap.** That last table is the title of this post. The two logical
-channels alternate by timeslot — except the final pair, where timeslot 10 is
-channel 1 and timeslot 11 is channel 0. OP25 carries it as a slot table and
+**The swap.** The two logical channels alternate by timeslot — except the
+final pair, where timeslot 10 is channel 1 and timeslot 11 is channel 0. OP25 carries it as a slot table and
 SDRTrunk as a swap in its final fragment; `TestAirSlotLogicalChannel` pins
 it. Slot parity, the old decoder's `i & 1`, is right ten times in twelve;
 used as the filter it would hand one burst in six to the wrong call.
@@ -331,8 +326,8 @@ RS(63,35) code over GF(64), whose information part is the PDU and a CRC:
 `DecodeAirMAC` zero-fills the shortened leading symbols, names the unsent
 trailing parity as erasures, and calls `framing.DecodeRS63_35`, an
 errors-and-erasures decoder pinned to literal output of the RS library OP25
-uses. `TestDecodeAirMACCorrectsSymbolErrors` repairs 9 symbol errors on a
-FACCH and 11 on a SACCH; the CRC then arbitrates. A PDU's first byte is its
+uses; it repairs 9 symbol errors on a FACCH and 11 on a SACCH, and the CRC
+then arbitrates. A PDU's first byte is its
 type and an offset; `MAC_PTT` and `MAC_END_PTT` have fixed layouts — the
 key-up PDU carries the encryption sync and the talking radio — and every
 other type is a run of MAC messages whose lengths come from OP25's
@@ -342,9 +337,9 @@ The pin for this path runs in the unusual direction. Five packets — a FACCH
 and a SACCH scrambled, a FACCH, a SACCH and an LCCH clear — were built with
 `EncodeAirMACPacket` and fed to OP25's own decode path, compiled into a
 harness outside the repository. Each came back `crc_ok=1` with the expected
-bytes, and `TestDecodeAirMACMatchesOP25` keeps the packets as literals. An
-encoder can share a decoder's mistakes; an independent *decoder* accepting
-its output is evidence neither side wrote alone. OP25 is GPL and was read
+bytes (`TestDecodeAirMACMatchesOP25`). An encoder can share a decoder's
+mistakes; an independent *decoder* accepting its output is evidence neither
+side wrote alone. OP25 is GPL and was read
 for protocol facts; the layouts and lengths above are those facts.
 
 ## What is wired, what is verified
@@ -355,22 +350,19 @@ carries voice when the grant names none — and takes signalling from that
 channel plus any clear LCCH. `sigfollow.DispatchAir` decodes signalling on
 every slot. `ControlChannel.ProcessAir` frames a Phase 2 control channel and
 bootstraps its descrambling seed from a clear-LCCH Network Status Broadcast
-— whose parser, it turned out, had been reading the colour code from the
-channel bytes and installing a wrong seed.
+— whose parser had been reading the colour code from the channel bytes and
+installing a wrong seed.
 
 The settings `p25_phase2_trellis_mode`, `_rs_mode`, `_interleave_mode` and
 `_scrambler_mode` are still accepted and no longer read: the air format
 fixes the coding. The working-model decoder survives only for its own tests
-and one replay harness, pending deletion. The end-of-call
-`composer: p25p2 call census` line reports `air_bursts`, `voice_bursts`,
-`other_slot_voice_bursts` and `mac_pdus`.
+and one replay harness, pending deletion.
 
-On verification: everything in this post is **reference-pinned** against two
-decoders and **synthetic-verified**. The #1273 reporter's site has not
-confirmed it, so the on-air gate is open. Two defects in shared primitives
-turned up on the way — a scrambler with mirrored taps and a timing loop with
-a sign error — and a real Phase 2 carrier was later found in the
-repository's own samples. Those are the next part.
+Everything in this post is **reference-pinned** against two decoders and
+**synthetic-verified**. The #1273 reporter's site has not confirmed it, so
+the on-air gate is open. Two defects in shared primitives turned up on the
+way — a scrambler with mirrored taps and a timing loop with a sign error —
+and a real Phase 2 carrier was later found in the repository's own samples.
 
 ## What this overturns
 
@@ -381,11 +373,10 @@ anchored on one sync in sub-frame 0.
 [P25 End to End Part 7]({{ '/blog/deep-dives/p25-end-to-end-07-phase2-tdma/' | relative_url }})
 repeated both, added "even sub-frame index → timeslot 0, odd → timeslot 1",
 and walked MAC PDUs through a trellis → RS(24,16,9) chain. None of that is
-the air format. What stands from both: 6000 symbols per second, twelve 30 ms
-slots of 180 dibits, a PN44 seeded from the system's identity, and the MAC
-messages themselves. Part 5 of that series gives a band-plan resolver
-without the slot divide; for a TDMA channel ID the arithmetic above
-replaces it.
+the air format. What stands: 6000 symbols per second, twelve 30 ms slots of
+180 dibits, a PN44 seeded from the system's identity, and the MAC messages
+themselves. Part 5 of that series gives a band-plan resolver without the
+slot divide; for a TDMA channel ID the arithmetic above replaces it.
 
 ## What we keep
 
@@ -395,20 +386,18 @@ replaces it.
   working model needs a reference before it needs a boundary.
 - **Read a failure rate as structure before reading it as signal.** A check
   that fails about half the time may be applied to the wrong bits.
-- **When two references agree, pin them against each other.** A generator
-  matrix from one and a table from the other cannot share a transcription
-  error.
-- **Let an independent decoder accept your encoder.** With no capture, five
-  packets through someone else's CRC is the nearest thing to air.
+- **When two references agree, pin them against each other.** A matrix from
+  one and a table from the other cannot share a transcription error.
+- **Let an independent decoder accept your encoder.** Five packets through
+  someone else's CRC is the nearest thing to air.
 
 ## Where this goes next
 
-The framing was only half of what was wrong. The scrambler that every
-Phase 2 burst depends on tapped the wrong bits, the timing loop under the
-receiver walked half a symbol off, and the capture that finally said so had
-been in `samples/` all along.
-[Part 12]({{ '/blog/solution-postmortem/rebuilt-from-the-air-12-pn44-gardner-real-carrier/' | relative_url }})
-is those three stories.
+The framing was half of what was wrong. The scrambler every Phase 2 burst
+depends on tapped the wrong bits, the timing loop under the receiver walked
+half a symbol off, and the capture that said so had been in `samples/` all
+along —
+[Part 12]({{ '/blog/solution-postmortem/rebuilt-from-the-air-12-pn44-gardner-real-carrier/' | relative_url }}).
 
 ## FAQ
 
@@ -428,13 +417,13 @@ channel 1. The last pair is swapped, so slot parity alone is not enough.
 A shortened, punctured Reed–Solomon RS(63,35) code over six-bit symbols,
 then a CRC-12 on FACCH and SACCH or a CRC-16 on the LCCH. Scrambled bursts
 are first XORed with the PN44 sequence for their timeslot. There is no
-trellis code on Phase 2 signalling.
+trellis code.
 
 **Is GopherTrunk's P25 Phase 2 decode verified on air?**
 The framing, voice positions and MAC coding are pinned to OP25 and SDRTrunk
 constants and to packets OP25's own code accepts. The reporter's hybrid site
-has not confirmed it. Part 12 covers the first real Phase 2 carrier decoded
-with the rebuilt path, and what that capture can and cannot prove.
+has not confirmed it; Part 12 covers the first real Phase 2 carrier decoded
+with the rebuilt path.
 
 ## Series navigation
 

@@ -259,7 +259,7 @@ Present means IQ was lost upstream; absent means signal or demod
     <text x="475" y="84">LDU syncs 790–850</text><text x="475" y="96">apart, not 864 (#1242)</text>
     <text x="610" y="84">only when 1–4 say</text><text x="610" y="96">the file is sound</text>
   </g>
-  <text x="340" y="130" text-anchor="middle" fill="currentColor" font-size="9">every wrong diagnosis in this post started at box 5</text>
+  <text x="340" y="130" text-anchor="middle" fill="currentColor" font-size="9">start at box 5, and a file that never held the signal looks like a broken receiver</text>
 </svg>
 <figcaption>Four cheap questions about the file come before the first question about the receiver, and each one caught a real capture.</figcaption>
 </figure>

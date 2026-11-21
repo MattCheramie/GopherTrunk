@@ -17,8 +17,7 @@ something independent, and pinned to real air where a capture exists.
 [Part 3]({{ '/blog/solution-postmortem/rebuilt-from-the-air-03-ctcss-dcs-tone-gates/' | relative_url }})
 followed the tone gates through two rounds on a reporter's bench. This part
 has no reporter at all: FLEX was caught by reading a reference before
-extending the decoder, and the reading showed the decoder had never matched
-a frame.*
+extending a decoder that, it turned out, had never matched a frame.*
 
 > **TL;DR:** A request for FLEX at 3200 and 6400 bps began with reading
 > multimon-ng's frame handling, and that showed the shipped 1600 bps decoder
@@ -72,7 +71,7 @@ a frame.*
 ## The symptom: there wasn't one
 
 GopherTrunk has listed [FLEX]({{ '/reference/flex/' | relative_url }})
-paging beside POCSAG since the decoder landed as a "1600/2" first slice —
+paging beside POCSAG since the decoder landed as a "1600/2" slice —
 1600 bps, two-level FSK, one phase.
 [Beyond Voice, Part 6]({{ '/blog/deep-dives/beyond-voice-06-pocsag-flex-paging/' | relative_url }})
 walked it in September and was careful about its status: one mode,
@@ -96,8 +95,8 @@ found: the existing 1600 bps decoder's framing "matched no real frame."
 four-state machine fed one bit at a time — hunt the marker, read the mode
 code, read the frame information word, de-interleave the data — whose mode
 check reset on anything but `0x870C`, recognising the other modes "enough
-to be skipped cleanly." Extending it looked like filling in that branch. It
-could not be extended: its first two states were in the wrong order.
+to be skipped cleanly." That branch could not simply be filled in: the
+machine's first two states were in the wrong order.
 
 **"Reversing 31 bits turns POCSAG's BCH into FLEX's."** Both protocols use
 the same BCH(31,21) code, and the old `bch_flex.go` reasoned that the two
@@ -106,7 +105,7 @@ preserves Hamming distance, so we reuse the tested POCSAG primitive." The
 premise is true: reversal maps codewords to codewords, so two errors still
 get corrected. But it hands back the 21 information bits in reverse order,
 and every field the page layer reads is a bit range of that word. A
-property of the code was mistaken for a property of the layout.
+property of the code was taken for a property of the layout.
 
 Both files' comments said the on-wire bit order still needed a real
 capture. That did not make the tests less green: the test encoder
@@ -219,7 +218,7 @@ And at 3200 symbols/s alternate symbols belong to phases A/B and C/D.
 
 The page layer moved too. The frame information word, the block
 information word and every vector word carry a nibble checksum — five
-nibbles plus bit 20 summing to `0xF` — which the decoder now enforces. The
+nibbles plus bit 20 summing to `0xF` — now enforced. The
 old page-type table agreed with the real vector types in two of eight
 positions, tone and alphanumeric; a numeric page is type 3, not 0 or 1.
 Long two-word addresses and messages split across frames are new.
@@ -239,9 +238,9 @@ Three things pin the new layout. `TestFLEXBCHLayout` is a vector worked by
 hand from the generator: information bit 20 alone must set bits 21, 22, 24,
 25, 27 and 30, plus the parity bit. The POCSAG encoder is a second
 implementation of the same code. And the air pins it from the other side:
-a random 31-bit word has a zero syndrome once in 1024, so
-`TestRealAirWordsAreCodewords` requires at least 80 % of the on-air words
-to be error-free codewords and none uncorrectable.
+a random word has a zero syndrome once in 1024, so
+`TestRealAirWordsAreCodewords` requires 80 % of the on-air words to be
+error-free codewords and none uncorrectable.
 
 The decoder changed too. The old one searched all 2^21 codewords for the
 nearest — milliseconds per word, with 352 words in a 6400 bps frame. A
@@ -255,7 +254,7 @@ multimon-ng's own test suite contains a FLEX recording of the Dutch P2000
 network at 1600 bps. Five frames sliced from it are committed as
 `testdata/p2000_1600x2_frames.hex` — one line per frame, the 2904 symbols
 after the 64-bit sync, one bit per symbol. The recording itself is the
-reference project's GPL content and is not in the repository.
+reference project's GPL content and is not committed.
 
 `TestRealAirFrames` pushes each frame through the decoder and expects the
 ten pages multimon-ng's suite expects from that audio: capcode 1120103
@@ -265,13 +264,17 @@ which, 1400141, starts in frame 12 and finishes in frame 13, so fragment
 reassembly is pinned too. The counters must read five frames synced, no
 frame-information-word errors, no failed words. Of the decoder this
 replaced, the test's comment says it "decoded none of these frames."
-(Paging is unencrypted and often personal; monitor it only where you are
-permitted to. The pages quoted here are the network's own test traffic.)
+(Paging is unencrypted and often personal; monitor it only where you may.
+The pages quoted here are the network's own test traffic.)
 
 `TestRealAirFrameSections` turns the fixture on the synthesiser:
 `FrameSymbols` must reproduce the sixteen sync-tail symbols and the second
 sync as the air carries them, and re-encoding the on-air frame information
 word — cycle 0, frame 12 — must give back the transmitted word bit for bit.
+
+The fixture holds symbols, not audio, so in CI it is "the on-air pin for
+everything below the symbol slicer." The slicer above it is covered by
+synthetic FSK and by replaying a recording by hand.
 
 Now the limit. Five 1600 bps frames exercise phase A, two levels, one
 rate. They do not touch four-level slicing, the Gray mapping, the A/B–C/D
@@ -289,8 +292,8 @@ beyond that.
 The old front end was POCSAG's — an integrator and a mean-tracking sign
 slicer at a fixed 1600 baud — and a sign slicer cannot read four levels.
 `receiver/demod.go` resamples the discriminator to 25.6 kHz — sixteen
-samples per symbol while hunting, eight in a 3200 symbols/s body — and does
-three things differently.
+samples per symbol while hunting, eight in a 3200 symbols/s body — and
+does three things differently.
 
 **Hunt at every phase, with no loop.** The sync is searched at all sixteen
 sample phases of the 1600 symbols/s grid at once, and the middle of the run
@@ -308,7 +311,7 @@ run 0, 0, 2, 2 — no centre crossing for thousands of symbols — and a 60 ppm
 clock error free-running that long slides the slicer a third of a symbol
 off, after which mis-sliced symbols feed the loop and it runs away. The
 loop uses the midpoint of whichever two levels a transition joins.
-`TestDemodFollowsMixedRates` runs five mixed-mode frames back to back at
+`TestDemodFollowsMixedRates` holds it across five mixed-mode frames at
 ±60 ppm.
 
 Your own recording replays through the same demodulator:
@@ -336,11 +339,11 @@ the recipe.
 described the FLEX decoder as it then was, and its FLEX half is superseded:
 the four-state machine that read a mode code after the marker, the single
 supported mode `0x870C`, `FLEXBCHDecode32` as a 31-bit reversal around the
-POCSAG primitive, short addresses only, no reassembly, and a receiver that
+POCSAG primitive, short addresses, no reassembly, and a receiver that
 was "the same chain at a fixed 1600 baud." Its POCSAG half stands, as does
-everything downstream — the `pager.message` event, `pager_log`, the REST
-route, the panel and `paging.wideband`. Its status splits in two: 1600 bps
-is now capture-verified; the modes it listed as follow-ups exist and are
+everything downstream, from the `pager.message` event to the panel and
+`paging.wideband`. Its status splits in two: 1600 bps is now
+capture-verified; the modes it listed as follow-ups exist and are
 synthetic-verified.
 
 ## What we keep
@@ -348,9 +351,9 @@ synthetic-verified.
 - **Read the reference before extending.** The request was for two new
   modes; the finding was that the old one never worked.
 - **Separate what a transform preserves from what it rearranges.** Bit
-  reversal keeps Hamming distance and scrambles field positions.
+  reversal keeps Hamming distance and moves every field.
 - **Say which path a capture pins.** "Real-air pinned" is true of 1600 bps
-  and silent about phases B, C and D; the status has to be per mode.
+  and silent about phases B, C and D; status is per mode.
 - **An independent encoder can run out.** Where the reference cannot
   generate a mode, the only pin left is a recording.
 
@@ -360,8 +363,8 @@ FLEX had a right marker in a wrong frame. The next decoder had a right
 *physical layer* under six wrong ones.
 [Part 5]({{ '/blog/solution-postmortem/rebuilt-from-the-air-05-lora-bit-layer/' | relative_url }})
 is LoRa, where the chirps, the preamble sync and the SFD were real all
-along and everything from the symbol up was invented — and where two
-independent references, transcribed separately, agree on 2,916 cases.
+along and everything from the symbol up was invented — and two independent
+references, transcribed separately, agree on 2,916 cases.
 
 ## FAQ
 

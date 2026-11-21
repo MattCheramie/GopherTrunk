@@ -51,7 +51,7 @@ correct, and whose receiver still never locked on a radio.*
 
 | | |
 |---|---|
-| Issue | [#1220](https://github.com/MattCheramie/GopherTrunk/issues/1220) — MDC1200 never locks on a real radio (the decoder shipped for [#438](https://github.com/MattCheramie/GopherTrunk/issues/438)) |
+| Issue | [#1220](https://github.com/MattCheramie/GopherTrunk/issues/1220) — where the first on-air MDC1200 run was reported (the decoder shipped for [#438](https://github.com/MattCheramie/GopherTrunk/issues/438)) |
 | Symptom | on the reporter's bench FleetSync decoded through the same DSP chain; MDC1200 "never locked" — zero sync locks, not CRC failures |
 | Wrong theories | the DSP chain; an inverted discriminator; a wrong sync word, interleave or CRC; the slicer threshold |
 | Real cause | the line code — tone decisions pushed to the framer as data, when the data is the running XOR of the tone decisions |

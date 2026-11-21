@@ -75,9 +75,10 @@ not — refuse to run a Linux binary, and quietly stop giving you CPU.*
 
 ## What you're building
 
-A pocket receiver for the jobs that happen away from the desk: a band
-survey from a hilltop, a walk past the utility meters, a capture of a
-signal you can only reach on foot.
+A pocket receiver, on [Android]({{ '/reference/android/' | relative_url }}),
+for the jobs that happen away from the desk: a band survey from a hilltop,
+a walk past the utility meters, a capture of a signal you can only reach
+on foot.
 
 Two facts shape everything. First, Android will not hand a USB dongle
 straight to a Termux program. The dongle is therefore reached the way a
@@ -188,13 +189,17 @@ The first is a band survey
 ([Part 11]({{ '/blog/tutorials/cookbook-volume-2-11-band-survey/' | relative_url }})),
 the second a meter walk
 ([Part 12]({{ '/blog/tutorials/cookbook-volume-2-12-meter-walk/' | relative_url }})),
-the third a recording to decode at home, where nothing is in a hurry.
+the third a recording to decode at home, where nothing is in a hurry
+([capture discipline]({{ '/blog/tutorials/analog-edge-10-capture-discipline/' | relative_url }})
+applies on a phone too).
 `-log` appends everything `wmbus` prints to a file as it happens, which
 matters when the phone is in a pocket.
 
 The daemon is the same dongle under `sdr.rtl_tcp`. This config logs one
-P25 control channel — lock, grants, the web console's activity views —
-and nothing more, because one dongle behind one rtl_tcp session is one
+P25 control channel — lock, grants, the web console's activity views, in
+the console's
+[mobile shell]({{ '/blog/deep-dives/operator-cockpit-11-mobile-shell-pwa/' | relative_url }})
+— and nothing more, because one dongle behind one rtl_tcp session is one
 tuner:
 
 ```yaml
@@ -254,9 +259,10 @@ wmbus: listening on rtl_tcp 127.0.0.1:1234 at 868.950 MHz, 1600000 S/s (Ctrl-C t
 wmbus: listening 5m0s (14:02:39): 3 frames (1 CRC-valid, 2 CRC-failed), 5 access codes in 41 bursts, 0 dropped chunks, ...
 ```
 
-The number to watch is the last: **dropped chunks must stay at 0**. When it
-does not, the warning tells you which of two different problems you have.
-This one is the phone, not the decoder:
+The number to watch is the last: **dropped chunks must stay at 0** (a
+drop is an [overrun]({{ '/reference/overruns-underruns/' | relative_url }})
+by another name). When it does not, the warning tells you which of two
+different problems you have. This one is the phone, not the decoder:
 
 ```text
 wmbus: WARNING — the SDR has dropped ... IQ chunk(s) (... since the last line): in the last 3m44s the decoder got through only 30s of IQ (13% of real time), so about ... of air went unheard. Something is starving GopherTrunk of CPU; on a phone that is usually the screen turning off or Termux going to the background. Keep the screen on, run termux-wake-lock before starting, and exempt Termux from battery optimisation.
@@ -294,7 +300,9 @@ behaviour; a phone is the only real test. Reporters have supplied these:
 
 Not confirmed on a phone: the daemon in any configuration; host-name
 resolution in the Android build (use a numeric address); and the burst
-gate's CPU saving, which was measured on a desktop.
+gate's CPU saving, which was measured on a desktop. And what a phone is
+the wrong tool for: anything that needs a second tuner — following voice
+calls beside a control channel — and anything that needs live sound.
 
 ## When it doesn't work
 
@@ -330,8 +338,10 @@ supply, a descriptor-read error at the dongle.
 ## Variations
 
 - **A rooted phone.** As root GopherTrunk opens the dongle itself, exactly
-  as on a PC: leave out `-rtltcp`. Force-stop the driver app first — only
-  one program can hold the dongle.
+  as on a PC — the
+  [USBDEVFS path]({{ '/blog/deep-dives/rf-front-end-05-usb-on-linux-usbdevfs/' | relative_url }})
+  — so leave out `-rtltcp`. Force-stop the driver app first: only one
+  program can hold the dongle.
 - **A dongle somewhere else.** `-rtltcp` takes any rtl_tcp server, so the
   phone can be the screen for a Raspberry Pi at the antenna. Use its
   numeric address.

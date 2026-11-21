@@ -46,8 +46,7 @@ between the demodulated bit and the vocoder was wrong.*
   null voice frame, produced outside the repository, replaced every round
   trip as the definition of correct.
 - **A decoder's error count is not always evidence.** mbelib's convention
-  counts corrected *data* bits, which a third of random frames pass; late
-  entry gates on re-encode distance instead.
+  counts corrected *data* bits, which a third of random frames pass.
 
 ## Cheat sheet
 
@@ -63,12 +62,12 @@ between the demodulated bit and the vocoder was wrong.*
 
 ## In this post
 
-- **A decoder with nothing to decode** — how the audit started without a capture.
+- **A decoder with nothing to decode** — an audit that started without a capture.
 - **The wrong theory: calibration** — what the earlier post believed was left.
 - **The diagnostic: the firmware's own bits** — vectors made outside the repository.
-- **Sync, header and CRC as they are sent** — the real chain, and the one right number.
+- **Sync, header and CRC as they are sent** — the real chain.
 - **The Golay nobody suspected** — a clean frame, three corrections, and dPMR.
-- **Joining a transmission** — two receivers, late entry and the wrong error count.
+- **Joining a transmission** — two receivers, late entry, the wrong error count.
 
 ## A decoder with nothing to decode
 
@@ -94,8 +93,7 @@ That turned a feature into an audit, and it did not stop at the sync words.
 described the package in September, and it was candid. The header FEC chain
 was "self-consistent encode/decode pairs" whose match to the reference's
 tables "is a follow-up calibration step". The voice chain's deinterleave was
-a sequential split marked `PLACEHOLDER`. Those two caveats were the whole
-list.
+a sequential split marked `PLACEHOLDER`. That was the whole list.
 
 It is the same word the LoRa bit layer hid behind in
 [Part 5]({{ '/blog/solution-postmortem/rebuilt-from-the-air-05-lora-bit-layer/' | relative_url }}).
@@ -206,8 +204,8 @@ them most significant bit first *is* time order: `FrameSyncHex` `0x557650`
 [GMSK]({{ '/reference/gmsk/' | relative_url }}) receiver slices the other
 way, and radios differ. Neither sync is its own complement, so every
 detector searches for the pattern and its inverse and learns the polarity
-from which one matched (`Polarity`). `TestProcessDecodesMMDVMHeaderBursts`
-feeds the firmware's bursts both ways, in uneven chunks.
+from which one matched. `TestProcessDecodesMMDVMHeaderBursts` feeds the
+firmware's bursts both ways.
 
 **The header FEC.** The 41 header bytes go out least significant bit first
 with two zero tail bits — 330 bits — through a K=3, rate-½
@@ -244,10 +242,9 @@ bits, applied a 15-bit PN and a 22×30 block interleave. It, too, arrived at
 `0x8408`, initial value and final XOR `0xFFFF` — carried low byte first.
 GopherTrunk had the unreflected `0x1021` CRC with no final XOR, stored high
 byte first. `TestComputeCRCKnownVector` now pins the catalogue check value
-`0x906E` for `"123456789"` (the old function gives `0x29B1`) and the two CRC
+`0x906E` for `"123456789"` (the old function gives `0x29B1`) and the CRC
 bytes of a header the reference host software sealed. One flag was wrong
-too: the urgent bit in FLAG1 is `0x08`; the old code read `0x04`, which is
-part of the repeater-control code.
+too: FLAG1's urgent bit is `0x08`; the old code read `0x04`.
 
 `dstar_fec_mode` now defaults to `"on"`. The earlier default, `"off"`, read
 41 unencoded bytes after the sync — a format no radio sends.
@@ -287,8 +284,7 @@ c1data, c1errs := dmrvoice.GolayDecode2312(c1cw)
 ```
 
 The error compounds: C0's data seeds the pseudo-random sequence that
-descrambles C1, so a wrong C0 scrambles C1 before its own decode. The
-round-trip test stayed green because the encoder used the same wrong code.
+descrambles C1, so a wrong C0 scrambles C1 before its own decode.
 
 `TestDVVoiceDecodesMMDVMNullFrameWithoutCorrection` is the pin. The
 firmware's null frame — `9E 8D 32 88 26 1A 3F 61 E8`, bytes least
@@ -379,11 +375,10 @@ twelve timeslots, and the two that swap.
 ## FAQ
 
 **Can GopherTrunk decode D-STAR?**
-The code now follows the on-air format the MMDVM firmware transmits: the
-header decodes through its real FEC and CRC, and voice frames reach the
-vocoder through the right bit schedule and Golay code. It is pinned to that
-firmware's own output but has not decoded a real D-STAR capture, so audio is
-labelled experimental.
+The code now follows the format the MMDVM firmware transmits: the header
+decodes through its real FEC and CRC, and voice frames reach the vocoder
+through the right schedule and Golay code. It is pinned to that firmware's
+output but has not decoded a real D-STAR capture, so audio is experimental.
 
 **Why did a clean D-STAR voice frame decode to the wrong audio?**
 The voice FEC used a Golay(23,12) decoder for a different code than the one
@@ -395,8 +390,8 @@ carries; dPMR's on-air interleave is still a placeholder.
 **What are the real D-STAR sync words?**
 In time order, as the MMDVM firmware matches them: `0x557650` for the frame
 sync with its preamble tail and trailing zeros, `0xAAB468` for the slow-data
-sync carried every 21 DV frames, and a 48-bit end pattern. A receiver may
-see everything inverted, so both polarities are searched.
+sync every 21 DV frames, and a 48-bit end pattern. Both polarities are
+searched.
 
 **How does GopherTrunk join a D-STAR transmission that is already under way?**
 It anchors on the slow-data sync, then decodes from history the frames it

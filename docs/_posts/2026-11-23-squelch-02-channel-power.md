@@ -131,8 +131,8 @@ point with a squelch attached.
 
 ## Bandwidth is decibels
 
-It is worth doing the arithmetic, because it says how wrong the old number
-was even on a perfectly quiet band. Receiver noise is flat across the span,
+The arithmetic is worth doing, because it says how wrong the old number
+was even on a quiet band. Receiver noise is flat across the span,
 so its power is proportional to the
 [bandwidth]({{ '/reference/bandwidth/' | relative_url }}) it is measured
 over. An FM channel is narrow; the meter this post ends with passes ±8 kHz,

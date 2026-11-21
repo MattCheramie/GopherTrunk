@@ -77,8 +77,8 @@ The reporter was scanning PMR446 on a PlutoSky — an AD936x board of the
 driver is
 [Cookbook Volume 2 Part 13]({{ '/blog/tutorials/cookbook-volume-2-13-pluto-native/' | relative_url }}) —
 with `squelch_dbfs: -60`. The scanner opened a call 100 ms after start-up on
-an empty channel and recorded noise: one recording ran 33 minutes, another
-41.
+an empty channel and recorded noise: one recording ran 33 minutes and
+another ran 41.
 
 Nothing was broken in the sense Part 2 fixed. The power was being measured
 in the channel. It was simply above the threshold. The 17 Nov log shows the

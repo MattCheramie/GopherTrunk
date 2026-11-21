@@ -246,13 +246,14 @@ if active {
 
 `Hangtime` defaults to 1500 ms (`hangtime_ms`), so a pause or a reply stays
 one call. The debounce (50 ms, `activity_debounce_ms`) exists because of
-#1090. The original loop cleared the countdown on *any* chunk above the
-threshold; a chunk at 2.4 MS/s lasts under two milliseconds, so a blip
-recurring faster than the hangtime — a carrier tail, impulse noise, an
-intermod product — held the call open indefinitely. Now activity must be
-continuous for 50 ms, about thirty chunks, before it counts as renewed; a
-lone blip sets `aboveSince`, the next quiet chunk clears it, and the silence
-already counted survives (`TestConvScannerBriefBlipsDoNotHoldSquelchOpen`).
+[#1090](https://github.com/MattCheramie/GopherTrunk/issues/1090). The
+original loop cleared the countdown on *any* chunk above the threshold; a
+4096-sample chunk at 2.4 MS/s lasts 1.7 ms, so a blip recurring faster than
+the hangtime — a carrier tail, impulse noise, an intermod product — held the
+call open indefinitely. Now activity must be continuous for 50 ms, about
+thirty such chunks, before it counts as renewed; a lone blip sets
+`aboveSince`, the next quiet chunk clears it, and the silence already
+counted survives (`TestConvScannerBriefBlipsDoNotHoldSquelchOpen`).
 
 The edges are asymmetric on purpose: the trailing edge is debounced, the
 leading edge is not, because a late open loses the start of a transmission

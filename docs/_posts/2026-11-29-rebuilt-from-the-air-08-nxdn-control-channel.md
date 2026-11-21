@@ -47,8 +47,7 @@ and lock a trunked control channel. One eight-second capture answered both.*
   spec-mode CAC coder had the real code, puncture and interleave, and never
   saw a real frame behind a sync word that does not exist.
 - **Two fields that check each other settle a layout.** SITE_INFO's location
-  `0x400AA1` splits to site 1; every CAC's SR carries RAN 1, the site code
-  mod 64.
+  splits to site 1; every CAC's SR carries RAN 1, the site code mod 64.
 
 ## Cheat sheet
 
@@ -92,8 +91,8 @@ committed as `testdata/nxdn96_rcch_cc_453775_19oct_48k.cs16`, and
 `TestAirFramerFramesRealNXDNControlChannel` holds it to that spacing.
 
 So the frame layer was already right; nothing above it was. And the same
-recording carried a measurement nobody had asked for: taken just after a ppm
-calibration, its carrier walked from −645 Hz to −679 Hz in those 8.7 seconds.
+recording, taken just after a ppm calibration, showed its carrier walking
+from −645 Hz to −679 Hz in those 8.7 seconds.
 
 ## Why "ppm ±1" worked
 
@@ -296,10 +295,9 @@ mod 64. Two fields in different parts of the frame, read by different code,
 agree. SITE_INFO also names control channel 1 and two adjacent sites, which
 is how the reporter describes the system.
 
-`ControlChannel.Process` now runs the voice path's `airFramer` at the top of
-every call, beside the legacy paths, and hands each frame to
-`ingestAirFrame`. From the committed slice,
-`TestControlChannelLocksOnRealAirCAC` logs:
+`ControlChannel.Process` now runs the voice path's `airFramer` beside the
+legacy paths and hands each frame to `ingestAirFrame`. From the committed
+slice, `TestControlChannelLocksOnRealAirCAC` logs:
 
 ```text
 INFO nxdn cc locked freq=453775000 rate=9600 site=1 sys=85
@@ -310,9 +308,8 @@ The control-channel pipelines in `ccdecoder` and `widebandt2` turn the
 carrier tracker on — at the capture's roughly −650 Hz they decoded zero CAC
 frames without it — but not the voice chain's channel filter, which on the
 Signal Lab wideband survey turned DMR leakage into a false NXDN guess. The
-synthetic fixtures moved too: `EncodeAirControlFrame` is held dibit for
-dibit to an independent encoder by
-`TestEncodeAirControlFrameMatchesIndependentEncoder`.
+synthetic fixtures moved too, held dibit for dibit to an independent encoder
+(`TestEncodeAirControlFrameMatchesIndependentEncoder`).
 
 On 21 October the reporter's system did it live: lock, grant follow, calls
 uploaded with talkgroup and radio ID across ten channels; conventional
@@ -384,17 +381,16 @@ voice scrambler, with keys they had programmed themselves and shared with
 the captures.
 [Part 9]({{ '/blog/solution-postmortem/rebuilt-from-the-air-09-nxdn-scrambler/' | relative_url }})
 is how a known key became an instrument. The operator recipe is
-[Cookbook Volume 2, Part 3]({{ '/blog/tutorials/cookbook-volume-2-03-nxdn/' | relative_url }});
-the [NXDN page]({{ '/nxdn-scanner/' | relative_url }}) has the summary.
+[Cookbook Volume 2, Part 3]({{ '/blog/tutorials/cookbook-volume-2-03-nxdn/' | relative_url }}),
+with a summary on the [NXDN page]({{ '/nxdn-scanner/' | relative_url }}).
 
 ## FAQ
 
 **Why does NXDN decoding stop after a few minutes until I change the ppm setting?**
 The receiver used to correct carrier offset only after its symbol-timing
 loop, which failed at roughly ±750–1250 Hz on NXDN48. A drifting dongle
-walks into that band, and moving the ppm by one shifts the carrier 447 Hz
-back out. The voice chain now tracks the carrier ahead of the discriminator
-and decodes across ±3 kHz.
+walks into that band, and one ppm moves it back out. The voice chain now
+tracks the carrier ahead of the discriminator and decodes across ±3 kHz.
 
 **How does GopherTrunk decode an NXDN control channel?**
 It finds the 20-bit frame sync, descrambles the frame, checks the LICH, then
@@ -406,12 +402,12 @@ publishes a voice grant.
 Lock, grant following and recording are: the reporter's ten-channel system
 ran live on 21 October. Lock and the site broadcasts are also
 capture-verified on a committed slice. The VCALL_ASSGN layout is
-reference-pinned only, because that capture has no call on it.
+reference-pinned only; that capture has no call on it.
 
 **Why are my NXDN voice grants dropped with a no-bandplan warning?**
 An NXDN grant carries a channel number, not a frequency. Add an
-`nxdn_band_plan` to the system — `linear` or a `table` of
-channel-to-frequency entries — and the grants resolve.
+`nxdn_band_plan` to the system — `linear` or a `table` — and the grants
+resolve.
 
 ## Series navigation
 
