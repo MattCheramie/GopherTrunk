@@ -7,6 +7,18 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **The daemon warns about config keys that nothing reads.** A section
+  indented one level too far, or a misspelled key, used to load without a word
+  and leave its feature at the default. At start-up (and on a config reload)
+  each such key is now logged and pinned with the other start-up warnings, for
+  example `config line 38: "log" under trunking.systems[] is not a setting and
+  is ignored: "log" is a top-level section, so it is indented too far here;
+  move it to the left margin`. The file still loads, as before. This is what
+  hid a support request's diagnostics: `log:`, `recordings:` and `baseband:`
+  were pasted under the trunking system, so the debug log and the voice IQ
+  capture never switched on.
+
 ### Fixed
 - **P25 Phase 2 voice came out as garbled noise, "as if it is encrypted".**
   The recorder decoded Phase 2 voice with the wrong AMBE table set: the

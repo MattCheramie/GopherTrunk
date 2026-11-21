@@ -201,6 +201,15 @@ confirmation before any close-as-completed.
   (`composer/p25p2_voice.go`) passes an update only when talker or flags change; a hang-time update names
   no radio (source 0) and counts as the last talker. The DMR chain had the same dedupe already
   (`lastSrcUpd`); a new chain that publishes source updates needs one too.
+- **`config.Load` is a LENIENT decode: a key under the wrong section is dropped silently.** In the same
+  report the reporter pasted the `log:` / `recordings:` / `baseband:` blocks we asked for under the
+  trunking system, so no debug log and no `voice_iq_debug` file appeared and he copied the terminal instead.
+  `config.UnknownKeys` (a strict yaml.v3 decode; every setting is a plain struct field, so it has no
+  false-positive class, and `TestUnknownKeysQuietOnShippedConfigs` holds the shipped configs clean) now
+  feeds a start-up / reload WARN naming line, key and section. When a reporter says a setting "did
+  nothing", ask for the `config line N:` warnings first. When telling someone to add a section, say it goes
+  at the left margin and must be merged into an existing block of the same name (a second top-level
+  `recordings:` is a YAML duplicate-key error).
 - **"Recording far shorter than the call" (#1242 follow-up) is usually the HOLD, not lost audio —
   read `audio_pct` before chasing decode.** A call's duration is its wall-clock span (overs + gaps +
   hangtime); the WAV holds only decoded frames. Two defects made that look like loss: the sidecar's

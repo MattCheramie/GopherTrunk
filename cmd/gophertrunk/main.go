@@ -363,6 +363,13 @@ func runDaemon(args []string) {
 	if err != nil {
 		rep.Fatal(2, err)
 	}
+	// Keys the file carries that no setting reads: logged for a headless
+	// run and pinned with the other start-up warnings for the launcher and
+	// the dashboard.
+	for _, w := range unknownKeyWarnings(*cfgPath) {
+		logger.Warn(w)
+		preflightWarnings = append(preflightWarnings, w)
+	}
 
 	// Single-instance lock. Two daemons aimed at the same config
 	// would race the RTL-SDR USB claim and crash both libusb hands;

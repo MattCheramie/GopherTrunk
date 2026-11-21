@@ -47,6 +47,11 @@ func (d *Daemon) reloadFrom(path string) (applied, restartRequired []string, err
 	if err != nil {
 		return nil, nil, err
 	}
+	// A reload is when a freshly edited file is read: say which of its
+	// keys nothing reads (see unknownKeyWarnings).
+	for _, w := range unknownKeyWarnings(path) {
+		d.log.Warn(w)
+	}
 
 	// Serialise the diff-apply phase against concurrent Cfg() reads
 	// (test harnesses + the runtime DTO builder may race with us).
