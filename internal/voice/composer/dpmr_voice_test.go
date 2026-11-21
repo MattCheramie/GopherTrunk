@@ -9,12 +9,12 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/voice/mbe"
 )
 
-// TestDPMRTCHFrameRendersToPCM closes the dPMR voice loop end to end at
-// the frame-format boundary: a TCH voice frame's 49-bit payload, packed
+// TestDPMRTCHFrameRendersToPCM closes the dPMR voice loop at the
+// frame-format boundary: a TCH voice frame's 49-bit payload, packed
 // MSB-first to 7 bytes exactly as runDPMRVoiceChain's sink does, must
 // be accepted by the "ambe2-dmr" (3600x2450) vocoder the recorder maps
-// "dpmr" to, and produce one 20 ms PCM frame. (The upstream carve/FEC/
-// codebook remain unverified on air — mirrors the NXDN test.)
+// "dpmr" to, and produce one 20 ms PCM frame. (dpmr_voice_air_test.go
+// covers the path from IQ to that payload.)
 func TestDPMRTCHFrameRendersToPCM(t *testing.T) {
 	// A synthetic 49-bit payload round-tripped through the AMBE FEC, so
 	// it is a well-formed TCH frame (mirrors what ExtractTCHFrames yields).
