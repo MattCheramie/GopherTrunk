@@ -117,10 +117,11 @@ transmitter: the MMDVM firmware's header encoder, with the host software's
 CRC routine, was compiled outside the repository and run on four headers —
 a CQ call, a repeater-routed call, an urgent call and one full of arbitrary
 bytes. Its output, the on-air bits in transmission order, is committed as
-`framing/testdata/dstar_header_mmdvm.txt`. The firmware is GPL; it was read
-for protocol facts and used to *produce* vectors. No source is ported, and
-GopherTrunk's interleave and scrambler are generated in code and checked
-against the firmware's tables, not copied from them.
+`framing/testdata/dstar_header_mmdvm.txt`. The firmware is GPL; under the
+[clean-room rules]({{ '/blog/deep-dives/from-spec-to-shipping-05-clean-room-rules/' | relative_url }})
+it was read for protocol facts and used to *produce* vectors. No source is
+ported; GopherTrunk's interleave and scrambler are generated in code and
+checked against the firmware's tables.
 
 Two checks per burst — decode it to the header bytes with a zero path
 metric, and re-encode those bytes to the same bits — make eight

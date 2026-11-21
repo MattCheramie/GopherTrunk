@@ -64,7 +64,6 @@ this is also the first part where "does it work on air?" has a dated answer.*
 ## In this post
 
 - **What you're building** — two rigs, one frame layer.
-- **The shopping list** — two dongles for trunked, one for conventional.
 - **The config** — the trunked file, then the scan-list file.
 - **First run — what healthy looks like** — a real lock, a real call.
 - **When it doesn't work** — symptom → cause → fix.
@@ -82,8 +81,8 @@ assignment names a talkgroup, a radio and a channel *number*. A band plan
 turns that number into hertz, a second dongle tunes there, and the call is
 decoded, recorded and, if you want, uploaded.
 
-**Recipe B** is NXDN without trunking: a business or plant channel where
-radios simply key up. It goes on the scan list of
+**Recipe B** is NXDN without trunking: a channel where radios simply key
+up. It goes on the scan list of
 [Volume 1, Part 6]({{ '/blog/tutorials/operator-cookbook-06-analog-fm-tone-out/' | relative_url }})
 as a digital mode. Power alone does not open it; a call gate does, and
 [Squelch, Part 9]({{ '/blog/deep-dives/squelch-09-call-gates-ysf-nxdn-dstar/' | relative_url }})
@@ -91,9 +90,9 @@ explains what it listens for.
 
 If you built the DMR Tier III rig in
 [Volume 1, Part 2]({{ '/blog/tutorials/operator-cookbook-02-dmr-tier3/' | relative_url }}),
-Recipe A will feel familiar: a control channel that hands out logical
-channel numbers, and a plan to resolve them. What is different is the
-history. The NXDN frame layer described in
+Recipe A will feel familiar: a control channel that hands out channel
+numbers, and a plan to resolve them. The history differs. The NXDN frame
+layer described in
 [Protocol Decoders, Part 6]({{ '/blog/deep-dives/protocol-decoders-06-nxdn-dpmr/' | relative_url }})
 never matched a real radio; it was rebuilt from captures, and
 Rebuilt From the Air tells it in three parts — the
@@ -227,18 +226,16 @@ first time it is used, in a WARN that names the channel number.
 
 **Two dongles.** The example config documents the one-dongle `voice_taps`
 arrangement for P25 and DMR Tier III; it does not list NXDN, so this recipe
-keeps the classic split. Voice grants can then land anywhere the voice
-dongle tunes.
+keeps the classic split.
 
 **`ppm`.** Set it. The receivers track the carrier now, but a smaller
 starting error means a faster first frame, and a cheap dongle moves: in one
 reporter capture it drifted from −645 Hz to −679 Hz in under nine seconds,
 just after a calibration.
 
-**`broadcast.rdioscanner`.** Optional. Each completed call is uploaded with
-its talkgroup and source radio ID;
-[Volume 1, Part 9]({{ '/blog/tutorials/operator-cookbook-09-sharing-the-feed/' | relative_url }})
-covers the feed.
+**`broadcast.rdioscanner`.** Optional: each completed call is uploaded with
+its talkgroup and source radio ID
+([Volume 1, Part 9]({{ '/blog/tutorials/operator-cookbook-09-sharing-the-feed/' | relative_url }})).
 
 The control-channel pipeline is built for a 12.5 kHz NXDN96 control channel;
 nothing in a system entry selects NXDN48.
@@ -370,11 +367,10 @@ config change "fixes" something it cannot touch, keep looking.
 
 ### How this recipe shapes operator practice
 
-- **Lock first, plan second.** Run Recipe A with a one-row table. The lock
-  and `site info` confirm the system; the dropped-grant warnings then hand
-  you the channel numbers still to fill in.
+- **Lock first, plan second.** Run Recipe A with a one-row table; the
+  dropped-grant warnings hand you the channel numbers still to fill in.
 - **Read the ended line after every odd call.** Frames, offset and cipher
-  separate "weak signal", "drifting dongle" and "scrambled" in one glance.
+  separate "weak signal", "drifting dongle" and "scrambled" at a glance.
 - **Treat a shut channel as information.** A gate that will not open on a
   strong carrier is telling you the mode is wrong.
 
@@ -407,8 +403,7 @@ config change "fixes" something it cannot touch, keep looking.
   capture-verified with known keys, and is the subject of
   [Part 8]({{ '/blog/tutorials/cookbook-volume-2-08-your-own-keys/' | relative_url }}).
 - **Continuous channels.** A `role: wideband` dongle's `conventional:` list
-  accepts `nxdn` and `nxdn48` entries, each on an always-on tap, so nothing
-  is missed while the scanner is elsewhere.
+  accepts `nxdn` and `nxdn48` entries, each on an always-on tap.
 - **More systems.** The pool rules of
   [Volume 1, Part 7]({{ '/blog/tutorials/operator-cookbook-07-multi-system-pool/' | relative_url }})
   apply unchanged.
@@ -447,10 +442,9 @@ decode is also pinned on a real capture; the grant message is not, because
 that capture is idle.
 
 **Can GopherTrunk decode scrambled NXDN?**
-Only with the key. For the built-in 15-bit scrambler it descrambles calls
-when a matching `encryption_keys` entry is configured, and that path is
-verified on captures with known keys. NXDN DES and AES are identified, not
-decrypted.
+Only with the key. It descrambles the built-in 15-bit scrambler when a
+matching `encryption_keys` entry is configured, verified on captures with
+known keys. NXDN DES and AES are identified, not decrypted.
 
 ## Series navigation
 
