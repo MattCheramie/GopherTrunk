@@ -8,6 +8,28 @@ for tagged releases.
 ## [Unreleased]
 
 ### Fixed
+- **P25 Phase 2 voice came out as garbled noise, "as if it is encrypted".**
+  The recorder decoded Phase 2 voice with the wrong AMBE table set: the
+  3600x2400 one, which only D-STAR uses. Phase 2 carries the AMBE+2 3600x2450
+  half-rate vocoder, the same one as DMR and NXDN. The two layouts share the
+  top four pitch bits and nothing else, so every call sounded like speech-shaped
+  noise while the same system played fine in DSD+. Phase 2 now uses the
+  `ambe2-dmr` decoder. Found on the first on-air Phase 2 report: the frames in
+  the reporter's `.raw` files decode to the same pitch, voicing and gain as
+  mbelib's 3600x2450 decoder, frame for frame. The rest of the Phase 2 voice
+  path from #1273 (timeslot framing, PN44 descramble, voice frame positions,
+  MAC decode) was correct on that system: 175 of 175 signalling bursts decoded
+  on a clean call. Notes:
+  - Recordings made before this fix can be recovered if you kept the `.raw`
+    sidecar (`recordings.write_raw: true`):
+    `gophertrunk decode -in call.raw -out call.wav -vocoder ambe2-dmr`.
+  - A Phase 2 call's `.json` sidecar now says `"vocoder": "ambe2-dmr"`.
+  - `decode -h` and the docs told you to decode DMR frames with
+    `-vocoder ambe2`, which has the same effect. They now name `ambe2-dmr`
+    for P25 Phase 2, DMR, NXDN, dPMR and YSF, and `ambe2` for D-STAR only.
+  - The Settings panel's vocoder table (`vocoder_map` in
+    `GET /api/v1/runtime`) showed `ambe2` for P25 Phase 2 and `—` for YSF. It
+    now shows what the recorder loads.
 - **`config validate`, `doctor` and the web config builder accepted a trunking
   system the daemon then refused to start on** (#1379 follow-up). The daemon
   requires each system to have at least one control channel within

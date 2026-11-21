@@ -29,14 +29,14 @@ type runtimeSnapshot struct {
 // not yet wired).
 var vocoderProtocolMap = map[string]string{
 	"p25":        "imbe",
-	"p25-phase2": "ambe2",
+	"p25-phase2": "ambe2-dmr",
 	"dmr":        "ambe2-dmr",
 	"nxdn":       "ambe2-dmr",
 	"nxdn48":     "ambe2-dmr",
 	"dpmr":       "ambe2-dmr",
 	"dstar":      "ambe2",
 	"tetra":      "tetra-acelp",
-	"ysf":        "—",
+	"ysf":        "ambe2-dmr",
 	"edacs":      "—",
 	"motorola":   "—",
 	"ltr":        "—",

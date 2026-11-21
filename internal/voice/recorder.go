@@ -445,13 +445,22 @@ type RecorderOptions struct {
 // call) and mutate from there — RecorderOptions.VocoderForProtocol
 // is taken as-is, no merging.
 func DefaultVocoderForProtocol() map[string]string {
-	// DMR maps to "ambe2-dmr" — the AMBE+2 3600x2450 variant DMR uses,
-	// distinct from the 3600x2400 "ambe2" used by P25 Phase 2 / NXDN.
-	// The composer's DMR voice chain emits FEC-decoded 49-bit frames,
-	// which that decoder renders to PCM.
+	// "ambe2-dmr" is the AMBE+2 3600x2450 half-rate decoder. The name is
+	// historical: DMR was the first protocol to use it, but P25 Phase 2,
+	// NXDN, dPMR and YSF V/D mode 2 all carry the same 49-bit frame. The
+	// base "ambe2" decoder is the older AMBE 3600x2400 table set, which
+	// only D-STAR uses. Each composer voice chain emits FEC-decoded 49-bit
+	// frames, which the mapped decoder renders to PCM.
 	return map[string]string{
-		"p25":        "imbe",      // P25 Phase 1 — IMBE 4400
-		"p25-phase2": "ambe2",     // P25 Phase 2 — AMBE+2 3600x2400
+		"p25": "imbe", // P25 Phase 1 — IMBE 4400
+		// P25 Phase 2 is the TIA-102.BABA-1 half-rate vocoder, AMBE+2
+		// 3600x2450: the Phase 2 chain FEC-decodes its voice frames with
+		// the DMR codeword layout (phase2.ExtractAirVoiceFrames) and every
+		// reference decoder (OP25, SDRTrunk/JMBE, DSD-FME) renders them
+		// with the 2450 tables. This entry named the 3600x2400 "ambe2"
+		// until the first on-air Phase 2 calls came out as speech-shaped
+		// noise; pinned by ambe2.TestP25Phase2DefaultVocoderDecodesRealAirSpeech.
+		"p25-phase2": "ambe2-dmr", // P25 Phase 2 — AMBE+2 3600x2450 (half rate)
 		"dmr-tier1":  "ambe2-dmr", // DMR Tier I direct-mode — AMBE+2 3600x2450
 		"dmr-tier2":  "ambe2-dmr", // DMR Tier II — AMBE+2 3600x2450
 		"dmr-tier3":  "ambe2-dmr", // DMR Tier III — AMBE+2 3600x2450

@@ -23,17 +23,20 @@ import (
 //
 //	gophertrunk decode -in <path> -out <path> [-vocoder <name>]
 //	cat session.raw | gophertrunk decode -vocoder imbe -out out.wav
-//	gophertrunk decode -in session.raw -out out.wav -vocoder ambe2
+//	gophertrunk decode -in session.raw -out out.wav -vocoder ambe2-dmr
 //
 // The vocoder defaults to "imbe" since P25 Phase 1 is the most
 // common digital protocol on US public-safety bands. The
 // available names match the keys registered in
-// voice.DefaultRegistry — typically "imbe", "ambe2", and "null".
+// voice.DefaultRegistry — "imbe", "ambe2-dmr" (AMBE+2 3600x2450: P25
+// Phase 2, DMR, NXDN, dPMR, YSF), "ambe2" (AMBE 3600x2400: D-STAR
+// only), "tetra-acelp" and "null". A 7-byte .raw decoded with the wrong
+// one of the two AMBE table sets comes out as speech-shaped noise.
 func runDecode(args []string) {
 	fs := flag.NewFlagSet("decode", flag.ExitOnError)
 	in := fs.String("in", "-", "raw vocoder-frame input path; '-' reads stdin")
 	out := fs.String("out", "", "WAV output path (required; must be a regular file for the WAV header to be patched)")
-	vocoderName := fs.String("vocoder", "imbe", "vocoder name from the registry (imbe, ambe2, null, ...)")
+	vocoderName := fs.String("vocoder", "imbe", "vocoder name from the registry: imbe (P25 Phase 1), ambe2-dmr (P25 Phase 2, DMR, NXDN, dPMR, YSF), ambe2 (D-STAR only), tetra-acelp, null")
 	voiceProfile := fs.String("voice-profile", "", "reference-decoder balance preset for the vocoder (mbelib = default dsd-neo calibration; op25 = the OP25 / trunk-recorder equal-power unvoiced level), the same choice as recordings.voice_profile")
 	legacySynth := fs.Bool("legacy-synthesis", false, "decode with the raw decoder's legacy synthesis (no spec-faithful §6.2 amplitude enhancement, uncalibrated unvoiced band level) instead of the daemon's recording defaults — for A/B only. Affects the MBE vocoders (imbe, ambe2*) only: tetra-acelp has neither stage, so its output is identical with or without it")
 	listVocoders := fs.Bool("list-vocoders", false, "print the registered vocoder names and exit")
@@ -50,8 +53,10 @@ EXAMPLES:
   # Decode an IMBE .raw sidecar from a P25 Phase 1 capture
   gophertrunk decode -in call.raw -out call.wav -vocoder imbe
 
-  # Decode AMBE+2 frames piped from a fixture script
-  cat dmr.raw | gophertrunk decode -vocoder ambe2 -out dmr.wav
+  # Decode an AMBE+2 .raw sidecar: P25 Phase 2, DMR, NXDN, dPMR and YSF
+  # all use "ambe2-dmr" (3600x2450). Only D-STAR uses "ambe2" (3600x2400).
+  gophertrunk decode -in p25p2-call.raw -out call.wav -vocoder ambe2-dmr
+  cat dmr.raw | gophertrunk decode -vocoder ambe2-dmr -out dmr.wav
 
   # List the vocoder names this binary knows about
   gophertrunk decode -list-vocoders

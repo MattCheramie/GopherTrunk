@@ -67,9 +67,11 @@ const p25p2VoiceGardnerGain = 0.005
 // on Phase 2 systems whose CCs never emit alias fragments (e.g. MMR).
 //
 // The recorder maps protocol "p25-phase2" to the pure-Go AMBE+2
-// vocoder (voice.DefaultVocoderForProtocol), so WriteRawFrame here
-// decodes each 7-byte frame to PCM and into the call's WAV — unlike the
-// DMR chain, whose pre-FEC frames the vocoder cannot consume.
+// 3600x2450 (half-rate) decoder, registered as "ambe2-dmr"
+// (voice.DefaultVocoderForProtocol), so WriteRawFrame here decodes each
+// FEC-decoded 7-byte frame to PCM and into the call's WAV. It is the
+// decoder DMR and NXDN use: the 72-bit codeword and the 49-bit payload
+// are the same on all three.
 //
 // Voice is framed in the real TDMA air format (p25p2.AirFramer: S-/I-ISCH
 // timeslot grid, DUID, PN44 descramble, OP25/SDRTrunk frame positions)
