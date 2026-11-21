@@ -101,7 +101,7 @@ A grant carries a channel ID and a channel number; the site's
 for that ID supplies a base frequency and a spacing.
 [P25 End to End Part 5]({{ '/blog/deep-dives/p25-end-to-end-05-channels-band-plans/' | relative_url }})
 gave the arithmetic as one line: base + number × spacing. That is right for
-FDMA. For TDMA it is wrong by a factor.
+FDMA and wrong for TDMA.
 
 The TDMA identifier (`IDEN_UP_TDMA`, opcode `0x33`) carries a four-bit
 channel type that says how many logical channels one carrier holds. Two
@@ -311,9 +311,9 @@ first I-ISCH says where in the superframe it is.
 ## The MAC path
 
 Signalling was further from the air than voice. The model ran MAC PDUs
-through a trellis code and an RS(24,16,9) outer code. On air there is no
-trellis and no RS(24,16) on Phase 2 MAC. A signalling burst's body carries
-six-bit symbols — hexbits — of a shortened, punctured
+through a trellis code and an RS(24,16,9) outer code; on air there is
+neither. A signalling burst's body carries six-bit symbols — hexbits — of a
+shortened, punctured
 [Reed–Solomon]({{ '/reference/reed-solomon-code/' | relative_url }})
 RS(63,35) code over GF(64), whose information part is the PDU and a CRC:
 
@@ -355,8 +355,8 @@ installing a wrong seed.
 
 The settings `p25_phase2_trellis_mode`, `_rs_mode`, `_interleave_mode` and
 `_scrambler_mode` are still accepted and no longer read: the air format
-fixes the coding. The working-model decoder survives only for its own tests
-and one replay harness, pending deletion.
+fixes the coding. The working-model decoder survives only for its own
+tests, pending deletion.
 
 Everything in this post is **reference-pinned** against two decoders and
 **synthetic-verified**. The #1273 reporter's site has not confirmed it, so
@@ -411,7 +411,7 @@ carrier.
 **How many timeslots does a P25 Phase 2 superframe have, and which carry which call?**
 Twelve 30 ms timeslots in 360 ms. The two logical channels alternate —
 timeslots 0, 2, 4, 6, 8 and 11 are channel 0 and 1, 3, 5, 7, 9 and 10 are
-channel 1. The last pair is swapped, so slot parity alone is not enough.
+channel 1 — with the last pair swapped.
 
 **What protects a P25 Phase 2 MAC PDU on the air?**
 A shortened, punctured Reed–Solomon RS(63,35) code over six-bit symbols,

@@ -85,7 +85,7 @@ either polarity. A gate built on them would have shut out every real
 transmission; the comment at the top of `dstar_gate.go` records that the
 hole "could not be closed until the D-STAR air format was rebuilt."
 
-That turned a feature into an audit, and it did not stop at the sync words.
+That turned a feature into an audit that did not stop at the sync words.
 
 ## The wrong theory: calibration
 
