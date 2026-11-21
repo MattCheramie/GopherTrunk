@@ -26,6 +26,17 @@ frames flow toward the recorder.*
 > uniformly. The composer picks the *chain*; the recorder picks the *vocoder*
 > from `Grant.Protocol` via `DefaultVocoderForProtocol`.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 12 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** the `p25-phase2` →
+> `ambe2` mapping shown in this post was a defect. P25 Phase 2 is AMBE+2
+> 3600x2450 and now maps to `ambe2-dmr`, the decoder DMR uses; `ambe2`
+> (3600x2400) is D-STAR only. The first live Phase 2 call decoded clean frames
+> into noise because of it.
+> [Rebuilt From the Air, Part 12]({{ rfa_fix.url | relative_url }}) has the
+> story.
+{% endif %}
+
 **Key takeaways**
 
 - The composer is **event-driven**, mirroring the engine's design: one
