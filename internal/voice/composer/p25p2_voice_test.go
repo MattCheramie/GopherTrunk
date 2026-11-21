@@ -929,3 +929,101 @@ func TestP25P2CensusDUIDKeysAreDistinct(t *testing.T) {
 		t.Errorf("reserved DUID 5 key = %q, want duid_reserved_5", got)
 	}
 }
+
+// TestComposerP25Phase2SourceUpdateOncePerChange is the regression for the
+// source-update flood in the first on-air Phase 2 log: a traffic channel
+// repeats the talker's GROUP_VOICE_CHANNEL_USER on every signalling burst,
+// and the chain published every copy (79 "call source update" lines in four
+// seconds across three calls). The metadata stream names one radio twelve
+// times over six superframes (a MAC_PTT and a SACCH each), so the bus must
+// carry it once.
+func TestComposerP25Phase2SourceUpdateOncePerChange(t *testing.T) {
+	const (
+		sampleRate = 48_000.0
+		sps        = 8
+		span       = 8
+		alpha      = 0.20
+	)
+	dibits, wantSrc, _, _, _ := buildP25P2MetadataStream(t, 6)
+	iq := demod.ModulateHDQPSKSpec(dibits, sps, span, alpha)
+
+	bus := events.NewBus(256)
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	c, err := New(Options{
+		Bus:           bus,
+		Devices:       &fakeDevices{src: map[string]IQSource{}},
+		Sink:          &recordingSink{},
+		Engine:        &fakeEngine{},
+		IQSampleRate:  uint32(sampleRate),
+		PCMSampleRate: 8000,
+		TouchInterval: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	iqCh := make(chan []complex64, 1)
+	iqCh <- iq
+	close(iqCh)
+	done := make(chan struct{})
+	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "MMR",
+		p25p2.MACDecodeConfig{Seed: p25p2TestSeed}, 0, iqCh, sampleRate, done)
+	<-done
+
+	var updates []trunking.CallSourceUpdate
+	for drained := false; !drained; {
+		select {
+		case ev := <-sub.C:
+			if u, ok := ev.Payload.(trunking.CallSourceUpdate); ok && ev.Kind == events.KindCallSourceUpdate {
+				updates = append(updates, u)
+			}
+		default:
+			drained = true
+		}
+	}
+	if len(updates) != 1 {
+		t.Fatalf("%d call source updates for one unchanged talker, want 1", len(updates))
+	}
+	if updates[0].SourceID != wantSrc || !updates[0].Encrypted || updates[0].DeviceSerial != "VOICE-1" {
+		t.Errorf("update = %+v, want source %d, encrypted, serial VOICE-1", updates[0], wantSrc)
+	}
+}
+
+// TestCallSourceFilter pins what counts as news: a new talker, a talker
+// coming back after another, and a change of the call's flags, but not a
+// repeat and not a hang-time update that names no radio.
+func TestCallSourceFilter(t *testing.T) {
+	a := trunking.CallSourceUpdate{DeviceSerial: "V", SourceID: 100, Priority: 4}
+	b := trunking.CallSourceUpdate{DeviceSerial: "V", SourceID: 200, Priority: 4}
+	hang := trunking.CallSourceUpdate{DeviceSerial: "V", Priority: 4}
+	hangEmerg := trunking.CallSourceUpdate{DeviceSerial: "V", Priority: 4, Emergency: true}
+	steps := []struct {
+		name string
+		upd  trunking.CallSourceUpdate
+		want bool
+	}{
+		{"first talker", a, true},
+		{"repeat", a, false},
+		{"hang time, same flags", hang, false},
+		{"same talker keys up again", a, false},
+		{"second talker", b, true},
+		{"repeat of the second", b, false},
+		{"first talker returns", a, true},
+		{"hang time raises emergency", hangEmerg, true},
+		{"hang time repeat", hangEmerg, false},
+	}
+	var f callSourceFilter
+	for _, s := range steps {
+		if got := f.admit(s.upd); got != s.want {
+			t.Errorf("%s: admit = %v, want %v", s.name, got, s.want)
+		}
+	}
+	// A call entered in hang time has no talker yet: the first update still
+	// goes out (it carries the flags), its repeats do not.
+	var late callSourceFilter
+	if !late.admit(hang) || late.admit(hang) {
+		t.Error("late entry: want the first source-less update passed and its repeat dropped")
+	}
+}

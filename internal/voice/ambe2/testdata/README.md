@@ -13,9 +13,32 @@ green until reference data lands.
 | `dmr-voice.raw`               | Raw AMBE+2 frames, 7 bytes per frame, packed MSB-first, no header |
 | `dmr-voice-dsdfme.wav`        | DSD-FME-decoded reference WAV (8 kHz, 16-bit, mono PCM, RIFF/WAVE) |
 
-Both files must come from the **same** original DMR (or NXDN /
-dPMR / D-STAR — anything that uses AMBE+2) call so the calibrate
-harness's RMS + cross-correlation comparison is meaningful.
+Both files must come from the **same** original DMR (or P25 Phase 2 /
+NXDN / dPMR / YSF — anything that uses AMBE+2 3600x2450) call so the
+calibrate harness's RMS + cross-correlation comparison is meaningful.
+Decode them with the `ambe2-dmr` vocoder. The base `ambe2` vocoder is
+AMBE 3600x2400, which only D-STAR uses: it reads the same 7-byte frames
+with a different table set and produces speech-shaped noise.
+
+## Committed real-air fixtures
+
+| File                              | What it is |
+| --------------------------------- | ---------- |
+| `dmr-voice.raw`                   | 378 frames of a DMR TS2 call (issue #644). |
+| `p25p2-voice.raw`                 | 118 frames (2.4 s): one clear P25 Phase 2 group call, the `.raw` sidecar of the first Phase 2 voice GopherTrunk decoded on air (18 Nov 2026, 867 MHz site, sent by a reporter whose calls sounded "garbled, as if encrypted"). |
+| `p25p2-voice.mbelib2450.txt`      | The same 118 frames through szechyjs/mbelib 1.3.0 `mbe_processAmbe2450Data` (uvquality 3), one line per frame: `w0 L voiced_bands gamma pcm_rms_db`. |
+
+`p25p2_realair_test.go` pins the Phase 2 fixture two ways: every
+frame's pitch / harmonic count / voicing / gain against mbelib, and the
+audio the recorder's default `p25-phase2` vocoder produces against
+mbelib's level track (0.92 with the 2450 tables, 0.22 with the 2400
+tables the recorder used to pick).
+
+To regenerate the reference, build mbelib (`gcc -c *.c && ar`), unpack
+each 7-byte frame MSB-first into `char ambe_d[49]`, call
+`mbe_processAmbe2450Data`, and print `cur_mp->w0`, `cur_mp->L`, the
+count of set `cur_mp->Vl[1..L]`, `cur_mp->gamma` and
+`10*log10(mean(pcm²)+1)` over the 160 output samples.
 
 ## Capture recipe
 

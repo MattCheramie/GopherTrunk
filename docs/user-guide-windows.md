@@ -1624,7 +1624,7 @@ out-of-band:
 
 ```powershell
 gophertrunk decode -in call.raw  -out call.wav  -vocoder imbe
-gophertrunk decode -in dmr.raw   -out dmr.wav   -vocoder ambe2
+gophertrunk decode -in dmr.raw   -out dmr.wav   -vocoder ambe2-dmr
 gophertrunk decode -list-vocoders        # enumerate registered names
 ```
 

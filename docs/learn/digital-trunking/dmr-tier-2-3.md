@@ -57,8 +57,8 @@ per symbol) gives **9600 bps**. The clever part is **two-slot TDMA**: a single 1
 channel is split in *time* into two alternating slots, so it carries **two simultaneous
 calls**. That is the same **6.25 kHz equivalent** efficiency idea as P25 Phase 2, but DMR
 built it in from the start across the whole standard. Voice rides in the **AMBE+2**
-[vocoder](/learn/rf-sdr/vocoders/) — specifically the 3600×2450 variant, distinct from the
-3600×2400 variant P25 Phase 2 and NXDN use.
+[vocoder](/learn/rf-sdr/vocoders/) — the 3600×2450 half-rate variant, the same one
+P25 Phase 2 and NXDN use (D-STAR's older AMBE 3600×2400 is a different table set).
 
 A **color code** (0–15) is carried in the bursts and works like a P25 NAC or an analog
 CTCSS tone: a radio ignores traffic whose color code does not match, so neighbouring

@@ -1244,7 +1244,7 @@ func TestDefaultVocoderForProtocolMappings(t *testing.T) {
 	got := DefaultVocoderForProtocol()
 	want := map[string]string{
 		"p25":        "imbe",
-		"p25-phase2": "ambe2",
+		"p25-phase2": "ambe2-dmr",
 		"dmr-tier1":  "ambe2-dmr",
 		"dmr-tier2":  "ambe2-dmr",
 		"dmr-tier3":  "ambe2-dmr",

@@ -7,7 +7,49 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Added
+- **The daemon warns about config keys that nothing reads.** A section
+  indented one level too far, or a misspelled key, used to load without a word
+  and leave its feature at the default. At start-up (and on a config reload)
+  each such key is now logged and pinned with the other start-up warnings, for
+  example `config line 38: "log" under trunking.systems[] is not a setting and
+  is ignored: "log" is a top-level section, so it is indented too far here;
+  move it to the left margin`. The file still loads, as before. This is what
+  hid a support request's diagnostics: `log:`, `recordings:` and `baseband:`
+  were pasted under the trunking system, so the debug log and the voice IQ
+  capture never switched on.
+
 ### Fixed
+- **P25 Phase 2 voice came out as garbled noise, "as if it is encrypted".**
+  The recorder decoded Phase 2 voice with the wrong AMBE table set: the
+  3600x2400 one, which only D-STAR uses. Phase 2 carries the AMBE+2 3600x2450
+  half-rate vocoder, the same one as DMR and NXDN. The two layouts share the
+  top four pitch bits and nothing else, so every call sounded like speech-shaped
+  noise while the same system played fine in DSD+. Phase 2 now uses the
+  `ambe2-dmr` decoder. Found on the first on-air Phase 2 report: the frames in
+  the reporter's `.raw` files decode to the same pitch, voicing and gain as
+  mbelib's 3600x2450 decoder, frame for frame. The rest of the Phase 2 voice
+  path from #1273 (timeslot framing, PN44 descramble, voice frame positions,
+  MAC decode) was correct on that system: 175 of 175 signalling bursts decoded
+  on a clean call. Notes:
+  - Recordings made before this fix can be recovered if you kept the `.raw`
+    sidecar (`recordings.write_raw: true`):
+    `gophertrunk decode -in call.raw -out call.wav -vocoder ambe2-dmr`.
+  - A Phase 2 call's `.json` sidecar now says `"vocoder": "ambe2-dmr"`.
+  - `decode -h` and the docs told you to decode DMR frames with
+    `-vocoder ambe2`, which has the same effect. They now name `ambe2-dmr`
+    for P25 Phase 2, DMR, NXDN, dPMR and YSF, and `ambe2` for D-STAR only.
+  - The Settings panel's vocoder table (`vocoder_map` in
+    `GET /api/v1/runtime`) showed `ambe2` for P25 Phase 2 and `—` for YSF. It
+    now shows what the recorder loads.
+- **A P25 Phase 2 call flooded the log and the event stream with
+  `call source update`.** A Phase 2 traffic channel repeats the talker's ID on
+  every signalling burst, about every 60 ms, and each copy was logged at INFO
+  and published as a `call.source` event: 79 lines in four seconds across three
+  calls in the first on-air Phase 2 log, and the same number of rows in the web
+  activity feed. The voice chain now passes a source update only when the
+  talker, or the call's encryption / emergency / priority, changes. The DMR
+  chain already did this.
 - **A build from source named itself `v0.0.0-N-g<sha>`** (reported on #1321).
   On 20 November the release workflow was first started with the placeholder
   its form pre-filled as the version. It published a `v0.0.0` pre-release and
