@@ -345,7 +345,7 @@ WRN alerts: delivery queue full, dropping alert rule=... channel=...
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | The daemon will not start after the section was added | validation: a rule names an undefined channel, an unknown event kind, or a template that does not parse | The error names the entry, for example `alerts.rules[0] (dispatch-emergency): channel "fone" is not defined under alerts.channels` |
-| A rule fires on everything | a misspelled filter key; the loader ignores unknown keys instead of rejecting them | Check spelling against this post: `talkgroups`, `radios`, `tone_profiles` are plural |
+| A rule fires on everything | a misspelled filter key; the loader ignores a key it does not know, so the rule runs unfiltered | Read the start-up WARNs — each ignored key gets a `config line N:` line — then check spelling against this post: `talkgroups`, `radios`, `tone_profiles` are plural |
 | A rule never fires, and the matched counter stays at zero | the conditions are ANDed and one cannot hold: a talkgroup filter on a tone alert (it has none, and a system only if its profile sets one), an emergency filter on routine traffic, a radio filter where the grant carried no source | Remove filters until `matched` moves in `GET /api/v1/alerts`, then add them back one at a time |
 | Matched climbs, nothing arrives | the cooldown, or a failing channel | Read `cooldown_suppressed` per rule, and `failed` and `last_error` per channel |
 | Two notifications per call | two kinds are listed and the cooldown is kept per kind | Use `on: [grant]` or `on: [call.start]`, not both |

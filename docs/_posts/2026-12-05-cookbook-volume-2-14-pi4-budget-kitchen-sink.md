@@ -386,8 +386,12 @@ with the password in an environment variable.
 Volume 1's rules stand — paths relative to the config file, gain in tenths
 of a dB, secrets out of the file, one knob at a time. Volume 2 adds four:
 
-- **A misspelled key is silent.** The loader does not reject a key it does
-  not know; the daemon just runs the default. Copy key names from
+- **A misspelled key is ignored — with a warning.** The loader does not
+  reject a key it does not know; the daemon runs the default and prints one
+  start-up WARN per ignored key, naming its line and section
+  (`config line N: … is not a setting and is ignored`). A block pasted one
+  level too deep gets the same line with the advice to move it to the left
+  margin, so read the start-up block after every edit. Copy key names from
   `config.example.yaml`, never from memory. The project's own rule is that
   every key lands there with its code — two keys this volume uses,
   `nxdn_band_plan` and `sdr.input_sample_rate`, were once missing from it,

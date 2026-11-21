@@ -297,9 +297,11 @@ voice stats: frames=... (voiced=... unvoiced=... silent=... idle_muted=... bad=.
   level: peak_preclip=... rms=... crest=... clip=...%
 ```
 
-Use `-vocoder imbe` for P25 Phase 1, `ambe2` for P25 Phase 2, `ambe2-dmr`
-for DMR, NXDN and System Fusion, `tetra-acelp` for TETRA; `-list-vocoders`
-prints them. The command applies the recorder's
+Use `-vocoder imbe` for P25 Phase 1, `ambe2-dmr` for P25 Phase 2, DMR, NXDN
+and System Fusion, `ambe2` for D-STAR only, `tetra-acelp` for TETRA;
+`-list-vocoders` prints them. The two AMBE table sets are not
+interchangeable: a Phase 2, DMR or NXDN file decoded with `ambe2` comes out
+as speech-shaped noise. The command applies the recorder's
 synthesis defaults — the spec-faithful amplitude enhancement and the
 unvoiced level the profile names — so files A and B differ in exactly one
 thing, and `-legacy-synthesis` turns both off. It does not run the enhance
@@ -347,7 +349,7 @@ WRN recorder: voice audio quality — output clipping (vocoder gain too hot)
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Switched the profile to op25 and the low end did not change | the tilt and high-pass keys are set explicitly, enhance is off, or the key is misspelled (the loader ignores unknown keys) | Delete `tilt_hz` and `hpf_hz` so the profile can fill them; confirm `rec_voice_profile=op25` in the summary line |
+| Switched the profile to op25 and the low end did not change | the tilt and high-pass keys are set explicitly, enhance is off, or the key is misspelled (the loader ignores a key it does not know and names it in a start-up WARN) | Delete `tilt_hz` and `hpf_hz` so the profile can fill them; confirm `rec_voice_profile=op25` in the summary line |
 | Enhance was switched on live and op25 sounds like mbelib | the live toggle uses the file's values; a profile's tilt and high-pass are resolved at start-up, and only if enhance is already enabled there | Set `enhance.enabled: true` in the config and restart, instead of `recordings_enhance_enabled` on `PATCH /api/v1/settings` |
 | Audio is sped up or gapped, and a sample-rate change seemed to cure it | it cannot have: digital files are 8 kHz at any setting. The first WARN above is the usual cause | Fix the IQ loss upstream, then judge the sound |
 | The second WARN above, or harsh loud passages | the AGC target or a channel boost is too high | Lower `enhance.agc_target` toward 18000, or reduce `audio_gain_db` |
