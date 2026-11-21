@@ -133,7 +133,7 @@ link and over the LAN, from Linux with and without libiio and from Termux
 over WLAN. The board's own device listing is the driver's test fixture, and
 every attribute the driver writes is checked against it. The daemon's
 decode path — tune, stream, lock a control channel — is reference-pinned
-and synthetic-tested, and **not yet confirmed on air**. The operator
+and synthetic-verified, and **not yet confirmed on air**. The operator
 reference is the
 [hardware guide's Pluto section]({{ '/hardware.html#adalm-pluto-plutosky-and-other-ad936x-boards' | relative_url }}).
 
@@ -390,7 +390,7 @@ What the link can carry is separate: four bytes per complex sample.
 Partly. The read-only probe, the settings read-back and a sample read at
 the right level are confirmed on a reporter's PlutoSky over USB and LAN.
 The daemon path — tune, stream, lock a control channel — is reference-pinned
-and synthetic-tested but not yet confirmed on air.
+and synthetic-verified but not yet confirmed on air.
 
 ## Series navigation
 

@@ -226,6 +226,7 @@ wmbus: listening on rtlsdr[00000001] at 868.950 MHz, 1600000 S/s (Ctrl-C to stop
     heat cost allocation 127
     heat cost allocation [storage 1] 145
     date [storage 1] 2018-12-31
+    …
     date time 2019-02-20 11:32
 ```
 

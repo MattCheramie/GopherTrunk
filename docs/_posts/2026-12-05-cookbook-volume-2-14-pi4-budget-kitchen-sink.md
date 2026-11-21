@@ -209,9 +209,9 @@ sdr:
 ```
 
 **Status, plainly.** The drop counts are the reporter's own, on their Pi 4.
-The bench figures are synthetic. What the project's notes do not record as
-confirmed on air is voice recorded through the wideband TETRA path, so
-treat that as this recipe's open gate.
+The bench figures are synthetic. What the project's engineering notes do
+not record as confirmed on air is voice recorded through the wideband TETRA
+path, so treat that as this recipe's open gate.
 
 ### How this recipe shapes operator practice
 
