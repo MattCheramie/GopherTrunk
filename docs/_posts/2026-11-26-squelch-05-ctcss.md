@@ -15,12 +15,12 @@ scanner — the scan list with no control channel to announce a call — and
 every gate that decides when a channel opens.
 [Part 4]({{ '/blog/deep-dives/squelch-04-offset-tuning/' | relative_url }})
 moved the tuner off the channel so a clipped ADC's products land outside it.
-Every gate so far has asked whether *something* is on the channel. This part
-is the first gate that asks whether it is *yours*: the CTCSS tone gate, as it
-stands in the code today. How it got here — two rounds of
-[#1184](https://github.com/MattCheramie/GopherTrunk/issues/1184) — is told in
-[Rebuilt From the Air Part 3]({{ '/blog/solution-postmortem/rebuilt-from-the-air-03-ctcss-dcs-tone-gates/' | relative_url }});
-this post is the design.*
+Every gate so far has asked whether *something* is there. This part is the
+first that asks whether it is *yours*: the CTCSS tone gate as it stands in
+the code today. How it got here — two rounds of
+[#1184](https://github.com/MattCheramie/GopherTrunk/issues/1184) — is
+[Rebuilt From the Air Part 3]({{ '/blog/solution-postmortem/rebuilt-from-the-air-03-ctcss-dcs-tone-gates/' | relative_url }})'s
+story; this post is the design.*
 
 > **TL;DR:** A CTCSS gate is `CTCSSDetector` in
 > `internal/scanner/conventional/ctcss.go`. Its front end (`toneFrontEnd`)
@@ -54,14 +54,13 @@ this post is the design.*
 
 | Concern | What it does | Where it lives |
 |---|---|---|
-| Front end | decimate to ~48 kHz, ±8 kHz Kaiser channel filter, discriminate, scale to rad/sample at 48 kHz | `tone_frontend.go` (`toneFrontEnd`, `toneRefRateHz`, `toneChannelCutoffHz`) |
-| Audio roll-off | one-pole IIR low-pass at 500 Hz ahead of the bins | `ctcss.go` (`AudioCutoffHz`, `onePoleAlpha`) |
-| Target bin | Goertzel at exactly the tone frequency, 250 ms blocks | `toneout.NewGoertzelExact`, `ctcssBlockSeconds` |
-| Reverse bins | target ±5 Hz and the EIA tones either side; target must exceed 1.5× the largest | `ctcssReverseOffsetHz`, `eiaNeighbourTones`, `rejectRatio` |
-| Threshold | magnitude of a tone with 100 Hz of peak deviation | `ctcssMinDeviationHz`, `ctcssToneMagnitude` |
-| Inseparable pair | 150.0 / 151.4 Hz are not each other's reverse bins; config refuses them on one shared frequency | `tonecode.MinSeparableCTCSSHz`, `tonecode.Overlap` |
+| Front end | decimate to ~48 kHz, ±8 kHz channel filter, discriminate, scale to rad/sample at 48 kHz | `tone_frontend.go` (`toneFrontEnd`, `toneRefRateHz`) |
+| Target bin | Goertzel at exactly the tone frequency, 250 ms blocks, after a 500 Hz low-pass | `toneout.NewGoertzelExact`, `ctcssBlockSeconds` |
+| Reverse bins | target ±5 Hz and the EIA tone either side; target must exceed 1.5× the largest | `ctcssReverseOffsetHz`, `eiaNeighbourTones`, `rejectRatio` |
+| Threshold | reading of a tone with 100 Hz of peak deviation | `ctcssMinDeviationHz`, `ctcssToneMagnitude` |
+| Inseparable pair | 150.0 / 151.4 Hz open together; config refuses them on one shared frequency | `tonecode.MinSeparableCTCSSHz`, `tonecode.Overlap` |
 | Scan cost | every scan window on that scanner grows to 350 ms | `ctcssMinDwell`, `minToneDwell` (`scanner.go`) |
-| Pins | the whole EIA table, the reported offsets at 2.4 MS/s, real-air slices | `ctcss_eia_test.go`, `ctcss_realair_test.go` |
+| Pins | the EIA table, the reported offsets at 2.4 MS/s, real-air slices | `ctcss_eia_test.go`, `ctcss_realair_test.go` |
 
 ## In this post
 
@@ -122,9 +121,9 @@ discScale := rate / toneRefRateHz
 ```
 
 **Decimate, then channel-filter.** The ±8 kHz filter passes one FM channel
-and rejects a 12.5 or 25 kHz neighbour along with, in the constant's
-comment, "the rest of the SDR's band, whose FM noise would otherwise swamp a
-sub-audible signalling tone". It is the recipe
+and rejects its neighbours along with, in the constant's comment, "the rest
+of the SDR's band, whose FM noise would otherwise swamp a sub-audible
+signalling tone". It is the recipe
 [Part 2]({{ '/blog/deep-dives/squelch-02-channel-power/' | relative_url }})'s
 channel power meter uses, for the same reason: a statistic about a channel
 has to be computed on the channel.
@@ -135,15 +134,14 @@ output is the phase step between consecutive samples — radians *per
 sample*. That unit carries the sample rate inside it: 350 Hz of deviation is
 a 0.046 rad step at 48 kHz and one fifty times smaller at 2.4 MS/s.
 `discScale` multiplies it back, so the output is always "radians per sample
-at 48 kHz" — a device at 2.048 MS/s decimates by 42 to about 48.8 kHz and
+at 48 kHz"; a device at 2.048 MS/s decimates by 42 to about 48.8 kHz and
 scales by 1.016. The type's comment states the contract: "a threshold means
 the same deviation at any SDR sample rate". The detector before this one
-had a threshold calibrated at 48 kHz and was fed 2.4 MS/s; a real tone sat
-about 3000× below it. That story belongs to the postmortem. The design
+had a threshold calibrated at 48 kHz and was fed 2.4 MS/s, and a real tone
+sat about 3000× below it. That story belongs to the postmortem; the design
 consequence is that nothing after `toneFrontEnd` knows the SDR's rate.
 
-A one-pole low-pass at 500 Hz (`AudioCutoffHz`) then rolls the voice off
-before the bins see it.
+A one-pole low-pass at 500 Hz (`AudioCutoffHz`) then rolls the voice off.
 
 ## One bin, exactly on frequency
 
@@ -153,34 +151,26 @@ a two-term recurrence that evaluates one frequency of a block's spectrum
 without computing the rest.
 [Beyond Voice Part 5]({{ '/blog/deep-dives/beyond-voice-05-two-tone-tone-out/' | relative_url }})
 took the resonator apart for two-tone paging, where `toneout.NewGoertzel`
-rounds the target onto the nearest exact bin of the block. That is fine for
-paging tones tens of hertz apart. For CTCSS it is fatal, and the comment on
-the second constructor says why: at a 5 Hz bin spacing the "162.2 Hz" bin is
+rounds the target onto the nearest exact bin of the block. That suits paging
+tones tens of hertz apart. For CTCSS it is fatal, and the second
+constructor's comment says why: at a 5 Hz bin spacing the "162.2 Hz" bin is
 really 160 Hz, "which a 159.8 Hz tone hits dead-on and a real 162.2 Hz tone
 misses by 2.2 Hz".
 
-```go
-// internal/voice/toneout/goertzel.go (shape)
-k := math.Round(float64(blockSize) * targetHz / sampleHz)
-omega := 2 * math.Pi * k / float64(blockSize) // NewGoertzel: nearest bin
+`NewGoertzelExact` differs in one line: its `omega` is
+`2π·targetHz/sampleHz`, the tone itself, where `NewGoertzel` uses a rounded
+bin index. The magnitude formula in `Process` is exact at any frequency, so
+nothing is lost by leaving the grid. `TestGoertzelExactHitsOffGridTone` pins
+the pair on a half-scale 162.2 Hz sine: the exact resonator reads the
+expected 0.25, the rounded one less than 0.8 of that.
 
-omega := 2 * math.Pi * targetHz / sampleHz    // NewGoertzelExact: the tone
-```
-
-That one line is the whole difference. The magnitude formula in `Process`
-is exact at any frequency, so nothing is lost by leaving the grid.
-`TestGoertzelExactHitsOffGridTone` pins the pair on a half-scale 162.2 Hz
-sine: the exact resonator reads the expected 0.25, the rounded one less than
-0.8 of that.
-
-Putting the bin on the tone fixes *where* it looks. How *sharply* it looks
-is set by the block length. A block of T seconds has a main lobe 1/T hertz
-wide to its first null, and `ctcssBlockSeconds` is 0.25: 12 000 samples at
-48 kHz, 4 Hz to the null. The constant's comment records the trade — at
-4 Hz a tone 2.3 Hz away still leaks about 29 % of its power into the bin,
-"and a detection still lands well inside the ~300 ms decode time radios
-quote". Blocks are aligned, not sliding, so the gate decides once every
-quarter second.
+Putting the bin on the tone fixes *where* it looks. How *sharply* is set by
+the block length: a block of T seconds has a main lobe 1/T hertz wide to its
+first null, and `ctcssBlockSeconds` is 0.25 — 12 000 samples at 48 kHz, 4 Hz
+to the null. The constant's comment records the trade: a tone 2.3 Hz away
+still leaks about 29 % of its power into the bin, "and a detection still
+lands well inside the ~300 ms decode time radios quote". Blocks are aligned,
+not sliding, so the gate decides once every quarter second.
 
 <figure class="lab-figure">
 <svg viewBox="0 0 680 236" width="680" height="236" role="img" aria-label="A curve of one 250 millisecond Goertzel block's response against the offset of a tone from the bin: 100 percent on the bin, about 66 percent at 1.4 hertz, about 29 percent at 2.3 hertz, nulls at plus and minus 4 hertz, fixed reverse bins at plus and minus 5 hertz, and a dashed limit line at one over 1.5 of the target.">

@@ -74,16 +74,16 @@ repository the whole time.*
 
 ## The symptom, and the theories that fit it
 
-After [Part 11]({{ '/blog/solution-postmortem/rebuilt-from-the-air-11-p25-phase2-airframe/' | relative_url }})
-the timeslot grid, the [ISCH]({{ '/reference/p25-isch/' | relative_url }}),
-the DUID positions and the MAC coding matched OP25 and SDRTrunk constant for
-constant. Two things under that format were still GopherTrunk's own, and
-every Phase 2 path shares them: the scrambler mask XORed over each burst
-body, and the timing loop that turns matched-filter samples into the dibits
-the framer cuts. With the mask wrong, every voice frame and MAC PDU reaches
-its FEC as noise. With the loop wrong, the project's notes record the
-shape exactly: every call's dibits decayed to about 50 % after ~16k symbols
-— roughly three seconds at 8 samples per symbol.
+After Part 11 the timeslot grid, the
+[ISCH]({{ '/reference/p25-isch/' | relative_url }}), the DUID positions and
+the MAC coding matched OP25 and SDRTrunk constant for constant. Two things
+under that format were still GopherTrunk's own, and every Phase 2 path
+shares them: the scrambler mask XORed over each burst body, and the timing
+loop that turns matched-filter samples into the dibits the framer cuts.
+With the mask wrong, every voice frame and MAC PDU reaches its FEC as
+noise. With the loop wrong, the project's notes record the shape: every
+call's dibits decayed to about 50 % after ~16k symbols — roughly three
+seconds at 8 samples per symbol.
 
 Neither symptom says "scrambler" or "timing loop". The theories on record
 were all reasonable:
@@ -95,17 +95,16 @@ were all reasonable:
   [P25 End to End, Part 7]({{ '/blog/deep-dives/p25-end-to-end-07-phase2-tdma/' | relative_url }})
   warned that a bad seed "looks like a dead traffic channel". There *was* a
   seed bug — the Network Status Broadcast parser read the colour code from
-  the channel bytes and installed a wrong seed, now pinned by
+  the channel bytes, now pinned by
   `TestAsNetworkStatusBroadcastMatchesReferenceLayout` — but a right seed in
   a wrong register is the same dead channel.
 - **The descramble order.** #915 moved the descramble ahead of the FEC, onto
-  channel bits. That was correct, and it was not enough.
+  channel bits. Correct, and not enough.
 - **"They have tests."** Both primitives had green suites for months.
 
-One caveat belongs here rather than at the end: the notes do not record a
-re-run of the #915 capture after these fixes, so this post does not claim
-that capture's yield is explained. It claims three defects that would each
-produce it.
+One caveat: the notes record no re-run of the #915 capture after these
+fixes, so this post does not claim that capture's yield is explained — only
+that defects which would each produce it sat below it.
 
 ## Defect one: PN44 tapped the exponents
 
@@ -172,14 +171,12 @@ within 10,000 clocks. Every one is a property the wrong register has.
 </figure>
 
 It also hid well on a casual comparison. The first 44 bits out of this
-register are the seed itself, most significant bit first, whatever the taps
-are — the reference vector in the test file opens `00001018293`, which is
-WACN `0x00001`, System `0x018` and NAC `0x293` packed end to end. So the two
-registers agree for at least 44 bits by construction; on that identity the
-first wrong bit is bit 49. After it the mask is simply a different one, and
-`AirScrambleMask` takes timeslot `t`'s body mask from superframe bits
-`[20+360t, 340+360t)` — so everything but the opening dibits of timeslot 0
-was descrambled with the wrong mask.
+register are the seed itself, whatever the taps are — the reference vector
+opens `00001018293`: WACN `0x00001`, System `0x018`, NAC `0x293`. So the two
+registers agree for at least 44 bits by construction, and on that identity
+the first wrong bit is bit 49. `AirScrambleMask` takes timeslot `t`'s body
+mask from superframe bits `[20+360t, 340+360t)`, so everything but the
+opening dibits of timeslot 0 was descrambled with the wrong mask.
 
 The pin is a
 [literal vector]({{ '/blog/deep-dives/from-spec-to-shipping-03-literal-vectors/' | relative_url }}),
@@ -188,8 +185,8 @@ not another property. `TestPN44MatchesOP25AndSDRTrunk` holds the whole
 file, as OP25's `apps/tdma/lfsr.py` generates it; SDRTrunk's
 `LinearFeedbackShiftRegister` produces the identical 4320 bits. A second,
 256-bit vector covers an MMR identity. Both references descramble live
-Phase 2 air with that sequence, which is the property no round trip has.
-The sequence is a fact about the protocol; no reference code was ported.
+Phase 2 air with that sequence — the property no round trip has. The
+sequence is a fact about the protocol; no reference code was ported.
 
 ## Defect two: the Gardner loop left the eye
 
@@ -212,38 +209,37 @@ start the loop walks to half a symbol off and stays there. At the Phase 2
 chain's gain of 0.005 the walk took about 16,000 symbols. A call began
 decodable, and three seconds later its dibits were noise.
 
-The old tests could not see it, for two reasons that are both about the
-fixture. `TestGardnerRecoversAlignedQPSK` and
-`TestGardnerLocksOnPhaseOffset` build each symbol as its constellation
-point times a taper confined to its own symbol period — a raised-cosine
-ramp in one, a triangle in the other. There is no intersymbol interference
-to punish a wrong sampling phase. And they score the result by recovered
-symbol *count* and by *quadrant* match above 0.85 and 0.80. A triangle
-pulse has the right sign almost anywhere inside its symbol, and a loop
-emits one symbol per period wherever it sits.
+The old tests could not see it, and both reasons are about the fixture.
+`TestGardnerRecoversAlignedQPSK` and `TestGardnerLocksOnPhaseOffset` build
+each symbol as its constellation point times a taper confined to its own
+period — a raised-cosine ramp in one, a triangle in the other — so there is
+no intersymbol interference to punish a wrong phase. And they score by
+symbol *count* and *quadrant* match (above 0.85 and 0.80). A triangle pulse
+has the right sign almost anywhere inside its symbol, and a loop emits one
+symbol per period wherever it sits.
 
-`TestGardnerConvergesOnEyeCentre` tests the thing the loop is for. It runs
+`TestGardnerConvergesOnEyeCentre` tests what the loop is for. It runs
 40,000 random QPSK symbols through a
 [root-raised-cosine]({{ '/reference/root-raised-cosine-filter/' | relative_url }})
 pair (8 samples per symbol, span 8, α 0.2) — the matched-filter output
-every caller feeds it — from four start phases, in 4096-sample chunks, at
-gain 0.005. Then it measures the last 5,000 symbols: at the eye centre
-`|re|` and `|im|` cluster tightly about their mean, at the zero crossing
-they spread across the whole range. The relative spread must be under 0.1.
+every caller feeds it — from four start phases, at gain 0.005, and measures
+the last 5,000 symbols. At the eye centre `|re|` and `|im|` cluster about
+their mean; at the zero crossing they spread across the whole range. The
+relative spread must stay under 0.1.
 
-`sync.Gardner` is shared: the TETRA receiver's `ClockGardner` mode and the
-P25 Phase 1 CQPSK demodulator construct the same loop. The notes record the
-damage on Phase 2 only, and this post claims no more than that.
+The loop is shared — the TETRA receiver's `ClockGardner` mode and the P25
+Phase 1 CQPSK demodulator construct it too. The notes record the damage on
+Phase 2 only, and this post claims no more.
 
 ## The carrier already in the repo
 
-Both fixes were **reference-pinned** and nothing more. The rebuild's own
-note said a Phase 2 capture was the on-air gate. Then
+Both fixes were **reference-pinned** and nothing more; the rebuild's own
+note named a Phase 2 capture as the on-air gate. Then
 [#1364](https://github.com/MattCheramie/GopherTrunk/issues/1364) noticed
 the capture had been in the tree all along. `samples/mmr` holds nine
-`mmr-s9-*.cfile` grabs, 2.4 MS/s centred on 420.0125 MHz, recorded for the
-Phase 1 control channel at +37.5 kHz — WACN `BEE00`, system `164`, NAC
-`164`. At +637.5 kHz in every one of them sits the network's idle voice
+`mmr-s9-*.cfile` grabs, 2.4 MS/s centred on 420.0125 MHz, used until then
+for the Phase 1 control channel at +37.5 kHz — WACN `BEE00`, system `164`,
+NAC `164`. At +637.5 kHz in every one of them sits the network's idle voice
 channel, 420.650 MHz: a continuous Phase 2 TDMA carrier.
 
 An idle carrier carries no voice, but it does carry signalling: the
@@ -254,15 +250,13 @@ twice — once with the seed built from the control channel's identity, once
 with the colour code off by one:
 
 ```text
-realair_mmr_test.go:86: 33 bursts, 6 SACCH-S, 6 CRC-valid with the site's
-    seed, 0 with colour code 0x165
+realair_mmr_test.go:86: 33 bursts, 6 SACCH-S, 6 CRC-valid with the site's seed, 0 with colour code 0x165
 ```
 
 Six of six with `PN44SeedFromIdentity(0xBEE00, 0x164, 0x164)`, none with
-`0x165`. That control is the point of the test: it shows the descramble —
-the register from the previous section — is what makes the bursts valid.
-It was the first real-air pin of the rebuilt path: air-format framing,
-RS(63,35), CRC-12 and PN44 together.
+`0x165`. That control is the point: it shows the descramble — the register
+above — is what makes the bursts valid. It was the first real-air pin of
+the rebuilt path: air-format framing, RS(63,35), CRC-12 and PN44 together.
 
 The content cross-checks too. The Phase 1 control channel in the same
 capture announces a Motorola
@@ -270,15 +264,13 @@ capture announces a Motorola
 3202 carrying talkgroup 201. The Phase 2 SACCH bursts decode as `MAC_IDLE`
 PDUs holding the bytes `81 90 0b 0c 82 00 c9 …` — MFID `0x90`, opcode
 `0x81`, `0x0C82` = 3202, `0x00C9` = 201. Two channels, two modulations, two
-FEC chains, one regroup
-([Trunking Engine, Part 9]({{ '/blog/deep-dives/trunking-engine-09-patches-supergroups/' | relative_url }})
-has what a supergroup is).
+FEC chains, one regroup.
 
 ## What real air found
 
-A reference tells you the format. It cannot tell you how your receiver
-behaves on a carrier that is already up, or on a file with a hole in it.
-The carrier found one defect of each kind.
+A reference gives you the format. It cannot say how your receiver behaves
+on a carrier that is already up, or on a file with a hole in it. The
+carrier found one defect of each kind.
 
 **A pull-in of up to a second.** A voice chain starts at the grant, at an
 arbitrary sub-symbol phase. Started at the eight sub-symbol phases of each
@@ -295,12 +287,12 @@ needed in #836, re-derived for a PSK signal. `sync.EstimateSymbolPhaseCM`
 is a constant-modulus eye search: at the decision instant every sample of
 an RRC-matched PSK signal has the same magnitude, so `E|y|⁴ / E|y|²²`
 measures about 1.01 there and at least 1.67 on noise. It depends only on
-`|y|`, so it needs no carrier lock. `Receiver.ArmTimingAcquisition` skips
-10 symbols, measures 96-symbol windows, and seeds the loop with
-`Gardner.SetPhase` once two consecutive windows agree within one sample;
-after four windows without agreement it gives up and the loop pulls in
-alone. It is armed in the voice chain and the signalling follower only, and
-an unarmed receiver is byte-identical. The committed slice shows the effect:
+`|y|`, so it needs no carrier lock. `Receiver.ArmTimingAcquisition`
+measures 96-symbol windows and seeds the loop with `Gardner.SetPhase` once
+two consecutive windows agree within one sample; after four windows it
+gives up and the loop pulls in alone. It is armed in the voice chain and
+the signalling follower only, and an unarmed receiver is byte-identical.
+The committed slice shows the effect:
 
 ```text
 start phase 0: first S-ISCH armed 0.062 s, loop alone 0.992 s
@@ -328,13 +320,13 @@ receiver — the subject of
 ## What this overturns
 
 [P25 End to End, Part 7]({{ '/blog/deep-dives/p25-end-to-end-07-phase2-tdma/' | relative_url }})
-lists "Gardner timing" as a stage of a working Phase 2 chain and describes
-the PN44 as correctly seeded and applied; when it was written the loop's
-sign was wrong and the register mirrored.
+lists "Gardner timing" as a stage of a working Phase 2 chain and treats the
+PN44 as correctly applied; when it was written the loop's sign was wrong
+and the register mirrored.
 [Protocol Decoders, Part 4]({{ '/blog/deep-dives/protocol-decoders-04-p25-phase-2-tdma-mac/' | relative_url }})
-makes the same assumption about the descrambler. Both posts now carry an
-update pointing at Part 11 for the framing; this part is the correction for
-the two primitives. One more: the
+makes the same assumption about the descrambler. Both carry an update
+pointing at Part 11 for the framing; this part corrects the two primitives.
+One more: the
 [PN44 glossary entry]({{ '/reference/pn44-scrambler/' | relative_url }})'s
 figure and snippet still tap bits 0, 10, 24, 29, 35 and 40. Read it with
 the register above.
@@ -380,10 +372,10 @@ seeds differ, and the state does not recur early — all true of the mirrored
 register. Only a literal sequence from OP25 and SDRTrunk could fail it.
 
 **What does a Gardner loop with the wrong error sign look like on air?**
-Not like a dead receiver. The loop starts wherever the stream starts, so a
-call can decode at first; then it walks to the transition zero crossing,
-half a symbol off, and the dibits decay to about 50 %. At GopherTrunk's
-Phase 2 gain that took roughly 16,000 symbols, about three seconds.
+Not like a dead receiver. A call can decode at first; then the loop walks
+to the transition zero crossing, half a symbol off, and the dibits decay to
+about 50 %. At GopherTrunk's Phase 2 gain that took roughly 16,000 symbols,
+about three seconds.
 
 **Is GopherTrunk's P25 Phase 2 decode verified on air?**
 Not yet. The framing and scrambler are reference-pinned against OP25 and
@@ -393,16 +385,8 @@ not been confirmed, because no call is in those captures.
 
 **Why can't the nine mmr-s9 files be joined into one long test capture?**
 They are separate `rtl_sdr` grabs, and five of them contain a hole where
-whole USB buffers were dropped. Joining them adds eight more
-discontinuities to a TDMA grid that is only valid between them. Use each
-file alone and check S-ISCH spacing first.
-
-**How does the feed-forward timing estimate work without a carrier lock?**
-`sync.EstimateSymbolPhaseCM` looks only at magnitude. After the matched
-filter a PSK signal has constant modulus at the decision instant and a
-varying one between instants, so the sampling phase with the lowest
-`E|y|⁴ / E|y|²²` is the symbol instant. A frequency offset rotates the
-samples and leaves their magnitudes alone.
+whole USB buffers were dropped. A TDMA grid is only valid between
+discontinuities, so use each file alone and check S-ISCH spacing first.
 
 ## Series navigation
 

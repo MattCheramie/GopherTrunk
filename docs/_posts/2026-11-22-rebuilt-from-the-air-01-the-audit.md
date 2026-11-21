@@ -22,15 +22,15 @@ that the series corrects.*
 > turned out to implement framing that matched no transmitter: SmartNet,
 > MDC1200, the CTCSS and DCS tone gates, FLEX, the LoRa bit layer, System
 > Fusion's FICH, NXDN, D-STAR (with dPMR's voice Golay) and P25 Phase 2
-> TDMA. In each, the test encoder and the decoder were written from one
-> model — an invented sync word, bit order, interleaver or line code — so
-> every round trip was green and the first real signal decoded nothing. Each
-> was rebuilt from implementations proven on air, pinned with literal
-> vectors, and pinned again on a real-air slice where one exists. Today
-> MDC1200, the tone gates and NXDN trunked voice are **on-air verified**;
-> FLEX at 1600 bps, NXDN voice and control and an idle P25 Phase 2 carrier
-> are **capture-verified**; LoRa, System Fusion, D-STAR and SmartNet still
-> wait for a recording.
+> TDMA. In each, the test encoder and the decoder came from one model — an
+> invented sync word, bit order, interleaver or line code — so every round
+> trip was green and the first real signal decoded nothing. Each was rebuilt
+> from implementations proven on air, pinned with literal vectors, and
+> pinned again on a real-air slice where one exists. Today MDC1200, the tone
+> gates and NXDN trunked voice are **on-air verified**; FLEX at 1600 bps,
+> NXDN voice and control and an idle P25 Phase 2 carrier are
+> **capture-verified**; LoRa, System Fusion, D-STAR and SmartNet still wait
+> for a recording.
 
 **Key takeaways**
 
@@ -71,8 +71,7 @@ that the series corrects.*
 ## The pattern: one model, two halves, no radio
 
 A protocol decoder is rarely written alone. To test it you need frames, so
-you write a frame builder: lay the sync word down, interleave the payload,
-append the check. Then you decode what you built and assert that the payload
+you write a frame builder, decode what it built, and assert that the payload
 survives. It is the natural first test and it is worth having.
 
 [From the Issue Tracker, Part 20]({{ '/blog/solution-postmortem/from-the-issue-tracker-20-self-consistent-trap/' | relative_url }})
@@ -83,9 +82,9 @@ post collected seven bugs of the kind, each a wrong constant or table inside
 a decoder that was otherwise real. This series is about the larger version,
 which the project's engineering notes call **fabricated framing**: whole
 layers — a line code, a frame layout, an FEC chain, a bit order — that
-existed only in this repository. They were not typos against a standard. They
-were a working model, written where a standard was vague or out of reach, and
-a test encoder written from that same model the same week.
+existed only in this repository. They were not typos against a standard.
+They were a working model, written where a standard was vague or out of
+reach, with a test encoder written from the same model.
 
 <figure class="lab-figure">
 <svg viewBox="0 0 680 250" width="680" height="250" role="img" aria-label="Two test loops side by side. On the left, one invented layout feeds both the test encoder and the decoder, their round trip is green, and a real radio's first capture decodes nothing. On the right, two independent references produce literal vectors that pin both the decoder and our own encoder, a real-air slice feeds the decoder directly, and an operator's live run is the final gate.">
@@ -134,17 +133,17 @@ a test encoder written from that same model the same week.
 <figcaption>The left loop can only ever agree with itself; every arrow into the right-hand decoder starts somewhere the code under test did not write.</figcaption>
 </figure>
 
-Three things were true of every decoder in this series before its rebuild.
-The transmitter side lived next to the receiver side and had the same
-author. No value in the tests had been typed in from anywhere else. And no
-recording of a real transmitter had ever been through it.
+Three things were true of every decoder here before its rebuild. The
+transmitter side lived next to the receiver side and had the same author. No
+value in the tests had been typed in from anywhere else. And no recording of
+a real transmitter had ever been through it.
 
 The gaps were often written down. The old FLEX package said its parse was
 "validated end-to-end against a synthetic encoder, with exact on-wire bit
-order / generator left for real-capture calibration." The posts on this blog
-said "synthetic-verified." What neither did was stop describing the invented
-layout as the protocol's layout — and a described format, with a green suite
-behind it, reads as finished.
+order / generator left for real-capture calibration." Posts on this blog
+said "synthetic-verified." Neither stopped describing the invented layout as
+the protocol's layout — and a described format with a green suite behind it
+reads as finished.
 
 ## The roll call
 
@@ -154,7 +153,7 @@ defined at the end of this post.
 
 | Decoder | What was invented | How it surfaced | Status now | Told in |
 |---|---|---|---|---|
-| SmartNet ([#1143](https://github.com/MattCheramie/GopherTrunk/issues/1143)) | 24-bit sync `0xA4D7AA`, 32-bit OSW, BCH(64,16,11) — and the modem under them | a reporter whose every hunt ended `cchunt: hunt failed` | reference-pinned; the reporter's capture is still the on-air gate | [From Spec to Shipping 8]({{ '/blog/deep-dives/from-spec-to-shipping-08-smartnet-rebuild/' | relative_url }}) |
+| SmartNet ([#1143](https://github.com/MattCheramie/GopherTrunk/issues/1143)) | 24-bit sync 0xA4D7AA, 32-bit OSW, BCH(64,16,11) — and the modem under them | a reporter whose every hunt ended `cchunt: hunt failed` | reference-pinned; the reporter's capture is still the on-air gate | [From Spec to Shipping 8]({{ '/blog/deep-dives/from-spec-to-shipping-08-smartnet-rebuild/' | relative_url }}) |
 | MDC1200 ([#1220](https://github.com/MattCheramie/GopherTrunk/issues/1220)) | the line code: tone decisions sliced as data bits | a lab run — FleetSync decoded through the identical chain, MDC1200 never locked | on-air verified 28 Sep; real-air slice committed | [Part 2]({{ '/blog/solution-postmortem/rebuilt-from-the-air-02-mdc1200-tones-as-data/' | relative_url }}) |
 | CTCSS and DCS ([#1184](https://github.com/MattCheramie/GopherTrunk/issues/1184)) | a threshold calibrated at the wrong sample rate, a rounded Goertzel bin, and the DCS codeword's layout and bit order | the reporter's radios — a gate that never opened, then opened on the wrong tone | on-air verified 24 Sep | [Part 3]({{ '/blog/solution-postmortem/rebuilt-from-the-air-03-ctcss-dcs-tone-gates/' | relative_url }}) |
 | FLEX | the mode code hunted after the sync marker, an unprotected frame information word, the page-type table, reversed BCH information bits | a diff against multimon-ng, begun for a 3200 / 6400 bps request | 1600 bps capture-verified on five off-air frames; 3200 / 6400 bps synthetic-verified | [Part 4]({{ '/blog/solution-postmortem/rebuilt-from-the-air-04-flex-four-modes/' | relative_url }}) |
@@ -164,18 +163,17 @@ defined at the end of this post.
 | D-STAR, dPMR voice ([#1261](https://github.com/MattCheramie/GopherTrunk/issues/1261), [#1374](https://github.com/MattCheramie/GopherTrunk/issues/1374)) | sync words, header FEC, CRC, the voice bit schedule — and a (23,12) Golay that is not the vocoder's | a diff against the MMDVM firmware's format | reference-pinned; no real D-STAR capture yet | [Part 10]({{ '/blog/solution-postmortem/rebuilt-from-the-air-10-dstar/' | relative_url }}) |
 | P25 Phase 2 ([#1273](https://github.com/MattCheramie/GopherTrunk/issues/1273), [#1364](https://github.com/MattCheramie/GopherTrunk/issues/1364)) | one sync per superframe, a Golay ISCH with an invented SlotType, contiguous unscrambled voice; mirrored PN44 taps | a hybrid site that never followed a call; OP25 and SDRTrunk agreeing against it | reference-pinned; an idle real carrier decodes CRC-valid; no live call yet | Parts [11]({{ '/blog/solution-postmortem/rebuilt-from-the-air-11-p25-phase2-airframe/' | relative_url }}), [12]({{ '/blog/solution-postmortem/rebuilt-from-the-air-12-pn44-gardner-real-carrier/' | relative_url }}) |
 
-Two things stand out. The first is how long some of these ran. The LoRa
-receiver and its bit layer shipped in June; the Semtech format replaced it in
-October. The MDC1200 replay harness says of its own decoder that it "shipped
-for four months without ever having seen a real radio."
+Two things stand out. The first is how long some of these ran: the LoRa
+bit layer shipped in June and was replaced in October, and the MDC1200
+replay harness says of its own decoder that it "shipped for four months
+without ever having seen a real radio."
 
 The second is that the fabrication was never total. LoRa's chirp, preamble
-sync and SFD detection matched real LoRa all along — the dechirper was a
-real dechirper — while everything above the symbol was invented. MDC1200's
-40-bit sync word, its 16×7 interleave and its CRC were correct; only the
-step from tone to bit was wrong. FLEX had the right sync marker and the
-right block-interleave index, wrapped in the wrong frame. A decoder that is
-half right produces plausible intermediate numbers, which is exactly what
+sync and SFD detection matched real LoRa all along, while everything above
+the symbol was invented. MDC1200's 40-bit sync word, 16×7 interleave and CRC
+were correct; only the step from tone to bit was wrong. FLEX had the right
+sync marker and the right block-interleave index inside the wrong frame. A
+half-right decoder produces plausible intermediate numbers, which is what
 makes the invented half hard to suspect.
 
 ## How each one surfaced
@@ -183,36 +181,34 @@ makes the invented half hard to suspect.
 There were only two ways.
 
 **A reporter's signal.** SmartNet, MDC1200, the tone gates, NXDN and P25
-Phase 2 were each found because somebody pointed a radio at GopherTrunk and
-said what happened. The most useful of those reports carried a control
-experiment. The MDC1200 reporter's lab decoded Kenwood FleetSync bursts
-through a front end identical stage for stage to the MDC1200 one, while
-MDC1200 "never locked" — which removes the DSP chain from suspicion in one
-line. The NXDN reporter's two captures framed nothing under the old layout
-and thirty-six and fifty-six voice frames under the new one. A reporter's
-Phase 2 capture had failed its ISCH on 46–62 % of sub-frames under the old
-model, a number that reads like a weak signal until you learn the field
-being checked does not exist.
+Phase 2 were found because somebody pointed a radio at GopherTrunk and said
+what happened. The most useful reports carried a control experiment. The
+MDC1200 reporter's lab decoded Kenwood FleetSync bursts through a front end
+identical stage for stage to the MDC1200 one while MDC1200 "never locked",
+which clears the DSP chain in one line. The NXDN reporter's two captures
+framed nothing under the old layout and thirty-six and fifty-six voice
+frames under the new one. A Phase 2 capture had failed its ISCH on 46–62 %
+of sub-frames under the old model — a number that reads like a weak signal
+until you learn the field being checked does not exist.
 
 **A second implementation.** FLEX, LoRa, the System Fusion FICH and D-STAR
-were found by reading a decoder that is known to work and comparing layouts.
-FLEX is the cleanest case: a request for the 3200 and 6400 bps modes meant
-reading multimon-ng's frame handling, and the first thing that reading
-showed was that the existing 1600 bps path put the mode code on the wrong
-side of the sync marker. Nobody had reported FLEX broken. Nobody had a FLEX
-transmitter in range to try.
+were found by reading a decoder known to work and comparing layouts. FLEX is
+the cleanest case: a request for the 3200 and 6400 bps modes meant reading
+multimon-ng's frame handling, and the first thing that showed was the
+existing 1600 bps path hunting the mode code on the wrong side of the sync
+marker. Nobody had reported FLEX broken.
 
-That second route is the uncomfortable one. It means a fabricated decoder
-with no local signal and no reporter stays fabricated until somebody has an
-unrelated reason to open the file — and it is why
+That second route is the uncomfortable one: a fabricated decoder with no
+local signal and no reporter stays fabricated until somebody has an
+unrelated reason to open the file. It is why
 [From Spec to Shipping, Part 2]({{ '/blog/deep-dives/from-spec-to-shipping-02-choosing-references/' | relative_url }})
 argues for choosing the reference before writing the first line. The
-references in this series are open-source decoders with years on real
-systems: OP25 and SDRTrunk for P25, trunk-recorder for SmartNet, multimon-ng
-for FLEX, MMDVMHost and the MMDVM firmware for System Fusion, NXDN and
-D-STAR, DSD-FME for NXDN, gr-lora_sdr and LoRaPHY for LoRa. Several are GPL.
-They were read for protocol facts — constants, field positions, bit orders —
-and nothing from them is ported; the
+references here are open-source decoders with years on real systems: OP25
+and SDRTrunk for P25, trunk-recorder for SmartNet, multimon-ng for FLEX,
+MMDVMHost and the MMDVM firmware for System Fusion, NXDN and D-STAR, DSD-FME
+for NXDN, gr-lora_sdr and LoRaPHY for LoRa. Several are GPL. They were read
+for protocol facts — constants, field positions, bit orders — and nothing
+from them is ported; the
 [clean-room rules]({{ '/blog/deep-dives/from-spec-to-shipping-05-clean-room-rules/' | relative_url }})
 apply throughout.
 
@@ -220,34 +216,29 @@ apply throughout.
 
 Four habits, none of them careless on its own.
 
-**The encoder was written as the decoder's inverse.** The old MDC1200 test
-helper described itself as "the transmitter-side inverse of `deinterleave`."
-That is a statement about the code, not about Motorola radios. An encoder
-defined that way cannot disagree with its decoder even in principle.
+**The encoder was written as the decoder's inverse.** The MDC1200 test
+helper describes itself as "the transmitter-side inverse of `deinterleave`."
+That is a statement about the code, not about a radio; an encoder defined
+that way cannot disagree with its decoder even in principle.
 
-**A working model stood in for a standard.** Some of these protocols have
-specifications that are paywalled, some are described only in other
-people's source, and some are documented at the level of "a Golay-protected
-field." Filling the gap with a plausible structure gets a pipeline running.
+**A working model stood in for a standard.** Some of these specifications
+are paywalled and some protocols are documented only in other people's
+source. Filling the gap with a plausible structure gets a pipeline running.
 [Placeholder constants]({{ '/blog/solution-postmortem/from-the-issue-tracker-17-placeholder-constants/' | relative_url }})
 are the small form of that habit; a placeholder *frame* is the large one,
 and nothing in the build distinguishes it from a real frame.
 
-**There was no capture to argue with.** A P25 Phase 1 control channel is on
-the air around the clock near most developers. A FLEX 6400 bps channel, a
-D-STAR repeater or an NXDN trunked site may not be, and a decoder with no
-local signal gets its only feedback from its own fixtures.
+**There was no capture to argue with.** A decoder with no local signal — a
+6400 bps FLEX channel, a D-STAR repeater, an NXDN trunked site — gets its
+only feedback from its own fixtures.
 
-**The caveat lived where operators do not read.** "Pending real-capture
-calibration" in a package comment is honest and inert. The decoder still
-appeared in the config example, the documentation and the protocol list with
-no qualifier an operator would meet.
+**The caveat lived where operators do not read.** "Left for real-capture
+calibration" in a package comment is honest and inert.
 
-There is a fifth, smaller habit that several parts return to: synthetic
-*transmitters* that behave like no radio. Bursts laid back to back where a
-handheld leaves gaps, a deviation that scales with the sample rate, a
-payload repeated identically for seconds. Those produce a different failure
-— a real format that only decodes the fixture — and
+A fifth, smaller habit recurs through the series: synthetic *transmitters*
+that behave like no radio — bursts laid back to back where a handheld leaves
+gaps, a deviation that scales with the sample rate. Those give a real format
+that only decodes its fixture, and
 [DMR End to End, Part 9]({{ '/blog/deep-dives/dmr-end-to-end-09-direct-mode-carrier-gate/' | relative_url }})
 is the canonical example.
 
@@ -299,20 +290,18 @@ exactly what recording or live run would move it.
 
 ## What we keep
 
-- **Ask where the encoder came from.** If the answer is "the same person,
-  the same week, the same reading," the suite tests arithmetic, not the
-  protocol.
-- **One literal from outside beats a thousand round trips.** A single
-  26-byte burst typed in from a reference encoder would have failed MDC1200
-  on the day it was written.
+- **Ask where the encoder came from.** If the answer is "the same author,
+  the same reading," the suite tests arithmetic, not the protocol.
+- **One literal from outside beats a thousand round trips.** The tone
+  string a reference encoder emits for one MDC1200 burst is enough to fail
+  the old receiver.
 - **Check layers independently.** A correct sync word says nothing about
-  the line code under it or the FEC above it; partial correctness is how a
-  fabricated layer hides.
+  the line code under it or the FEC above it.
 - **Diff before you extend.** FLEX was caught because a feature request
-  began with reading the reference. Make that the first step of any change
+  began with reading the reference; make that the first step of any change
   to a decoder with no capture behind it.
 - **Put the status where the operator is.** A decoder is synthetic-verified
-  in its documentation and its release notes, not only in a comment.
+  in its documentation, not only in a source comment.
 
 ## Where this goes next
 

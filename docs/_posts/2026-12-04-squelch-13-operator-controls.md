@@ -150,18 +150,16 @@ twice in a row.
 <figcaption>The cursor's own visit to a priority channel restarts the count, so the interleave fills the gaps instead of doubling up.</figcaption>
 </figure>
 
-Three edges are pinned by the same test file,
-`lockout_persist_test.go`. A locked-out priority channel is skipped by
-both cursors. When *every* unlocked channel carries a priority there is
-nothing to interleave against, and the rotation stays the plain round
-robin (`TestConvScannerPriorityInterleaveOnlyPriority`). And with the key
-set but no channel marked, nothing changes.
+Two edges are pinned by the same test file, `lockout_persist_test.go`. A
+locked-out priority channel is skipped by both cursors. And when *every*
+unlocked channel carries a priority there is nothing to interleave
+against, so the rotation stays the plain round robin
+(`TestConvScannerPriorityInterleaveOnlyPriority`).
 
 What it is not: a preemption. The interleave changes which channel the
 scanner *picks next*; it does not pull the scanner out of a dwell to check
-a priority channel mid-call, as a hardware priority check does. And the
-rotation does not rank priority channels against each other — they take
-turns.
+a priority channel mid-call. And the rotation does not rank priority
+channels against each other — they take turns.
 
 ## Lockouts that remember, by frequency
 
@@ -173,9 +171,9 @@ hangtime. One deliberate exception: a forced dwell (`DwellOn`, the TUI's
 Enter on a channel row) beats a lockout for one cycle, because an explicit
 "listen to this now" outranks a standing "skip this".
 
-Until the persistence work that set lived in memory, and it was a
-`map[int]bool` keyed by list index. Both halves were wrong for anything
-that should outlive the process. The fix stores **frequencies**:
+The runtime set is a `map[int]bool` keyed by list index — fine inside one
+process, wrong for anything that should outlive it. What is stored is
+**frequencies**:
 
 ```go
 // cmd/gophertrunk/conv_lockouts.go (shape)
@@ -207,10 +205,9 @@ the channel. The properties worth stating, all pinned by
 - **No storage, no memory.** Without `storage.path` the hooks are nil and
   lockouts stay runtime-only, as before.
 
-The index would have failed silently. Insert one channel at the top of
-`scanner.conventional` and every stored index now names its neighbour; the
-scanner would lock out the wrong channel and report nothing. Frequency is
-what the operator meant.
+A stored index would have failed silently: insert one channel at the top
+of `scanner.conventional` and every index names its neighbour. Frequency
+is what the operator meant.
 
 **The same rule for IDs.** A scan-list channel surfaces as a synthetic
 [talkgroup]({{ '/reference/talkgroup/' | relative_url }}) so the call log,
@@ -257,10 +254,10 @@ is followable. `TestEngineHoldFollowsOnlyTheHeldTalkgroup` and
 `TestEngineAvoidIsATimedLockout` pin each clause.
 
 Neither is written anywhere. A restart clears them, like a scanner power
-cycle — deliberately. A hold is a statement about *now*; a daemon that came
+cycle — deliberately. A hold is a statement about *now*: a daemon that came
 back from a reboot still pinned to last night's talkgroup, dropping every
 other grant, would look broken. A conventional lockout is a statement about
-the channel, and should hold until the operator takes it back.
+the channel, and holds until the operator takes it back.
 
 One consequence is easy to miss. A scan-list call does not enter through
 `HandleGrant` at all. The scanner announces it with `HandleSyntheticCall`,
@@ -353,7 +350,7 @@ the frequency. The composer's `resolveKey` tries the grant's system first
 and that name second. Two channels on one frequency pool their keys
 (`TestConventionalChannelKeysResolveByFrequency`).
 
-Today that carries an NXDN channel's 15-bit
+The documented use today is an NXDN channel's 15-bit
 [scrambler]({{ '/reference/nxdn-scrambler/' | relative_url }}) keys —
 `algorithm: scrambler`, a decimal key, `key_id` as the radios' signalling
 names it. The cipher itself is capture-verified on the reporter's two
