@@ -202,7 +202,8 @@ CRC-valid telegrams are printed and saved, which hides exactly the frames
 you need when a meter does not decode. Each saved telegram is an IQ WAV
 (typically 100–400 KB) plus a `.metadata.json` naming what it holds.
 **`-log`** is written as things happen and records why a run stopped;
-prefer it to `| tee`, which Ctrl-C kills along with GopherTrunk.
+prefer it to piping through `tee`, which Ctrl-C kills along with
+GopherTrunk.
 
 **Leave `-rate` and `-ppm` alone.** Since v1.3.5 the decoder costs about
 the same at any rate from 1.024 to 1.6 MS/s, and 1.6 MS/s decodes slightly
