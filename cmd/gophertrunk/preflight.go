@@ -191,3 +191,18 @@ func parentDir(path string) string {
 	}
 	return filepath.Dir(path)
 }
+
+// unknownKeyWarnings lists the keys in the config file that no setting
+// reads, one sentence each. config.Load decodes leniently, so a section
+// indented one level too far or a misspelled key leaves its feature at the
+// default with nothing in the log. The 18 Nov 2026 Phase 2 report is the
+// case: the debug log, raw sidecars and voice IQ capture we asked for were
+// pasted under the trunking system and never switched on. Empty for a clean
+// file, an empty path or an unreadable file.
+func unknownKeyWarnings(cfgPath string) []string {
+	var out []string
+	for _, k := range config.UnknownKeysInFile(cfgPath) {
+		out = append(out, "config "+k.String())
+	}
+	return out
+}

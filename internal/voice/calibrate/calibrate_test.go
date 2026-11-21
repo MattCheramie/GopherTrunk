@@ -216,9 +216,9 @@ func TestCompareAMBE2SkipsWithoutFixtures(t *testing.T) {
 		t.Skipf("no AMBE+2 reference WAV at %s", refWav)
 	}
 
-	res, err := Compare(raw, refWav, "ambe2")
+	res, err := Compare(raw, refWav, "ambe2-dmr") // the fixture is DMR: AMBE+2 3600x2450
 	if err != nil {
-		t.Fatalf("Compare(ambe2): %v", err)
+		t.Fatalf("Compare(ambe2-dmr): %v", err)
 	}
 	t.Logf("AMBE+2 calibration: rmsRatio=%+.2f dB peakXcorr=%.3f lag=%d in=%d ref=%d",
 		res.RMSRatioDb, res.PeakXcorr, res.LagSamples,

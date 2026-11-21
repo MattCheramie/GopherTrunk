@@ -68,7 +68,7 @@ type RuntimeDTO struct {
 	ToneProfiles []ToneProfileDTO `json:"tone_profiles,omitempty"`
 
 	// Vocoder map by protocol — operator-facing names like
-	// "p25-phase2" → "ambe2".
+	// "p25-phase2" → "ambe2-dmr".
 	VocoderMap map[string]string `json:"vocoder_map"`
 
 	// MetricsEnabled mirrors metrics.enabled config.
