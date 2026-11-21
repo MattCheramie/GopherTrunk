@@ -102,6 +102,11 @@ func TestCloseWithoutRunReturns(t *testing.T) {
 }
 
 // With Run going, Close still waits for it to drain.
+//
+// The check reads runDone, which Run closes as it returns. It used to read a
+// channel the test's own goroutine closed AFTER Run returned, so Close could
+// correctly return in the gap between the two and the test failed on a
+// loaded runner (1 in ~1000 under -race locally; PR #1389's integration job).
 func TestCloseWaitsForRun(t *testing.T) {
 	bus := events.NewBus(8)
 	defer bus.Close()
@@ -116,10 +121,11 @@ func TestCloseWaitsForRun(t *testing.T) {
 	}
 	_ = m.Close()
 	select {
-	case <-ran:
+	case <-m.runDone:
 	default:
 		t.Fatal("Close returned before Run finished")
 	}
+	<-ran
 }
 
 // Stalled taps are exposed for wideband channels only: the scan list's

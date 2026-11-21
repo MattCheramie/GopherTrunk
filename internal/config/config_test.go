@@ -548,12 +548,28 @@ func TestValidate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			withControlChannel(&tc.cfg)
 			err := tc.cfg.Validate()
 			if (err != nil) != tc.wantErr {
 				t.Errorf("err = %v, wantErr = %v", err, tc.wantErr)
 			}
 		})
 	}
+}
+
+// withControlChannel gives every system that has no control channel (none
+// listed, none derivable from wideband channels) one, so a fixture written
+// to test some other field is a config the daemon could start. The
+// control-channel rule itself is pinned by
+// system_control_channels_validate_test.go.
+func withControlChannel(cfg *Config) {
+	systems := append([]SystemConfig(nil), cfg.Trunking.Systems...)
+	for i := range systems {
+		if len(systems[i].EffectiveControlChannels(cfg.SDR.Devices)) == 0 {
+			systems[i].ControlChannels = []uint32{851_012_500}
+		}
+	}
+	cfg.Trunking.Systems = systems
 }
 
 // TestSoapyRemoteDeviceArgs covers the device-args config block (issue #542):
@@ -856,7 +872,7 @@ func TestEncryptionKeyScrambler(t *testing.T) {
 // system and on a scan-list channel, and the field round-trips from YAML.
 func TestEncryptionKeysTalkgroupScope(t *testing.T) {
 	sys := func(keys ...EncryptionKeyConfig) Config {
-		return Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", EncryptionKeys: keys}}}}
+		return Config{Trunking: TrunkingConfig{Systems: []SystemConfig{{Name: "x", Protocol: "nxdn", ControlChannels: []uint32{453_775_000}, EncryptionKeys: keys}}}}
 	}
 	tg21 := EncryptionKeyConfig{KeyID: 0, Talkgroup: 21, Algorithm: "scrambler", Key: "12345"}
 	tg10 := EncryptionKeyConfig{KeyID: 0, Talkgroup: 10, Algorithm: "scrambler", Key: "22122"}

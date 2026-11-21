@@ -252,7 +252,12 @@ GET /api/v1/recordings?after=<id>&limit=<n>      (limit default 100, max 1000)
   value for the next request. Re-reading from an older `id` returns the same
   entries with the same ids, so duplicates are recognisable: key on `id`.
 - A call recorded in per-transmission grouping has one entry per file
-  (`segment` 0, 1, …), all with the same `call_id`.
+  (`segment` 0, 1, …), all with the same `call_id`. Segment numbers count
+  the call's transmissions, not its files, so they **can have gaps**: a
+  transmission whose file was discarded (shorter than
+  `recordings.min_duration_ms`, or with no decoded audio) keeps its number
+  and has no entry. Order a call's files by `segment`, but don't expect
+  the numbers to run 0, 1, 2 without gaps.
 - `source_id` is the radio heard in **that file**; it is omitted when the
   radio never resolved. Use it, not `call.source_id`, to say who is speaking:
   the call row's source is the call's **last** talker, so when a second radio

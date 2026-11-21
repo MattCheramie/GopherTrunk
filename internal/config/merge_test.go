@@ -20,7 +20,7 @@ trunking:
 	cfg := Default()
 	cfg.Log.Level = "debug"
 	cfg.SDR.SampleRate = 1_024_000
-	cfg.Trunking.Systems = []SystemConfig{{Name: "New", Protocol: "p25"}}
+	cfg.Trunking.Systems = []SystemConfig{{Name: "New", Protocol: "p25", ControlChannels: []uint32{851_012_500}}}
 
 	out, err := MarshalMerge(original, cfg)
 	if err != nil {
