@@ -90,7 +90,7 @@ That turned a feature into an audit that did not stop at the sync words.
 ## The wrong theory: calibration
 
 [Beyond Voice Part 13]({{ '/blog/deep-dives/beyond-voice-13-dstar-ysf-dpmr/' | relative_url }})
-described the package in September, and it was candid. The header FEC chain
+described the package, and it was candid. The header FEC chain
 was "self-consistent encode/decode pairs" whose match to the reference's
 tables "is a follow-up calibration step". The voice chain's deinterleave was
 a sequential split marked `PLACEHOLDER`. That was the whole list.
@@ -247,7 +247,7 @@ byte first. `TestComputeCRCKnownVector` now pins the catalogue check value
 bytes of a header the reference host software sealed. One flag was wrong
 too: FLAG1's urgent bit is `0x08`; the old code read `0x04`.
 
-`dstar_fec_mode` now defaults to `"on"`. The earlier default, `"off"`, read
+`dstar_fec_mode` defaults to `"on"`. The earlier default, `"off"`, read
 41 unencoded bytes after the sync — a format no radio sends.
 
 ## The Golay nobody suspected
