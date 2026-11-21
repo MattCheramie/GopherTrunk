@@ -29,9 +29,7 @@ repository the whole time.*
 > settled half a symbol off and every call's dibits decayed to ~50 % after
 > ~16k symbols (~3 s). And a real Phase 2 carrier was already in
 > `samples/mmr`: the idle MMR voice channel, +637.5 kHz in every
-> `mmr-s9-*.cfile`
-> ([#1364](https://github.com/MattCheramie/GopherTrunk/issues/1364)). Its
-> SACCH decodes CRC-valid only with
+> `mmr-s9-*.cfile` (#1364). Its SACCH decodes CRC-valid only with
 > `PN44SeedFromIdentity(0xBEE00,0x164,0x164)` and carries the patch the
 > control channel announces — and it found two receive-side defects of its
 > own. Not confirmed: a source RID or alias from a live call.
@@ -42,34 +40,34 @@ repository the whole time.*
   sensitivity and a period bound all pass on the mirrored register; 4320
   literal bits from a decoder that works on air do not.
 - **Test a timing loop's convergence point, not its symbol count.** The old
-  Gardner tests used a triangle pulse and a quadrant check, and both survive
-  a half-symbol error.
-- **A wrong-seed control is what makes a real-air pin mean something.** Six
-  of six SACCH bursts decode with the site's seed and none with colour code
-  `0x165`, so the descramble is what makes them valid.
+  Gardner tests used a triangle pulse and a quadrant check; both survive a
+  half-symbol error.
+- **A wrong-seed control makes a real-air pin mean something.** Six of six
+  SACCH bursts decode with the site's seed and none with colour code
+  `0x165`.
 - **Real air finds what no reference can.** The carrier exposed a timing
   pull-in of up to a second and a framer that cut garbage for 720 ms after
-  an IQ hole — neither one a format question.
+  an IQ hole.
 
 ## Cheat sheet
 
 | | |
 |---|---|
 | Issue | [#1273](https://github.com/MattCheramie/GopherTrunk/issues/1273) (the Phase 2 rebuild) and [#1364](https://github.com/MattCheramie/GopherTrunk/issues/1364) (the carrier in `samples/mmr`) |
-| Symptom | every burst body descrambled with the wrong mask; a call's dibits decaying to ~50 % about 3 s in; on real air, a first sync up to a second late at one start phase in four |
-| Wrong theories | weak air; a wrong or missing seed; the descramble order (#915 — real, not sufficient); "both primitives have passing tests" |
-| Real cause | PN44 feedback taps mirrored; Gardner error applied with the wrong sign; Gardner pull-in from its unstable point; `AirFramer` flywheeling on a stale grid |
+| Symptom | burst bodies descrambled with the wrong mask; a call's dibits decaying to ~50 % about 3 s in; on real air, a first sync up to a second late |
+| Wrong theories | weak air; a wrong or missing seed; the descramble order (#915 — real, not sufficient); "both primitives have tests" |
+| Real cause | PN44 feedback taps mirrored; Gardner error applied with the wrong sign; pull-in from the loop's unstable point; `AirFramer` flywheeling on a stale grid |
 | Fix | taps at bits 43/33/19/14/8/3; `g.mu += g.sps - g.gain*err`; `Receiver.ArmTimingAcquisition` → `sync.EstimateSymbolPhaseCM`; re-anchor after one missed ISCH |
-| Diagnostic | a literal reference sequence; a convergence-point test on RRC data; a real carrier decoded with a wrong-seed control |
-| Status | PN44 and framing **reference-pinned**; the SACCH MAC path **capture-verified** on an idle carrier; no live call, source RID or alias yet |
+| Diagnostic | a literal reference sequence; a convergence-point test on RRC data; a real carrier with a wrong-seed control |
+| Status | PN44 and framing **reference-pinned**; SACCH MAC path **capture-verified** on an idle carrier; no live call, source RID or alias yet |
 
 ## In this post
 
 - **The symptom, and the theories that fit it** — a correct frame over two wrong primitives.
 - **Defect one: PN44 tapped the exponents** — the mirrored register and the 4320 bits that pin it.
 - **Defect two: the Gardner loop left the eye** — one sign, and tests that could not see it.
-- **The carrier already in the repo** — #1364, the idle MMR voice channel, and the wrong-seed control.
-- **What real air found** — a slow pull-in, a stale grid, and nine files that are not one recording.
+- **The carrier already in the repo** — #1364 and the wrong-seed control.
+- **What real air found** — a slow pull-in, a stale grid, nine separate grabs.
 - **What this overturns, and what we keep** — the corrections and the rules.
 
 ## The symptom, and the theories that fit it
@@ -134,8 +132,8 @@ func (s *PN44Scrambler) Next() byte {
 ```
 
 Mirroring the taps does not break the register. It still shifts, still
-depends on its seed, still emits a long pseudo-random stream — just not the
-one a P25 transmitter uses. Which is why every existing test stayed green.
+depends on its seed, still emits a pseudo-random stream — just not the one a
+P25 transmitter uses. So every existing test stayed green.
 `TestPN44ScramblerRoundTrip` scrambles twice and gets its input back.
 `TestPN44ScramblerSequenceIsDeterministic` and
 `TestPN44ScramblerOutputDiffersAcrossSeeds` compare the register with
@@ -184,9 +182,9 @@ not another property. `TestPN44MatchesOP25AndSDRTrunk` holds the whole
 4320-bit outbound superframe sequence for that identity as hex in the test
 file, as OP25's `apps/tdma/lfsr.py` generates it; SDRTrunk's
 `LinearFeedbackShiftRegister` produces the identical 4320 bits. A second,
-256-bit vector covers an MMR identity. Both references descramble live
-Phase 2 air with that sequence — the property no round trip has. The
-sequence is a fact about the protocol; no reference code was ported.
+256-bit vector covers an MMR identity. Both decoders descramble live Phase 2
+air with it — the property no round trip has. The sequence is a protocol
+fact; no reference code was ported.
 
 ## Defect two: the Gardner loop left the eye
 
@@ -203,20 +201,19 @@ err := float64(real(diff)*real(midSym) + imag(diff)*imag(midSym))
 g.mu += g.sps - g.gain*err // the old code added the error
 ```
 
-Flip that sign and the two equilibria swap. The eye centre becomes the
-unstable point and the transition zero crossing the stable one: from any
-start the loop walks to half a symbol off and stays there. At the Phase 2
-chain's gain of 0.005 the walk took about 16,000 symbols. A call began
-decodable, and three seconds later its dibits were noise.
+Flip that sign and the equilibria swap: the eye centre becomes the unstable
+point and the transition zero crossing the stable one. From any start the
+loop walks half a symbol off and stays. At the Phase 2 chain's gain of
+0.005 the walk took about 16,000 symbols — a call began decodable, and
+three seconds later its dibits were noise.
 
 The old tests could not see it, and both reasons are about the fixture.
 `TestGardnerRecoversAlignedQPSK` and `TestGardnerLocksOnPhaseOffset` build
 each symbol as its constellation point times a taper confined to its own
-period — a raised-cosine ramp in one, a triangle in the other — so there is
-no intersymbol interference to punish a wrong phase. And they score by
-symbol *count* and *quadrant* match (above 0.85 and 0.80). A triangle pulse
-has the right sign almost anywhere inside its symbol, and a loop emits one
-symbol per period wherever it sits.
+period — a raised-cosine ramp, a triangle — so no intersymbol interference
+punishes a wrong phase. And they score by symbol *count* and *quadrant*
+match. A triangle pulse has the right sign almost anywhere inside its
+symbol, and a loop emits one symbol per period wherever it sits.
 
 `TestGardnerConvergesOnEyeCentre` tests what the loop is for. It runs
 40,000 random QPSK symbols through a
@@ -242,12 +239,12 @@ for the Phase 1 control channel at +37.5 kHz — WACN `BEE00`, system `164`,
 NAC `164`. At +637.5 kHz in every one of them sits the network's idle voice
 channel, 420.650 MHz: a continuous Phase 2 TDMA carrier.
 
-An idle carrier carries no voice, but it does carry signalling: the
+An idle carrier has no voice, but it does carry signalling: the
 [SACCH]({{ '/reference/p25-sacch-facch/' | relative_url }}) on timeslots 10
-and 11 and fill elsewhere. `TestRealAirMMRPhase2MACDecodes` runs the
-production receiver's dibits through the `AirFramer` and `DecodeAirMAC`
-twice — once with the seed built from the control channel's identity, once
-with the colour code off by one:
+and 11, fill elsewhere. `TestRealAirMMRPhase2MACDecodes` runs the production
+receiver's dibits through the `AirFramer` and `DecodeAirMAC` twice — with
+the seed built from the control channel's identity, and with the colour
+code off by one:
 
 ```text
 realair_mmr_test.go:86: 33 bursts, 6 SACCH-S, 6 CRC-valid with the site's seed, 0 with colour code 0x165
@@ -262,24 +259,22 @@ The content cross-checks too. The Phase 1 control channel in the same
 capture announces a Motorola
 [patch]({{ '/reference/patch-multigroup/' | relative_url }}): supergroup
 3202 carrying talkgroup 201. The Phase 2 SACCH bursts decode as `MAC_IDLE`
-PDUs holding the bytes `81 90 0b 0c 82 00 c9 …` — MFID `0x90`, opcode
-`0x81`, `0x0C82` = 3202, `0x00C9` = 201. Two channels, two modulations, two
-FEC chains, one regroup.
+PDUs holding `81 90 0b 0c 82 00 c9 …` — MFID `0x90`, opcode `0x81`,
+`0x0C82` = 3202, `0x00C9` = 201. Two channels, two FEC chains, one regroup.
 
 ## What real air found
 
 A reference gives you the format. It cannot say how your receiver behaves
-on a carrier that is already up, or on a file with a hole in it. The
-carrier found one defect of each kind.
+on a carrier that is already up, or on a file with a hole in it.
 
 **A pull-in of up to a second.** A voice chain starts at the grant, at an
 arbitrary sub-symbol phase. Started at the eight sub-symbol phases of each
-of the nine captures, the corrected Gardner loop found its first S-ISCH
-8–100 ms in at most phases, 0.15–1.0 s in at about one in four, and not
-within the 1.09 s capture at two. Near a half-symbol offset — its unstable
-equilibrium — a feedback loop has almost no error to pull on. MAC_PTT, the
-burst that names a call's source radio, is sent at key-up, so a slow start
-costs exactly that.
+of the nine captures, the corrected loop found its first S-ISCH 8–100 ms in
+at most phases, 0.15–1.0 s in at about one in four, and not within the
+1.09 s capture at two. Near a half-symbol offset — its unstable equilibrium
+— a feedback loop has almost no error to pull on. MAC_PTT, the burst that
+names a call's source radio, is sent at key-up, so a slow start costs
+exactly that.
 
 The fix is the feed-forward acquisition
 [DMR direct mode]({{ '/blog/deep-dives/dmr-end-to-end-09-direct-mode-carrier-gate/' | relative_url }})
@@ -302,19 +297,18 @@ start phase 7: first S-ISCH armed 0.062 s, loop alone 0.272 s
 **A framer on a stale grid.** `mmr-s9-3.cfile` has a hole about 0.26 s in:
 the receiver's symbol count stays exact, but the on-air timeslot grid moves
 by 155 dibits, consistent with 25 dropped 16 KiB USB buffers. The
-`AirFramer` kept cutting packets on the old grid until `airLockLossDibits`
-— two superframes, 720 ms — passed without a recognised ISCH. On this hole
-it lost 24 of 33 bursts, handing out packets with random DUIDs, voice among
+`AirFramer` kept cutting on the old grid until `airLockLossDibits` — two
+superframes, 720 ms — passed without a recognised ISCH. On this hole it
+lost 24 of 33 bursts, handing out packets with random DUIDs, voice among
 them. It now re-anchors after **one** missed ISCH (`airReanchorMisses`),
-searching for an off-grid S-ISCH from *inside* the packet that missed,
-because a hole shortens the stream and the new grid's first S-ISCH sat
-there. `TestAirFramerReanchorsAfterIQHole` reports 34 bursts, 2 off the
-idle pattern, 6 SACCH CRC-valid.
+searching for an off-grid S-ISCH from *inside* the packet that missed: a
+hole shortens the stream, and the new grid's first S-ISCH sat there.
+`TestAirFramerReanchorsAfterIQHole` reports 34 bursts, 2 off the idle
+pattern, 6 SACCH CRC-valid.
 
-The hole taught a rule about the fixture as well. The nine files are
-separate `rtl_sdr` grabs, not one recording, and five of them contain a
-hole. Never concatenate them, and check S-ISCH spacing before blaming the
-receiver — the subject of
+The nine files are separate `rtl_sdr` grabs, not one recording, and five of
+them contain a hole. Never concatenate them, and check S-ISCH spacing before
+blaming the receiver — the subject of
 [Part 13]({{ '/blog/solution-postmortem/rebuilt-from-the-air-13-read-the-capture-first/' | relative_url }}).
 
 ## What this overturns
@@ -341,27 +335,25 @@ the register above.
 - **Give a timing loop real pulses and measure where it lands.** Symbol
   count and quadrant are the two things a half-symbol error leaves intact.
 - **Search your own samples.** A capture made for one channel records
-  everything else in the span. The carrier that closed this gate had been
-  committed for another test.
+  everything else in the span.
 - **Real-air pins need a negative control.** "It decodes" is weak; "it
-  decodes with this seed and not with the next one" is evidence.
+  decodes with this seed and not the next one" is evidence.
 - **A hole is a property of the file.** Check sync spacing, and never join
   separate grabs into one stream.
 
-Status: the PN44 and the air framing are **reference-pinned**; the MAC path
-is **capture-verified** on an idle carrier, and the timing seed and the
-re-anchor are pinned on the same real slices. Nothing a live call carries —
-voice, a source RID, a talker alias — is confirmed, because no call is in
-these captures. Like the SmartNet capture in
+Status: PN44 and the air framing are **reference-pinned**; the MAC path is
+**capture-verified** on an idle carrier, with the timing seed and re-anchor
+pinned on the same real slices. Nothing a live call carries — voice, a
+source RID, a talker alias — is confirmed. Like the SmartNet capture in
 [From Spec to Shipping, Part 8]({{ '/blog/deep-dives/from-spec-to-shipping-08-smartnet-rebuild/' | relative_url }}),
 that is an on-air gate, not a to-do item.
 
 ## Where this goes next
 
 [Part 13]({{ '/blog/solution-postmortem/rebuilt-from-the-air-13-read-the-capture-first/' | relative_url }})
-turns the hole in `mmr-s9-3.cfile` into a general habit: six captures that
-were not what the report said, and the triage instrument each one left
-behind — starting with the "System Fusion" file that was an FM test tone.
+turns that hole into a habit: six captures that were not what the report
+said, and the triage instrument each left behind — starting with the
+"System Fusion" file that was an FM test tone.
 
 ## FAQ
 
@@ -379,9 +371,9 @@ about three seconds.
 
 **Is GopherTrunk's P25 Phase 2 decode verified on air?**
 Not yet. The framing and scrambler are reference-pinned against OP25 and
-SDRTrunk, and the SACCH MAC path is capture-verified on a real idle carrier
-in `samples/mmr`. A live call — voice, a source RID, a talker alias — has
-not been confirmed, because no call is in those captures.
+SDRTrunk, and the SACCH MAC path is capture-verified on a real idle
+carrier. A live call — voice, a source RID, a talker alias — has not been
+confirmed; no call is in those captures.
 
 **Why can't the nine mmr-s9 files be joined into one long test capture?**
 They are separate `rtl_sdr` grabs, and five of them contain a hole where

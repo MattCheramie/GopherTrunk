@@ -14,11 +14,11 @@ series_part: 13
 scanner — the scan list with no control channel to tell it a call exists —
 and every gate that decides when a channel opens.
 [Part 12]({{ '/blog/deep-dives/squelch-12-narrowband-front-end/' | relative_url }})
-put one channel front end under every narrowband decoder. Twelve parts of
-gates decide when a channel opens on its own. This part is about the
-decisions the scanner does not make: which channels the operator wants
-sampled more often, which they never want to hear again, and how loud each
-should be when it does open.*
+put one channel front end under every narrowband decoder, and with it the
+gates are complete: the scanner can decide for itself when a channel
+opens. This part is about the decisions it does not make — which channels
+the operator wants sampled more often, which they never want to hear
+again, and how loud each should be when it does open.*
 
 > **TL;DR:** `scanner.priority_interleave: N` turns the round robin into a
 > priority scan: after N ordinary picks `pickNextChannel` visits the next
@@ -35,8 +35,8 @@ should be when it does open.*
 
 **Key takeaways**
 
-- **Priority scan is a second cursor, not a sort.** Any non-zero `priority`
-  marks a channel; marked channels take turns, and the rotation never
+- **Priority scan is a second cursor, not a sort.** A `priority` above
+  zero marks a channel; marked channels take turns, and the rotation never
   goes more than N ordinary channels without one.
 - **Durable state is keyed by what the operator means, never by a list
   index.** Lockouts key on frequency, IDs on `talkgroup_id`, channel keys
@@ -106,11 +106,10 @@ The detail that keeps it from over-sampling: when the main cursor reaches
 a priority channel by itself, **that visit counts**, and the clock
 restarts. `TestConvScannerPriorityInterleave` pins the result for four
 channels with one priority channel and an interleave of 2 — A P C D P A P
-C D P. P is never more than two ordinary channels away, and never sampled
-twice in a row.
+C D P. P is never more than two ordinary channels away.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 200" width="680" height="200" role="img" aria-label="Two rows of ten scan picks over channels A, P, C and D, where P carries a priority. The top row is the plain round robin: A P C D A P C D A P. The bottom row uses a priority interleave of two: A P C D P A P C D P, with the two interleaved visits to P highlighted and the count of ordinary picks since the last priority visit shown under each pick.">
+<svg viewBox="0 0 680 200" width="680" height="200" role="img" aria-label="Two rows of ten scan picks over channels A, P, C and D, where P carries a priority. The plain round robin reads A P C D A P C D A P. With a priority interleave of two it reads A P C D P A P C D P; the two interleaved visits to P are highlighted.">
   <text x="10" y="18" fill="var(--fg-muted)" font-size="9" font-weight="bold">priority_interleave: 0 — plain round robin</text>
   <g fill="none" stroke="var(--fg-muted)">
     <rect x="10" y="28" width="56" height="26" rx="4"/><rect x="76" y="28" width="56" height="26" rx="4"/>
@@ -167,9 +166,11 @@ A lockout is the operator saying "not this one". `LockoutChannel` adds the
 index to the scanner's `lockedOut` set, `pickNextChannel` skips it, and if
 the channel is dwelling the synthetic call ends immediately
 (`EndReasonLockout`) and the visit's stream is cancelled — not after
-hangtime. One deliberate exception: a forced dwell (`DwellOn`, the TUI's
-Enter on a channel row) beats a lockout for one cycle, because an explicit
-"listen to this now" outranks a standing "skip this".
+hangtime. One deliberate exception: a forced dwell (`DwellOn`, Enter on a
+channel row in the
+[TUI]({{ '/blog/deep-dives/operator-cockpit-12-the-tui-cockpit/' | relative_url }}))
+beats a lockout for one cycle, because an explicit "listen to this now"
+outranks a standing "skip this".
 
 The runtime set is a `map[int]bool` keyed by list index — fine inside one
 process, wrong for anything that should outlive it. What is stored is
@@ -193,8 +194,9 @@ it once and hands the frequencies to the scanner as `Options.LockedOutHz`;
 `New` applies them to whichever channels carry those frequencies *before
 the first pick*, so a locked channel is never dwelt on even once after a
 restart. Every runtime toggle then reaches `Options.OnLockoutChange` with
-the channel. The properties worth stating, all pinned by
-`TestConvScannerRestoresPersistedLockouts`:
+the channel. Four properties are worth stating — the first two pinned by
+`TestConvScannerRestoresPersistedLockouts`, the others visible in
+`convLockoutPersistence`:
 
 - **A stale frequency is ignored, and kept.** Remove a channel from the
   config and its lockout matches nothing; put it back and it applies again.
@@ -233,14 +235,20 @@ talkgroup), and both are consulted at one point in `HandleGrant`:
 
 ```go
 // internal/trunking/engine.go (shape)
-if tg != nil && tg.Lockout && !g.Emergency { return }  // permanent lockout
+if tg != nil && tg.Lockout && !g.Emergency {
+    return // the catalogue's permanent lockout
+}
 // ...patch attribution...
+held := false
 if ok, why := e.holdAvoid.gate(g.System, g.GroupID, g.PatchedGroups); !ok {
-    if !g.Emergency { return }                          // hold / avoid
+    if !g.Emergency {
+        e.log.Debug("grant dropped by "+why, "grant", g.String())
+        return
+    }
 } else if _, isHeld := e.holdAvoid.Held(); isHeld {
     held = true
 }
-if e.ScanMode() == ScanModeList && !g.Emergency && !held { /* scan-list gate */ }
+// ...the scan-list gate, skipped when held
 ```
 
 The order is the design. They sit **after** the catalogue's permanent
@@ -301,7 +309,9 @@ channel peaks near −20 dBFS. By default, then, a P25 channel is about 10 dB
 Reports of the opposite exist, and they are source- and config-specific —
 5 kHz-deviation amateur FM, compressed air-band AM, the enhance and
 normalize settings of
-[Voice Coding Part 10]({{ '/blog/deep-dives/voice-coding-10-enhancement-loudness/' | relative_url }}).
+[Voice Coding Part 10]({{ '/blog/deep-dives/voice-coding-10-enhancement-loudness/' | relative_url }})
+and
+[Recording Part 8]({{ '/blog/deep-dives/recording-streaming-08-loudness-output-stage/' | relative_url }}).
 That is why the fix is a per-channel knob rather than a moved default:
 `audio_gain_db`, ±30 dB, clamped at full scale
 ([#1239](https://github.com/MattCheramie/GopherTrunk/issues/1239)).
@@ -388,7 +398,7 @@ honest list of what is still open.
 
 **How does priority scan work on GopherTrunk's conventional scan list?**
 Set `scanner.priority_interleave` to N and give the important channels a
-non-zero `priority`. After N ordinary channels the rotation visits the
+`priority` above zero. After N ordinary channels the rotation visits the
 next priority channel without moving the main cursor, and the cursor's own
 visit to a priority channel restarts the count. It changes the pick order;
 it does not interrupt a call in progress.

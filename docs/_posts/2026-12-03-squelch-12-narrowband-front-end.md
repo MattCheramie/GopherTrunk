@@ -34,7 +34,7 @@ second defect left a decoder waiting on a stream nobody was running.*
 > The same pass reserved pinned dongles as `sdr.RoleDedicated` and stopped
 > ADS-B inventing ~440 "aircraft" a second; a later one made the wideband
 > paging group drive its own stream instead of waiting on a subscription.
-> All of it is synthetic-verified; none has been run on the reporter's rig.
+> All synthetic-verified; none of it has run on the reporter's rig.
 
 **Key takeaways**
 
@@ -83,9 +83,8 @@ each one). Until #1316 every one was built with `sdr.sample_rate` as its
 input rate and handed the dongle's raw stream.
 
 The reporter's rig put [APRS]({{ '/reference/aprs/' | relative_url }}) on a
-dongle at 144.39 MHz. Packets arrived — the HDLC framer found flags — and
-every one of them was published with `fcs_ok=false`. Not weak-signal
-losses: all of them.
+dongle at 144.39 MHz. Frames were decoded and published, and every one of
+them carried `fcs_ok=false`.
 
 The cause is arithmetic. An FM discriminator computes the phase step
 between consecutive samples of whatever is in the stream, and its output
@@ -97,8 +96,8 @@ below it in the span, and below the FM threshold the discriminator stops
 following the modulation. A low-pass on the *audio* cannot repair that:
 the damage is done in the nonlinear step.
 
-A hardware receiver's IF filter comes first, so it never meets this. The
-series already had, twice:
+A hardware receiver's IF filter comes first. The series had already met
+the defect twice:
 [Part 2]({{ '/blog/deep-dives/squelch-02-channel-power/' | relative_url }})
 found the squelch measuring the whole span and
 [Part 5]({{ '/blog/deep-dives/squelch-05-ctcss/' | relative_url }}) found
@@ -109,7 +108,7 @@ running raw.
 
 ## Mix, decimate, filter
 
-`internal/dsp/narrowband` is that filter, shared: each decoder keeps its
+`internal/dsp/narrowband` is that filter, shared. Each decoder keeps its
 own demod chain and runs it at a lower rate:
 
 ```go
@@ -151,7 +150,7 @@ off centre comes through at unity, a carrier 20 kHz away is down by more
 than 50 dB.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 230" width="680" height="230" role="img" aria-label="Two block chains. Before: an SDR at 2.4 megasamples per second feeds an FM discriminator running at the full rate, then the decoder, with 2.4 megahertz of noise around a 12.5 kilohertz channel. After: the SDR is tuned 518 kilohertz below the channel, then an NCO mix, a divide-by-50 decimator, a plus or minus 8 kilohertz Kaiser filter, a discriminator at 48 kilohertz and a decoder built for the front end's output rate.">
+<svg viewBox="0 0 680 230" width="680" height="230" role="img" aria-label="Two block chains. Before: an SDR at 2.4 megasamples per second feeds a full-rate FM discriminator and the decoder, with 2.4 megahertz of noise around a 12.5 kilohertz channel. After: the SDR is tuned 518 kilohertz low, followed by an NCO mix, a divide-by-50 decimator, a plus or minus 8 kilohertz Kaiser filter and a 48 kilohertz discriminator.">
   <text x="10" y="16" fill="var(--fg-muted)" font-size="9" font-weight="bold">before #1316</text>
   <g fill="none" stroke="var(--fg-muted)">
     <rect x="10" y="26" width="130" height="40" rx="5"/>
@@ -224,12 +223,12 @@ common [RTL-SDR]({{ '/reference/rtl-sdr/' | relative_url }}) rate: 50:1,
 Every receiver constructor then takes `InputRateHz: spec.fe.OutRate()`,
 never the SDR's rate; `TestDaemonBuildsSingleChannelDecodersBehindFrontEnd`
 builds a daemon with APRS, AIS, DSC, MDC1200, FleetSync and POCSAG sections
-and checks each has a front end at 48 kHz. The run loop changed in the
-same pass: a single-channel decoder used to give up for the daemon's
-lifetime on one failed `SetCenterFreq`
-([Part 10]({{ '/blog/deep-dives/squelch-10-bursty-carriers/' | relative_url }})),
-and `runSingleChannelDecoder` now retries the tune, the stream open and a
-decoder that stops — for all of them, ADS-B and LoRa included.
+and checks each has a front end at 48 kHz. The same pass finished a job
+[Part 10]({{ '/blog/deep-dives/squelch-10-bursty-carriers/' | relative_url }})
+started: `runSingleChannelDecoder`, which retries the tune, the stream open
+and a decoder that stops, now drives every one of them — ADS-B and LoRa
+included — where most used to give up for good on one failed
+`SetCenterFreq`.
 
 ## Two fixtures that could not fail
 
@@ -277,19 +276,20 @@ the operator wrote, and no by-role lookup returns them
 run its own `sample_rate`, which is why `decoderSDRRate` asks the pool for
 the device's rate rather than reading the shared one.
 
-The ADS-B half of the report was louder. A
-[Mode S]({{ '/reference/mode-s/' | relative_url }}) frame's last 24 bits
-are a CRC for DF 11, 17 and 18. For DF 0, 4, 5, 16, 20 and 21 they are the
-CRC XORed with the aircraft's address, so the "ICAO" is whatever the XOR
-yields — and the old decoder marked those `CRCValid = true`, by
-construction, with no check at all. On an unfiltered dongle every noise
-burst that passed the preamble test became an aircraft: 78 801 reports in
-three minutes on the reporter's rig, about 440 a second, with ICAOs in
-unallocated blocks. `ProcessFrame` now accepts an address/parity frame only
-for an ICAO that a CRC-checked frame proved within `ICAORecentWindow`
-(60 s) — `Tracker.KnownICAO`, the rule dump1090 and readsb use — and a
-DF 11 reply with a non-zero interrogator ID in its parity is accepted
-rather than dropped.
+The ADS-B half of the report was louder
+([Beyond Voice Part 8]({{ '/blog/deep-dives/beyond-voice-08-adsb-mode-s/' | relative_url }})
+has the decoder). A [Mode S]({{ '/reference/mode-s/' | relative_url }})
+frame's last 24 bits are a CRC for DF 11, 17 and 18. For DF 0, 4, 5, 16, 20
+and 21 they are the CRC XORed with the aircraft's address, so the "ICAO" is
+whatever the XOR yields — and the old decoder marked those
+`CRCValid = true`, by construction, with no check at all. On an unfiltered
+dongle every noise burst that passed the preamble test became an aircraft:
+78 801 reports in three minutes on the reporter's rig, about 440 a second,
+with ICAOs in unallocated blocks. `ProcessFrame` now accepts an
+address/parity frame only for an ICAO that a CRC-checked frame proved
+within `ICAORecentWindow` (60 s) — `Tracker.KnownICAO`, the rule dump1090
+and readsb use — and a DF 11 reply with a non-zero interrogator ID in its
+parity is accepted rather than dropped.
 
 One obvious fix was measured and **rejected**: a noise-floor margin on the
 preamble detector. The shape test already selects local maxima, so a 6 dB
@@ -301,14 +301,16 @@ for this address".
 
 The last defect is not about bandwidth. An operator ran a paging-only rig —
 one dedicated RTL-SDR, one `paging.wideband` group of 929 MHz
-[FLEX]({{ '/reference/flex/' | relative_url }}) channels, no trunking
-system — and pages decoded only while the web console's Spectrum view was
-open.
+[FLEX]({{ '/reference/flex/' | relative_url }}) channels
+([Beyond Voice Part 6]({{ '/blog/deep-dives/beyond-voice-06-pocsag-flex-paging/' | relative_url }})),
+no trunking system — and pages decoded only while the web console's
+[Spectrum view]({{ '/blog/deep-dives/operator-cockpit-07-spectrum-waterfall/' | relative_url }})
+was open.
 
 Every SDR in the pool is wrapped in an `iqtap.Broker`, and a broker fans IQ
 out to its subscribers **only while a primary `StreamIQ` session runs**
 ([From the Issue Tracker Part 16]({{ '/blog/solution-postmortem/from-the-issue-tracker-16-conventional-fm-broker/' | relative_url }})
-introduced the broker for the scanner). A control-channel decoder or a
+has the broker's role on the scanner's SDR). A control-channel decoder or a
 wideband engine provides that session. The paging group only called
 `Subscribe()`, so with no trunking system on the dongle it waited on a
 channel nothing fed.
@@ -356,13 +358,13 @@ this class of bug.
 - **Always-on consumers go through `openSingleChannelIQ`.** A new decoder
   that skips it inherits the paging bug.
 
-What is **not** verified: all of #1316 is on-air-gated — nothing here has
-run on the reporter's dongles — and the paging fix has not been run on a
-real dongle either. Two things were not built: single-channel decoders
-still do not reacquire a dongle after an unplug (the control-channel
-decoder and wideband engines do), and a wideband paging group whose channel
-sits at the group centre — an odd count of evenly spaced channels
-auto-centres on the middle one — puts that channel on the tuner's DC spike.
+What is **not** verified: all of #1316 is on-air-gated, and the paging fix
+has not been run on a real dongle either. Two things were not built:
+single-channel decoders still do not reacquire a dongle after an unplug
+(the control-channel decoder and wideband engines do), and a wideband
+paging group whose channel sits at the group centre — an odd count of
+evenly spaced channels auto-centres on the middle one — puts that channel
+on the tuner's DC spike.
 
 ## Where this goes next
 
@@ -398,10 +400,9 @@ validation.
 
 **Why did ADS-B show hundreds of aircraft a second with strange ICAO codes?**
 Six Mode S downlink formats carry the address XORed into the parity, and
-the decoder treated the recovered address as checked, so every noise burst
-that passed the preamble shape test became an aircraft. Those frames are
-now accepted only for an address a CRC-checked DF 11, 17 or 18 frame proved
-within the last 60 seconds.
+the decoder treated the recovered address as checked, so noise that passed
+the preamble test became aircraft. Those frames are now accepted only for
+an address a CRC-checked DF 11, 17 or 18 frame proved within 60 seconds.
 
 ## Series navigation
 

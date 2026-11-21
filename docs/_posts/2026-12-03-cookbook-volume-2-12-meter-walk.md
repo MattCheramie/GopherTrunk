@@ -14,13 +14,13 @@ series_part: 12
 of complete, copy-paste GopherTrunk builds — one working rig per part — built
 on what landed after Volume 1.
 [Part 11]({{ '/blog/tutorials/cookbook-volume-2-11-band-survey/' | relative_url }})
-logged a whole band to a CSV with `gophertrunk power`. This part points the
-same dongle at one frequency and takes it for a walk:
+logged a whole band to a CSV. This part points the same dongle at one
+frequency and takes it for a walk:
 **[Wireless M-Bus]({{ '/reference/wireless-mbus/' | relative_url }})**, the
 868 MHz protocol European heat cost allocators, water meters and heat meters
 use to report their readings, decoded by `gophertrunk wmbus` live or from a
-capture. It is the one recipe in this volume with no `config.yaml` at all —
-the whole build is a command line — and the one where the hardest problems
+capture. It is the one recipe in this volume with no `config.yaml` — the
+whole build is a command line — and the one where the hardest problems
 turned out to be a phone's USB port and its screen timeout.*
 
 > **TL;DR:** `gophertrunk wmbus` decodes Wireless M-Bus / OMS telegrams
@@ -28,12 +28,12 @@ turned out to be a phone's USB port and its screen timeout.*
 > `rtl_tcp` server or a capture file — no config file, 1.6 MS/s by default.
 > Every telegram prints its sender (manufacturer, meter ID, version, device
 > type); unencrypted meters also print their readings, and encrypted ones
-> print `encrypted:` with the security mode and nothing more — no decryption
-> is attempted. For a walk: `-gain 200 -all -save-frames meters/ -log
-> wm.log`, judge gain by signal-to-noise rather than dBFS, and keep
-> `dropped chunks` at 0. On one reporter's five phone walks (2,005 saved
-> telegrams, issue #1256) today's receiver decodes 1,418 in the order heard,
-> where the FM demodulator it replaced decoded 1,190.
+> print `encrypted:` with the security mode — no decryption is attempted.
+> For a walk: `-gain 200 -all -save-frames meters/ -log wm.log`; judge gain
+> by signal-to-noise rather than dBFS, and keep `dropped chunks` at 0. On
+> one reporter's five phone walks (2,005 saved telegrams, issue #1256)
+> today's receiver decodes 1,418 in the order heard, where the FM
+> demodulator it replaced decoded 1,190.
 
 **Key takeaways**
 
@@ -42,14 +42,13 @@ turned out to be a phone's USB port and its screen timeout.*
   1.6 MS/s) suit nearly every installed meter.
 - **The header is always readable; the readings often are not.** Most OMS
   meters encrypt their payload with AES-128 under a key the metering company
-  holds. GopherTrunk shows who sent the telegram and which security mode it
-  uses, and stops there.
+  holds. GopherTrunk shows the sender and the security mode, and stops.
 - **Signal-to-noise decides, not the dBFS figure.** A −28 dBFS telegram on a
   dongle whose in-channel floor sits near −44 dBFS has 13 dB — the region
-  where the old receiver failed and the current one gained the most.
+  where the current receiver gained the most.
 - **A failed CRC is not always the meter's fault.** A live run marks a
-  telegram the SDR dropped IQ in the middle of as `cut by dropped IQ`. That
-  failure belongs to the receiving device, and no replay can recover it.
+  telegram the SDR dropped IQ in the middle of as `cut by dropped IQ`: the
+  receiving device's failure, which no replay can recover.
 
 ## Cheat sheet
 
@@ -59,20 +58,18 @@ turned out to be a phone's USB port and its screen timeout.*
 | Phone without root | reach the dongle through a driver app | `-rtltcp 127.0.0.1:1234` ([rtl_tcp]({{ '/reference/rtl-tcp/' | relative_url }})) |
 | Gain | fixed tuner gain in tenths of a dB | `-gain 200` (20 dB); `auto` = AGC |
 | See the failures | print frames whose CRC failed, with the block | `-all` |
-| Keep evidence | one IQ `.wav` + `.metadata.json` per telegram | `-save-frames meters/` |
+| Keep evidence | one IQ WAV plus a metadata sidecar per telegram | `-save-frames meters/` |
 | Survive the walk | a log that outlives Ctrl-C; reopen a lost SDR | `-log wm.log`, `-reconnect` (default on) |
-| Is it alive? | progress line: frames, bursts, drops, carrier | `-status 30s` (default) |
-| Offline | decode a capture or a saved snippet | `-in meters.cu8` |
 | Burst gate A/B | demodulate all the IQ, as up to v1.4.0 | `-no-gate` |
 
 ## In this post
 
-- **What you're building** — a pocket receiver for meter telegrams, and what it can and cannot read.
-- **The shopping list** — one dongle, 8.6 cm of antenna, a laptop or a phone.
+- **What you're building** — a pocket receiver, and what it can read.
+- **The shopping list** — one dongle, 8.6 cm of antenna, a laptop or phone.
 - **The config** — there is none: four commands, every flag verified.
-- **First run — what healthy looks like** — a telegram, an encrypted one, the progress line.
-- **When it doesn't work** — CRC failures, dropped IQ, a dongle that left the bus.
-- **Variations** — capture first, JSON to a script, replaying the snippets.
+- **First run — what healthy looks like** — two telegrams and a progress line.
+- **When it doesn't work** — CRC failures, dropped IQ, a lost dongle.
+- **Variations** — capture first, JSON to a script, replaying snippets.
 
 ## What you're building
 
@@ -80,18 +77,18 @@ A meter with a Wireless M-Bus radio (EN 13757-4, and the Open Metering
 System built on it) is on the air for a few milliseconds at a time,
 anywhere from every few seconds to every few hours. The finished rig is an
 RTL-SDR tuned to **868.95 MHz** and a terminal that prints one line per
-telegram as you walk past the building: mode, level, manufacturer code
+telegram as you walk past a building: mode, level, manufacturer code
 (`TCH` Techem, `QDS` Qundis, `KAM` Kamstrup), the 8-digit meter ID printed
 on the device, version and device type — and, for meters that send them in
-clear, the EN 13757-3 data records underneath: volume, energy, heat cost
-allocation units, temperatures, dates, and historic values such as the
-reading at the last set day.
+clear, the data records underneath: volume, energy, heat cost allocation
+units, temperatures, dates, and historic values such as the reading at the
+last set day.
 
-What it decodes is deliberately narrow and stated in
+The scope is narrow and stated in
 [the operator doc]({{ '/wmbus.html' | relative_url }}): **modes T1 and C1**,
 the two meter-to-reader modes nearly all installed meters use, both at
-100 kchip/s on 868.95 MHz. T1 is 3-of-6 coded; C1 is NRZ in frame format A
-or B. Mode S1 at 868.3 MHz is not decoded.
+100 kchip/s. T1 is 3-of-6 coded; C1 is NRZ in frame format A or B. Mode S1
+at 868.3 MHz is not decoded.
 
 <figure class="lab-figure">
 <svg viewBox="0 0 680 236" width="680" height="236" role="img" aria-label="The wmbus decode chain as five blocks in a row: an RTL-SDR at 868.95 MHz and 1.6 megasamples per second feeds a burst gate that opens 1.5 dB over the noise floor, then the receiver at 400 kilosamples per second with tone correlators and a chip clock, then the framer that finds access code 0x543D and checks each block's CRC, then the telegram parser; below, a timeline shows noise the demodulator skips, a few-millisecond burst, and the 1.3 ms of IQ before the burst that is replayed when the gate opens.">
@@ -124,7 +121,7 @@ or B. Mode S1 at 868.3 MHz is not decoded.
   <rect x="8" y="146" width="262" height="14" fill="none" stroke="var(--fg-muted)" stroke-dasharray="3 3"/>
   <text x="139" y="140" text-anchor="middle" fill="var(--fg-muted)" font-size="9">noise — skipped, two additions per sample</text>
   <rect x="270" y="130" width="60" height="30" fill="none" stroke="var(--accent)" stroke-dasharray="3 3"/>
-  <text x="300" y="124" text-anchor="middle" fill="var(--accent)" font-size="9">1.3 ms lookback</text>
+  <text x="296" y="112" text-anchor="middle" fill="var(--accent)" font-size="9">1.3 ms lookback</text>
   <rect x="330" y="118" width="150" height="42" fill="none" stroke="var(--accent)"/>
   <text x="405" y="136" text-anchor="middle" fill="var(--accent)" font-size="10">telegram burst</text>
   <text x="405" y="150" text-anchor="middle" fill="var(--fg-muted)" font-size="9">a few ms — demodulated</text>
@@ -140,25 +137,24 @@ or B. Mode S1 at 868.3 MHz is not decoded.
 **Encrypted meters.** Most OMS meters encrypt their readings with AES-128
 — security mode 5, or mode 7 with an authentication layer — under a
 per-meter key held by the metering company. For those, `wmbus` still shows
-who sent the telegram, when, and the device type, prints the security mode,
-and stops: no decryption is attempted and there is no key option.
+who sent the telegram, when, the device type and the security mode, and
+stops: no decryption is attempted and there is no key option.
 
 **Receive-only, and other people's meters.** This rig transmits nothing and
 cannot address a meter. But the telegrams come from other people's homes: a
 manufacturer code and a meter ID name one device in one flat, and an
 unencrypted reading says something about a household. Whether receiving,
 storing or sharing these broadcasts is permitted depends on where you live,
-so know your local law before you walk. And treat identifiers as personal
-data — do not publish meter IDs, and mask them in anything you post.
+so know your local law before you walk — and do not publish meter IDs: mask
+them in anything you post.
 
 **Status, plainly.** The decoder is capture-verified against two independent
 decoders (rtl-wmbus's four real-air sample captures, byte for byte, and
 wmbusmeters' unencrypted test telegrams) and on-air verified by one
 reporter's phone walks
-([#1256](https://github.com/MattCheramie/GopherTrunk/issues/1256)). The two
+([#1256](https://github.com/MattCheramie/GopherTrunk/issues/1256)). Its two
 newest pieces — the tone-comparing detector and the burst gate — are
-measured on the saved snippets of those walks; neither has yet been run
-live on a phone.
+measured on those walks' saved snippets and not yet run live on a phone.
 
 ## The shopping list
 
@@ -167,61 +163,55 @@ live on a phone.
 | [RTL-SDR]({{ '/reference/rtl-sdr/' | relative_url }}) dongle | ~$35 | the reporter's walks used one on a Samsung S5 |
 | Antenna | $0–$15 | a quarter-wave at 868 MHz is about 8.6 cm — shorten a telescopic kit whip to that |
 | Laptop, or Android phone + USB-OTG adapter | $0 | the phone build and the driver-app route are [Part 10]({{ '/blog/tutorials/cookbook-volume-2-10-phone-rig/' | relative_url }})'s recipe |
-| Optional preamplifier | varies | supplies gain ahead of the dongle; start the tuner low with one |
 
 ## The config
 
 There is no `config.yaml`: like `power` and `capture`, `wmbus` takes
 everything from flags (`gophertrunk help wmbus` lists them all). The recipe
-is four commands:
+is four steps — a ten-second gain check before leaving, the walk itself
+(local dongle, or an unrooted phone through its driver app), and the
+replay at home:
 
 ```bash
-# 1. Before leaving: ten seconds on the channel. capture reports clipping,
-#    which is how you pick the gain.
 gophertrunk capture -freq 868950000 -sample-rate 1600000 -seconds 10 \
-  -gain 200 -format u8 -out check.cu8
+  -gain 200 -format u8 -out check.cu8          # 1. gain check
 
-# 2. The walk, local dongle: fixed gain, CRC-failed telegrams printed and
-#    saved too, an IQ snippet per telegram, a log, a progress line a minute.
-gophertrunk wmbus -gain 200 -all -save-frames meters/ -log wm.log -status 1m
+gophertrunk wmbus -gain 200 -all -save-frames meters/ \
+  -log wm.log -status 1m                        # 2. the walk, local dongle
 
-# 3. The same walk on an unrooted phone, through its rtl_tcp driver app.
 gophertrunk wmbus -rtltcp 127.0.0.1:1234 -gain 200 -all \
-  -save-frames meters/ -log wm.log -status 1m
+  -save-frames meters/ -log wm.log -status 1m   # 3. the walk, via rtl_tcp
 
-# 4. Back home: replay one saved telegram, or the whole check capture.
-gophertrunk wmbus -in meters/<file>.wav
-gophertrunk wmbus -in check.cu8
+gophertrunk wmbus -in meters/<file>.wav         # 4. replay one telegram
+gophertrunk wmbus -in check.cu8                 #    or the whole capture
 ```
 
 Decisions worth understanding. **`-gain` is tenths of a dB** — `-gain 200`
 is 20 dB, `-gain 0` the tuner's minimum, and `auto` hands the choice to the
 tuner's AGC, which a strong nearby transmitter can drive into clipping.
 Start around 200, step down while `capture` reports clipping, step up only
-if telegrams are weak. With a preamplifier in front, start at 0 to 100.
+if telegrams are weak; with a preamplifier in front, start at 0 to 100.
 Without one, `-gain 0` is usually too little: on the reporter's walk at
-that setting the strongest telegrams reached only about 7 of the
-converter's 127 steps, while a higher-gain test capture clipped — the usual
+that setting the strongest telegrams reached about 7 of the converter's
+127 steps, while a higher-gain test capture clipped — the usual
 [gain-staging]({{ '/blog/tutorials/analog-edge-03-gain-staging/' | relative_url }})
 squeeze.
 
 **`-all` and `-save-frames` belong together.** Without `-all` only
 CRC-valid telegrams are printed and saved, which hides exactly the frames
-you need when a meter does not decode. Each saved telegram is two files —
-`<time>_<mode>_<manufacturer>_<id>.wav` (typically 100–400 KB of IQ, with
-its own sample rate) and a `.metadata.json` naming what it holds.
+you need when a meter does not decode. Each saved telegram is an IQ WAV
+(typically 100–400 KB) plus a `.metadata.json` naming what it holds.
 **`-log`** is written as things happen and records why a run stopped;
 prefer it to `| tee`, which Ctrl-C kills along with GopherTrunk.
 
 **Leave `-rate` and `-ppm` alone.** Since v1.3.5 the decoder costs about
-the same at any rate from 1.024 to 1.6 MS/s, so lowering the rate buys
-nothing, and 1.6 MS/s decodes slightly more weak telegrams. And an RTL-SDR's
-crystal error does not need `-ppm`: the decoder hears a carrier up to about
-±120 kHz off, re-centres on the first CRC-valid telegram, narrows its
-channel filter to it, and widens again after two minutes without one. On
-the reporter's first 156 saved telegrams that tracking took the count from
-97 CRC-valid to 128 — every meter sat about 50 kHz (58 ppm) low, which was
-the dongle, not the meters.
+the same at any rate from 1.024 to 1.6 MS/s, and 1.6 MS/s decodes slightly
+more weak telegrams. A dongle's crystal error does not need `-ppm` either:
+the decoder hears a carrier up to about ±120 kHz off, re-centres on the
+first CRC-valid telegram and narrows its channel filter to it. On the
+reporter's first 156 saved telegrams that tracking took the count from 97
+CRC-valid to 128 — every meter sat about 50 kHz (58 ppm) low, which was the
+dongle, not the meters.
 
 ## First run — what healthy looks like
 
@@ -252,88 +242,78 @@ Between telegrams the progress line shows the receiver is alive:
 wmbus: listening 5m0s (14:02:39): 3 frames (1 CRC-valid, 2 CRC-failed), 5 access codes in 41 bursts, 0 dropped chunks, carrier -50.1 kHz (-58 ppm) — corrected for, but -ppm ±58 would centre the tuner (keep the sign that shrinks it)
 ```
 
-Read it left to right. The first time is **stream time** — how much IQ the
-decoder has worked through — and the bracket is the time of day; the two
-drift apart whenever IQ is dropped. **Bursts** counts every rise out of the
-channel's noise, a meter or anything else, and is the sign the receiver is
-hearing the channel; a few bursts with no frames is normal. **Dropped
-chunks must stay at 0.** **Carrier** appears once a telegram has decoded,
-and past about 20 ppm the line adds the `-ppm` hint above — a suggestion,
-since the offset is already corrected for. On stop, the same line reads
-`wmbus: stopped after …` and is followed by
-`wmbus: saved N telegram snippet(s) to meters/`.
+The first time is **stream time** — how much IQ the decoder has worked
+through — and the bracket is the time of day; the two drift apart whenever
+IQ is dropped. **Bursts** counts every rise out of the channel's noise, a
+meter or anything else: the sign that the receiver is hearing the channel.
+**Dropped chunks must stay at 0.** **Carrier** appears once a telegram has
+decoded; past about 20 ppm the line adds the `-ppm` hint — a suggestion,
+since the offset is already corrected for. On stop the line reads
+`wmbus: stopped after …`.
 
 **Reading the level.** The dBFS on each line is a level, not a quality. On
 the reporter's dongle at `-gain 100` the noise in the 200 kHz channel sat
-near −44 dBFS, so a "strong-looking" −28 dBFS telegram had 13 dB of
+near −44 dBFS, so a strong-looking −28 dBFS telegram had 13 dB of
 [signal-to-noise]({{ '/reference/signal-to-noise-ratio/' | relative_url }}),
 and the failures clustered at 8 to 16 dB. That is why the receiver now
 decides each chip by comparing the energy at the two FSK tones instead of
 FM-demodulating first: across all five walks it hears 350 different meters
-instead of 296. The measuring habit behind this is
-[dBFS — what the number means]({{ '/blog/tutorials/analog-edge-02-dbfs/' | relative_url }}).
+instead of 296
+([what a dBFS figure does and does not mean]({{ '/blog/tutorials/analog-edge-02-dbfs/' | relative_url }})).
 
 ## When it doesn't work
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Bursts climb, no frames, for many minutes | nothing on the channel is a T1/C1 meter in range, or meters here send rarely | Walk closer to the meters and wait: intervals run from seconds to hours. A few bursts with no frames is normal |
-| `CRC FAILED (blocks 3,4 of 4; header OK)` | a weak, clipped or interfered telegram — the sender is right, the payload is damaged | Check the level against your noise, adjust `-gain`, get closer. For C-mode telegrams a repair already tries up to three of a block's least reliable bits; a repaired one prints `(CRC repaired: N bits)` |
-| `CRC FAILED (block 1 of 4; block 1 is the header, so the sender shown is unreliable)`, manufacturer like `0x097D` | the header block itself failed | Ignore the sender on that line — a hex manufacturer is not a real code |
-| `… — cut by dropped IQ (the SDR dropped chunks during it), not a weak meter` | the device dropped IQ in the middle of that telegram | Not an RF problem. Fix the drops (next row); the progress line counts these separately |
-| `wmbus: WARNING — the SDR has dropped … IQ chunk(s) … only 30s of IQ (13% of real time)` | the phone starved the process: screen off, Termux in the background | Keep the screen on, run `termux-wake-lock` before starting, exempt Termux from battery optimisation. The warning rings the bell, which Termux turns into a vibration |
-| `wmbus: lost the SDR at …`, then `still waiting for the SDR … the dongle is not on the USB bus at all` | the dongle left the USB bus; a phone's OTG port stays off after a disconnect | Unplug and replug — the run carries on from there. `-reconnect=false` stops with the reason instead |
-| Ctrl-C does nothing in Termux under `su` | the process has no controlling terminal; it says so at start | Type `q` and Enter, `pkill gophertrunk` from a root shell, or give `-seconds` |
-| A capture reports far too many seconds and 0 frames | a headerless file decoded at the wrong rate — access codes appear, frames never do | Keep the `.metadata.json` beside the capture, or pass `-rate`. A 30 s capture at 2.8 MS/s read at 1.6 MS/s reports 52.5 s |
-| Weak telegrams vanish while something strong transmits for seconds elsewhere in the span | that transmitter became the burst detector's noise floor | Compare with `-no-gate`, which demodulates everything as releases up to v1.4.0 did |
+| Bursts climb for many minutes, no frames | nothing in range is a T1 / C1 meter, or the meters here send rarely | Walk closer and wait: intervals run from seconds to hours |
+| “CRC FAILED (blocks 3,4 of 4; header OK)” | a weak, clipped or interfered telegram: sender right, payload damaged | Compare the level with your noise, adjust `-gain`, get closer. C-mode telegrams already get a repair of up to three bits per block (`CRC repaired: N bits`) |
+| “CRC FAILED (block 1 of 4; block 1 is the header, so the sender shown is unreliable)” | the header block itself failed | Ignore the sender: a manufacturer shown as hex, such as `0x097D`, is not a real code |
+| “— cut by dropped IQ (the SDR dropped chunks during it), not a weak meter” | the device dropped IQ in the middle of that telegram | Not an RF problem: fix the drops (next row) |
+| “WARNING — the SDR has dropped … only 30s of IQ (13% of real time)” | the phone starved the process: screen off, Termux in the background | Keep the screen on, run `termux-wake-lock` first, exempt Termux from battery optimisation. The warning rings the bell; Termux vibrates on it |
+| “lost the SDR at …”, later “the dongle is not on the USB bus at all” | the dongle left the bus; a phone's OTG port stays off after a disconnect | Unplug and replug: the run carries on from there. `-reconnect=false` stops with the reason instead |
+| Ctrl-C does nothing in Termux under su | the process has no controlling terminal (it says so at start) | Type `q` and Enter, or give `-seconds` |
+| A capture reports too many seconds and 0 frames | a headerless file decoded at the wrong rate | Keep the `.metadata.json` beside the capture, or pass `-rate` |
 
-Two of those rows came straight from the field, and both had a number that
-settled the argument. On one walk the log's dropped chunks, multiplied by
-the chunk length, equalled the run's wall time minus its stream time — so
-USB had delivered everything and the process had simply not been scheduled:
-about 10 of 21 minutes went unheard, in stretches where the decoder got
-12–14 % of real time. On another, the reconnect worked once (the dongle was
-back after 8 s), then the dongle left the bus for good and the run polled
-for 19 minutes until a physical replug. Neither was a decoder defect, and
+Two of those rows came straight from the field, and a number settled each.
+On one walk the dropped chunks multiplied by the chunk length equalled the
+run's wall time minus its stream time — USB had delivered everything and
+the process had not been scheduled: about 10 of 21 minutes went unheard.
+On another, the reconnect worked once (the dongle was back after 8 s), then
+the dongle left the bus for good and the run polled for 19 minutes until a
+physical replug. Neither was a decoder defect:
 [overruns are a downstream signal]({{ '/blog/tutorials/field-notebook-07-overruns-host-drops/' | relative_url }})
-here exactly as they are on a trunking rig.
+here exactly as on a trunking rig. One case has no log line: a strong
+transmitter that stays on for seconds elsewhere in the span can become the
+burst detector's noise floor and hide a weak telegram; `-no-gate`
+demodulates everything, as releases up to v1.4.0 did.
 
 ### How this recipe shapes operator practice
 
 - **Measure margin, not level.** Know your dongle's noise in the channel
-  before calling a telegram strong; the same −28 dBFS is comfortable on one
-  front end and marginal on another.
+  before calling a telegram strong.
 - **Save the air, not the story.** `-save-frames -all` turned five walks
-  into 2,005 replayable telegrams — the yield check every receiver change
-  since has been scored against. A log line is a claim; a snippet is
-  evidence, which is the
+  into 2,005 replayable telegrams, the yield check every receiver change
+  since has been scored against — the
   [capture discipline]({{ '/blog/tutorials/analog-edge-10-capture-discipline/' | relative_url }})
   rule at pocket scale.
-- **Do the arithmetic before blaming RF.** Wall time against stream time,
-  drops against chunk length: two subtractions separate a starved process
-  from a weak meter.
-- **Treat meter IDs as someone's data.** Mask them when you paste a log.
+- **Do the arithmetic before blaming RF.** Wall time against stream time
+  separates a starved process from a weak meter.
+- **Treat meter IDs as someone's data.** Mask them in anything you post.
 
 ## Variations
 
 - **Capture first, decode later.** Recording has no real-time limit, so a
-  slow host loses nothing: `gophertrunk capture … -format u8 -out
-  meters.cu8`, then `wmbus -in meters.cu8` (rate, format and centre come
-  from the `.metadata.json`). FLAC is smaller but cannot store rates above
+  slow host loses nothing: run `capture` with `-format u8 -out meters.cu8`,
+  then `wmbus -in meters.cu8` (rate, format and centre come from the
+  `.metadata.json`). FLAC is smaller but cannot store rates above
   1,048,575 S/s, hence `-sample-rate 1024000 -format flac`.
-- **A wide capture centred elsewhere.** `-offset 325000` tells `wmbus`
-  where 868.95 MHz sits relative to the capture's centre.
 - **Feed a script.** `-json` prints one JSON object per telegram on
   standard output and nothing else; `-json -log meters.json` keeps a file
-  whose every line parses, progress lines included (they carry a `status`
-  key).
+  whose every line parses, progress lines included.
 - **Score a receiver yourself.** With the source tree,
   `GT_WMBUS_SNIPPETS=<dir> go test ./internal/radio/wmbus -run RealAirSnippets -v`
   replays a snippet directory in the order it was heard — the harness
-  behind every yield figure in this post.
-- **Look instead of decode.** `gophertrunk spectrum -in meters.cu8` prints
-  the capture's averaged spectrum and carriers; expect few, because meters
-  are on the air so briefly.
+  behind the yield figures in this post.
 
 ## Where this goes next
 
@@ -341,8 +321,7 @@ The dongle goes back in the drawer and a different radio comes out.
 [Part 13]({{ '/blog/tutorials/cookbook-volume-2-13-pluto-native/' | relative_url }})
 puts an ADALM-Pluto or PlutoSky on the network and has GopherTrunk speak the
 board's own `iiod` protocol — no SoapySDR and no libiio on the host — with a
-read-only probe to run first and an honest line about what has and has not
-been confirmed on that hardware.
+read-only probe to run first.
 
 ## FAQ
 
@@ -350,27 +329,25 @@ been confirmed on that hardware.
 Yes. `gophertrunk wmbus` decodes modes T1 and C1 at 868.95 MHz from a local
 RTL-SDR, an `rtl_tcp` server or a capture file, and prints each telegram's
 manufacturer, meter ID, version and device type. Readings appear only for
-meters that send them unencrypted; mode S1 at 868.3 MHz is not decoded.
+meters that send them unencrypted.
 
 **Can GopherTrunk read encrypted wM-Bus meters?**
 No. Most OMS meters encrypt their readings with AES-128 (security mode 5
 or 7) under a per-meter key held by the metering company. GopherTrunk prints
-the sender, the device type and the security mode for those telegrams,
-attempts no decryption, and has no key option.
+the sender, device type and security mode for those telegrams, attempts no
+decryption, and has no key option.
 
 **What gain should I use for wM-Bus at 868 MHz?**
 Start at `-gain 200` (20 dB — the flag is in tenths of a dB), step down
 while `gophertrunk capture` reports clipping, and step up only if telegrams
-are weak. With an external preamplifier start between `-gain 0` and
-`-gain 100`. Judge the result by how far telegrams stand above your
-channel's noise, not by the dBFS figure alone.
+are weak. With a preamplifier start between `-gain 0` and `-gain 100`.
+Judge by margin over the channel's noise, not by dBFS alone.
 
 **What does 'cut by dropped IQ' mean in gophertrunk wmbus?**
 The SDR dropped IQ chunks while that telegram was on the air, so the
 decoder never received the rest of it and its CRC failed. It says nothing
 about the meter's signal, and replaying the saved snippet cannot recover
-it. The cure is on the host: stop the drops, usually a phone throttling the
-process.
+it. The cure is on the host — usually a phone throttling the process.
 
 **Is the wM-Bus decoder verified on air?**
 Partly, and the split matters. It matches rtl-wmbus on that project's four

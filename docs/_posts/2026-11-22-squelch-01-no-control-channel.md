@@ -22,31 +22,30 @@ the thirteen parts that follow.*
 > **TL;DR:** A trunked decoder is *told* about calls: a control-channel
 > grant reaches `Engine.HandleGrant`. A scan list is told nothing.
 > `Scanner.Run` in `internal/scanner/conventional/scanner.go` picks a channel
-> (`pickVisit`), applies its gain, tunes, opens a fresh IQ stream and gives
-> the channel one scan window — `MinDwellPerChannel`, 100 ms by default — to
-> pass every gate it carries. If it does, `beginDwell` builds a
-> `trunking.Grant` and calls `Engine.HandleSyntheticCall` (`synthetic call
-> started` in the log), so the recorder, call log and API treat it like any
-> trunked call. The dwell ends after `Hangtime` (1500 ms) without activity;
-> `ActivityDebounce` (50 ms) stops a one-chunk blip resetting that countdown.
-> The scanner owns its SDR — the last `role: voice` device — behind an IQ
-> broker the voice chain subscribes to. Nearly every gate on the "open" edge
-> began as a dBFS threshold and had to become a statistic.
+> (`pickVisit`), tunes, opens a fresh IQ stream and gives the channel one
+> scan window — `MinDwellPerChannel`, 100 ms by default — to pass every gate
+> it carries. If it does, `beginDwell` builds a `trunking.Grant` and calls
+> `Engine.HandleSyntheticCall` (`synthetic call started` in the log), so the
+> recorder, call log and API treat it like any trunked call. The dwell ends
+> after `Hangtime` (1500 ms) without activity; `ActivityDebounce` (50 ms)
+> stops a one-chunk blip resetting that countdown. The scanner owns its SDR,
+> the last `role: voice` device, behind an IQ broker the voice chain
+> subscribes to. Every gate that began as a level threshold has since been
+> replaced by a statistic or paired with one.
 
 **Key takeaways**
 
 - **A scan list infers what a control channel announces.** No grant, no
-  talkgroup, no release message: the only evidence is the IQ on the
-  frequency, and each channel gets about a tenth of a second to show it.
+  talkgroup, no release message: the only evidence is the IQ, and each
+  channel gets about a tenth of a second to show it.
 - **One loop makes two different decisions.** The scan window decides
-  whether a channel opens; the hangtime countdown decides when it closes. A
-  false open records noise, a false close cuts a sentence.
+  whether a channel opens; the hangtime countdown decides when it closes.
 - **The scanner manufactures a grant, not a recording path.** A dwell is a
   `trunking.Grant` handed to the engine a trunked system feeds, so
   everything downstream is shared code.
 - **"Is something there?" is not one question.** Power in the channel, a
   carrier rather than noise, the right tone, a call rather than an idle
-  repeater: each is its own gate, with its own statistic.
+  repeater: each is its own gate.
 
 ## Cheat sheet
 
@@ -54,11 +53,10 @@ the thirteen parts that follow.*
 |---|---|---|
 | Channel rotation | round robin that skips lockouts; a forced dwell and the priority interleave go first | `pickNextChannelLocked` in `internal/scanner/conventional/scanner.go` |
 | Scan window | one visit's time to open: 100 ms, raised to 350 / 600 / 500 ms when the list has a CTCSS / DCS / P25 NAC gate | `scanWindow`, `Options.MinDwellPerChannel`, `minToneDwell` |
-| Squelch statistic | picks the per-mode measurement and its open threshold | `squelchMeasure` in `am_squelch.go`; `channel_power.go` |
 | Synthetic call | a grant flagged conventional, with bit 31 set in its group ID | `beginDwell` → `Engine.HandleSyntheticCall` |
 | Call end | hangtime countdown, 50 ms activity debounce, 3 dB close-side hysteresis | `Channel.Hangtime`, `ActivityDebounce`, `SquelchHysteresisDb` |
 | Stream ownership | the scanner is the IQ broker's primary consumer; the voice chain subscribes | `buildConvScanner`, `convScanVoiceSource` in `cmd/gophertrunk/daemon.go` |
-| Dead stream | 3 s without a single IQ chunk ends the call with an error reason | `Options.StreamStallTimeout`, `DefaultStreamStallTimeout` |
+| Dead stream | 3 s without an IQ chunk ends the call | `Options.StreamStallTimeout` |
 
 ## In this post
 
@@ -89,11 +87,9 @@ This blog has covered that twice, briefly:
 [Protocol Decoders Part 9]({{ '/blog/deep-dives/protocol-decoders-09-conventional-wideband/' | relative_url }})
 gave the scanner one section, and
 [The Operator's Cookbook Part 6]({{ '/blog/tutorials/operator-cookbook-06-analog-fm-tone-out/' | relative_url }})
-one recipe. Since then the power measurement moved from the whole SDR span
-to the channel, a noise squelch was ANDed onto it, AM got a carrier-to-noise
-squelch, and the scan list learned P25, DMR, NXDN, D-STAR and System Fusion,
-each with its own gate. The loop that hosts them barely changed, so it comes
-first.
+one recipe. Since then the squelch moved from the SDR's span to the channel,
+FM gained a noise squelch, AM a carrier-to-noise squelch, and the scan list
+learned five digital protocols. The loop barely changed, so it comes first.
 
 ## The loop: pick, tune, window
 
@@ -119,14 +115,11 @@ dwell (`DwellOn`, the TUI's Enter key), which beats even a lockout for one
 cycle; then, with `PriorityInterleave` set, the next channel carrying a
 `Priority` ([priority scan]({{ '/reference/priority-scan/' | relative_url }}),
 Part 13); otherwise the round-robin cursor, skipping `lockedOut`. An empty
-or fully locked-out list idles in 100 ms ticks. The visit is published under
-the lock that picks the channel, so removing a channel mid-tune aborts the
-visit instead of leaving the loop on a freed index.
+or fully locked-out list idles in 100 ms ticks.
 
 **Tune.** The stream is cancelled and reopened every visit, "to drop any
-in-flight samples from the previous channel", and every per-channel object
-is reset for the same reason: a meter's filter history would otherwise leak
-the last channel into this one's first reading.
+in-flight samples from the previous channel", and every per-channel meter
+and gate is reset for the same reason.
 
 **Window.** `scanWindow` starts a timer for `MinDwellPerChannel` and reads
 chunks until the channel opens (`true`) or the timer fires (`false`, next
@@ -137,20 +130,19 @@ value per scanner, not per channel: ten untoned channels are about a second
 a lap before tuning time, and one CTCSS entry makes that three and a half.
 
 The window can also be *extended*, under one rule: only a channel that has
-cleared its level threshold may ask for more time — "a silent channel costs
-no extra time", as the `callGate` comment puts it.
+cleared its level threshold may ask — "a silent channel costs no extra
+time", as the `callGate` comment puts it.
 
 | Extension | Who asks | Bound |
 |---|---|---|
 | Data burst in progress | an MDC1200, FleetSync or ACARS framer that has locked sync | 50 ms steps (`dataScanHoldStep`) up to 500 ms, 1 s with ACARS |
-| Call gate settling | a digital channel whose power squelch has broken | once, to the gate's `minDwell()`: 500 ms DMR, YSF, NXDN96; 1 s NXDN48; 1200 ms D-STAR |
-| Open delay | a carrier run still short of its configured open delay | once: the remainder plus 50 ms (`openDelaySlack`) |
+| Call gate settling | a DMR, YSF, NXDN or D-STAR channel whose power squelch has broken | once, to the gate's `minDwell()`: 500 ms DMR, YSF, NXDN96; 1 s NXDN48; 1200 ms D-STAR |
 | Noise squelch's first reading | an FM channel over its level before the meter has a window | once: 60 ms (`fmNoiseSettle`) |
 
-When a channel opens the scanner logs what it measured — `conv: squelch
-opened` with `level_dbfs` and `squelch_dbfs`, or `conv: call gate opened` on
-a digital channel. Read that line first when a channel opens that should
-not have.
+When a channel opens the scanner logs what it measured: `conv: squelch
+opened` with `level_dbfs` and `squelch_dbfs`, or `conv: call gate opened`
+for a DMR, NXDN, D-STAR or System Fusion gate. Read that line first when a
+channel opens that should not have.
 
 <figure class="lab-figure">
 <svg viewBox="0 0 680 222" width="680" height="222" role="img" aria-label="The conventional scanner's dwell loop as a state machine: pick the next channel, tune and open a fresh IQ stream, then run a scan window of 100 milliseconds by default. If the window expires with nothing open, the loop returns to pick the next channel. If every gate on the open edge passes, the scanner starts a synthetic call and dwells; when activity stops, a 1500 millisecond hangtime countdown runs, and when it elapses the call ends and scanning resumes.">
@@ -193,20 +185,14 @@ not have.
 ## The dwell: a synthetic call and a countdown
 
 When the window returns `true`, `beginDwell` takes over the still-open stream
-and does the thing that makes the design cheap: it records nothing. It
-writes a grant.
+and records nothing. It writes a grant.
 
 ```go
 // internal/scanner/conventional/scanner.go (shape)
-gid := ch.TalkgroupID
-if gid == 0 {
-    gid = uint32(0x80000000) | uint32(s.opts.PositionalIDOffset+idx)
-}
 g := trunking.Grant{
     System:       s.opts.SystemName,        // "scanner" in the daemon
     Protocol:     conventionalProtocol(ch), // fm-conv, am-conv, p25, dmr-tier2 …
-    GroupID:      gid,
-    GroupLabel:   ch.Label,
+    GroupID:      gid,                      // talkgroup_id, else 0x80000000|index
     Conventional: true,
     FrequencyHz:  ch.FrequencyHz,
 }
@@ -229,13 +215,14 @@ synthetic call ended    device=SDRV4-03 reason=normal
 
 `tg=2147483648` is `0x80000000`: the first scan-list entry, with bit 31 set
 so a positional ID cannot collide with a real
-[talkgroup]({{ '/reference/talkgroup/' | relative_url }}). It shifts when the
-list is reordered, which is why `talkgroup_id` exists to pin it (#1105).
+[talkgroup]({{ '/reference/talkgroup/' | relative_url }}); `talkgroup_id`
+pins it against list reordering (#1105).
 
 Then the scanner stays put and decides, chunk by chunk, whether the channel
 is still active: the open edge's tests, except that the level only has to
-stay above `open − SquelchHysteresisDb` (3 dB), so a signal sitting on the
-threshold does not chatter. The result drives a countdown:
+stay above `keepAlive`, 3 dB under the open threshold
+(`SquelchHysteresisDb`), so a signal sitting on the threshold does not
+chatter. The result drives a countdown:
 
 ```go
 // internal/scanner/conventional/scanner.go (shape)
@@ -256,84 +243,79 @@ if active {
 ```
 
 `Hangtime` defaults to 1500 ms (`hangtime_ms`), so a pause or a reply stays
-one call. The debounce on the clearing branch (50 ms, `activity_debounce_ms`)
-exists because of #1090. The original loop cleared the countdown on *any*
-chunk above the threshold; a chunk at 2.4 MS/s lasts under two milliseconds,
-so a blip recurring faster than the hangtime — a carrier tail, impulse noise,
-an intermod product — held the call open indefinitely. Now activity must be
+one call. The debounce (50 ms, `activity_debounce_ms`) exists because of
+#1090. The original loop cleared the countdown on *any* chunk above the
+threshold; a chunk at 2.4 MS/s lasts under two milliseconds, so a blip
+recurring faster than the hangtime — a carrier tail, impulse noise, an
+intermod product — held the call open indefinitely. Now activity must be
 continuous for 50 ms, about thirty chunks, before it counts as renewed; a
 lone blip sets `aboveSince`, the next quiet chunk clears it, and the silence
 already counted survives (`TestConvScannerBriefBlipsDoNotHoldSquelchOpen`).
 
-The edges are deliberately asymmetric: the trailing edge is debounced by
-default, the leading edge is not, because a late open loses the start of a
-transmission. `squelch_open_ms` (at most 1000) is the opt-in leading-edge
-equivalent, at the price the config comment states: that much of each
-transmission is not recorded.
+The edges are asymmetric on purpose: the trailing edge is debounced, the
+leading edge is not, because a late open loses the start of a transmission
+(`squelch_open_ms` is the opt-in leading-edge equivalent).
 
 Two more things run inside the dwell. The debounced decision is published
 through `SquelchOpen`, so the composer's FM chain mutes during the countdown
 instead of recording 1.5 s of receiver noise on the end of every call. And a
-250 ms ticker touches the engine's watchdog and checks that chunks are still
-arriving: `StreamStallTimeout` (3 s) without one ends the call with reason
-`error`, because hangtime counts silence in chunks and cannot fire on a
-stream that delivers none (Part 10).
+250 ms ticker checks that chunks are still arriving: `StreamStallTimeout`
+(3 s) without one ends the call with reason `error`, because hangtime counts
+silence in chunks and cannot fire on a stream that delivers none (Part 10).
 
 While all this runs the scanner is deaf to every other channel. Both ways
-out are "more receivers": channels can name a `device:` so each SDR runs its
-own scanner in parallel (#1260), and a `role: wideband` dongle can carry
-conventional channels as fixed taps that never hop (#1288).
+out are more receivers: channels can name a `device:` so each SDR runs its
+own scanner (#1260), and a `role: wideband` dongle can carry conventional
+channels as fixed taps that never hop (#1288).
 
 ## The SDR the scanner owns
 
 The daemon builds a conventional scanner when `scanner.conventional` has
 entries, when `manual_tune_enabled` is set, or when it finds a spare voice
 SDR. `planConvScanGroups` gives it **the last `role: voice` device** in the
-pool, "so the trunking engine keeps the first N−1." With no voice SDR the
+pool, so the trunking engine keeps the others. With no voice SDR the
 scanner is skipped with a WARN (`daemon: scanner.conventional /
 manual_tune_enabled configured but no Voice SDRs in the pool; skipping`),
-still the commonest reason a scan list does nothing.
+the first line to grep for when a scan list does nothing.
 
-Owning the SDR creates the problem
-[Part 16 of From the Issue Tracker]({{ '/blog/solution-postmortem/from-the-issue-tracker-16-conventional-fm-broker/' | relative_url }})
-tells. On a trunked system the monitor and the recorder are different
-devices. On a scan list the monitored channel *is* the recorded channel, and
-a device hands out one `StreamIQ` at a time. So `buildConvScanner` gives the
-scanner the device's `iqtap` broker, not the device, and makes it the
-broker's primary consumer. When a call starts the voice chain gets a
-`convScanVoiceSource`, which calls `broker.Subscribe()` and receives copies
-of exactly the IQ the squelch is measuring.
+Owning the SDR creates the problem From the Issue Tracker Part 16 (linked
+above) is about. On a trunked system the monitor and the recorder are
+different devices. On a scan list the monitored channel *is* the recorded
+channel, and a device hands out one `StreamIQ` at a time. So
+`buildConvScanner` gives the scanner the device's `iqtap` broker, not the
+device, and makes it the broker's primary consumer. When a call starts the
+voice chain gets a `convScanVoiceSource`, which calls `broker.Subscribe()`
+and receives copies of exactly the IQ the squelch is measuring.
 
 Between broker and scanner sits one more wrapper, `convScannerFrontEnd`,
-both the scanner's `Tuner` and its `IQSource`. It tunes the hardware a few
-hundred kilohertz *below* each channel and mixes the channel back to centre,
-so the tuner's own artefacts land outside what the gates measure (Part 4).
+which tunes the hardware a few hundred kilohertz *below* each channel and
+mixes it back to centre, so the tuner's own artefacts land outside what the
+gates measure (Part 4).
 
 ## The gate map
 
-Everything else in this series hangs off the "open" edge in the figure, in
-this order:
+Everything else in this series hangs off the "open" edge in the figure:
 
 | Gate | Question it answers | Statistic | Part |
 |---|---|---|---|
-| Channel power | is there energy in *this channel*? | RMS power behind a ±8 kHz filter, in dBFS against `squelch_dbfs` | [2]({{ '/blog/deep-dives/squelch-02-channel-power/' | relative_url }}) |
-| Noise squelch (fm, nfm) | is that energy a carrier, or receiver noise? | high-passed discriminator power over what noise alone gives: open at 0.5, hold to 0.6 | [3]({{ '/blog/deep-dives/squelch-03-noise-squelch/' | relative_url }}) |
-| Offset tuning | not a gate: keeps the front end's own products out of the channel | an LO offset searched so DC spur, image and clipping products miss it | [4]({{ '/blog/deep-dives/squelch-04-offset-tuning/' | relative_url }}) |
-| CTCSS | is it this system's tone? | exact-frequency Goertzel over 250 ms blocks, judged against neighbouring tones | [5]({{ '/blog/deep-dives/squelch-05-ctcss/' | relative_url }}) |
+| Channel power | is there energy in *this channel*? | RMS power behind a ±8 kHz filter, against `squelch_dbfs` | [2]({{ '/blog/deep-dives/squelch-02-channel-power/' | relative_url }}) |
+| Noise squelch (fm, nfm) | is that energy a carrier, or noise? | discriminator noise over what an empty channel gives: open at 0.5, hold to 0.6 | [3]({{ '/blog/deep-dives/squelch-03-noise-squelch/' | relative_url }}) |
+| Offset tuning | not a gate: keeps the tuner's own products out of the channel | an LO offset searched so DC spur, image and clipping products miss it | [4]({{ '/blog/deep-dives/squelch-04-offset-tuning/' | relative_url }}) |
+| CTCSS | is it this system's tone? | exact-frequency Goertzel over 250 ms blocks, against neighbouring tones | [5]({{ '/blog/deep-dives/squelch-05-ctcss/' | relative_url }}) |
 | DCS | is it this system's code? | the 23-bit codeword, in the configured polarity | [6]({{ '/blog/deep-dives/squelch-06-dcs/' | relative_url }}) |
 | AM carrier-to-noise | is there an AM carrier? | strongest bin within ±4.5 kHz over the 20th-percentile floor; opens at 12 dB | [7]({{ '/blog/deep-dives/squelch-07-am/' | relative_url }}) |
-| P25 NAC, DMR call gate | is it a call, on this system? | a decoded NID carrying the NAC; a voice sync or Voice LC Header in the last second | [8]({{ '/blog/deep-dives/squelch-08-call-gates-p25-dmr/' | relative_url }}) |
+| P25 NAC, DMR call gate | is it a call, on this system? | a NID carrying the NAC; a voice sync, Voice LC Header or PI header in the last second | [8]({{ '/blog/deep-dives/squelch-08-call-gates-p25-dmr/' | relative_url }}) |
 | YSF, NXDN, D-STAR gates | is it that protocol's traffic? | a frame sync; a confirmed frame pair; a CRC-valid header or slow-data sync pair | [9]({{ '/blog/deep-dives/squelch-09-call-gates-ysf-nxdn-dstar/' | relative_url }}) |
 | Burst bridge, stall timeout | is this gap a release? | a 100 ms bridge on DMR; 3 s with no samples at all | [10]({{ '/blog/deep-dives/squelch-10-bursty-carriers/' | relative_url }}) |
-| Data decoders | is a burst still arriving? | a framer that has locked sync holds the window and the dwell | [11]({{ '/blog/deep-dives/squelch-11-data-on-the-scan-list/' | relative_url }}) |
+| Data decoders | is a burst still arriving? | a framer that has locked sync | [11]({{ '/blog/deep-dives/squelch-11-data-on-the-scan-list/' | relative_url }}) |
 
 Parts
 [12]({{ '/blog/deep-dives/squelch-12-narrowband-front-end/' | relative_url }}),
 [13]({{ '/blog/deep-dives/squelch-13-operator-controls/' | relative_url }})
 and
 [14]({{ '/blog/deep-dives/squelch-14-playbook/' | relative_url }})
-cover the front end every narrowband decoder now shares, the operator's
-controls, and a playbook of failure signatures.
+cover the shared narrowband front end, the operator's controls, and a
+playbook of failure signatures.
 
 The thesis is the Statistic column. The first version of this scanner had
 one test: `PowerDbFS` of the stream against a threshold. That is an absolute
@@ -341,28 +323,28 @@ level, and
 [The Analog Edge Part 13]({{ '/blog/tutorials/analog-edge-13-coherence-not-dbfs/' | relative_url }})
 already showed what an absolute level does to a decision: it measures how
 the operator set the gain, not what is on the air. An idle DMR repeater
-recorded as a call, an analog test tone opened as "System Fusion", half an
-hour of noise recorded under an AGC: each was a level standing in for a
-question it could not answer, and each fix replaced it with a ratio, a
-decoded field or a frame. The package comment in `squelch.go` now says it
-outright — the level "is an absolute level, though, so each mode pairs it
-with a test that does not depend on gain". `squelch_dbfs` survives as one of
-two tests, never the only one, with a single named exception: a `p25`
-channel configured without `nac` still opens on the level alone.
+holding the scanner on its channel, an analog test tone opened as "System
+Fusion", more than half an hour of noise recorded from an empty channel:
+each was a level standing in for a question it could not answer, and each
+fix answered it with a ratio, a decoded field or a frame. The package comment in `squelch.go` now says each
+mode pairs the level "with a test that does not depend on gain".
+`squelch_dbfs` survives as one of two tests, never the only one, with a
+single named exception: a `p25` channel configured without `nac` still opens
+on the level alone.
 
 ### How having no control channel shaped the Go code
 
 - **The scanner speaks the engine's vocabulary.** Its `Engine` dependency is
   three methods (`HandleSyntheticCall`, `EndSyntheticCall`, `Touch`); a fake
-  satisfies it in every scanner test, and no recorder code knows a scan list
-  exists.
+  satisfies it in every scanner test.
 - **Every gate is one interface.** `toneDetector` is `Process`, `Present`
   and `Reset`; `callGate` adds `gateName` and `minDwell`.
   `buildChannelDetector` chooses by mode, so a new gate is one
   implementation and one branch.
-- **Time on a channel is earned.** No scan-window extension goes to a
-  channel that has not cleared its level, which keeps a long list of gated
-  channels from scanning at the slowest gate's speed.
+- **Time on a channel is earned.** A call gate or data decoder extends a
+  visit only after the level has cleared, so a list of DMR or D-STAR
+  channels does not scan at the gate's pace. The tone and NAC gates are the
+  exception: they raise the window for the whole list.
 
 ## Where this goes next
 
@@ -371,36 +353,33 @@ thing: `squelch_dbfs` was compared with the power of the scanner's entire
 2.4 MHz span, so one strong carrier anywhere in view held every channel
 open.
 [Part 2]({{ '/blog/deep-dives/squelch-02-channel-power/' | relative_url }})
-is the fix, the bandwidth arithmetic behind it, and the per-channel gain
-that landed with it.
+is the fix and the bandwidth arithmetic behind it.
 
 ## FAQ
 
 **How does GopherTrunk know a call exists on a conventional channel?**
 It measures the channel's own IQ during a short scan window (100 ms by
 default) and opens only if every gate configured for that channel passes:
-in-channel power against `squelch_dbfs`, plus a noise squelch on FM, a
-carrier-to-noise test on AM, a tone detector if one is set, or a call gate
-on a digital channel. Nothing announces the call.
+in-channel power, plus a noise squelch on FM, carrier-to-noise on AM, a tone
+detector if one is set, or a call gate on a digital channel.
 
 **What is a synthetic call in the GopherTrunk log?**
 `synthetic call started` is the trunking engine registering a call that did
 not come from a control channel: the scanner built a `trunking.Grant` for
-the open channel, so recorder, call log and API handle it like a trunked
-call. `synthetic call ended` carries the reason: `normal` for hangtime,
-`error` for a lost stream, `lockout` or `manual` for an operator action.
+the open channel, so recorder, call log and API handle it like any other.
+`synthetic call ended` carries the reason: `normal` for hangtime, `error`
+for a lost stream, `lockout` or `manual` for an operator action.
 
 **Why does the scanner stay on a channel after the transmission ends?**
 That is hangtime: the channel must be inactive for `hangtime_ms` (1500 by
 default) before the call ends, so a pause or a reply stays in one recording.
-Activity resets the countdown only once it has lasted `activity_debounce_ms`
-(50 by default), so a brief blip cannot hold the channel open.
+A blip shorter than `activity_debounce_ms` (50) cannot reset the countdown.
 
 **How fast does the conventional scanner scan?**
 Each visit gets one scan window, 100 ms by default, plus retune time. The
 window is one value per scanner and rises when any channel has a gate that
 needs longer: 350 ms with CTCSS, 600 ms with DCS, 500 ms with a P25 NAC
-filter. A silent channel never extends its visit.
+filter.
 
 ## Series navigation
 

@@ -335,10 +335,10 @@ that never unkeys.
 - **Evidence is stamped in input samples, not wall time.** `lastMatch` and
   `lastCall` are sample indices, so a gate behaves the same at any chunk
   size — and in a test running slower than real time.
-- **Gates borrow constants, they do not invent them.** Sync tolerance,
-  deviation and clock gain are the LDU assembler's and the Tier II
-  pipeline's; a gate that framed differently from the decoder behind it
-  would open on calls that decoder cannot hear.
+- **Gates borrow constants, they do not invent them.** The sync tolerances
+  are the LDU assembler's and the Tier II slicer's, the clock gain the
+  Tier II pipeline's; a gate that framed differently from the decoder
+  behind it would open on calls that decoder cannot hear.
 - **Reset means a cold start.** `DMRCallDetector.Reset` resets the receiver,
   re-arms timing acquisition, rebuilds the sync detector and forgets the
   polarity.
@@ -365,8 +365,8 @@ is nowhere near enough; and D-STAR, where the gate runs two receivers.
 A keyed repeater transmits Idle bursts or CSBK beacons between calls — a
 strong carrier that clears any power squelch. GopherTrunk's `dmr` channels
 also require a Voice LC Header, a PI header or a voice-burst sync within
-the last second. A beacon produces none, so the scan moves on after at most
-500 ms.
+the last second. A beacon produces none, so the scan moves on after the
+gate's half-second window.
 
 **How do I make a P25 scan-list channel ignore another agency on the same frequency?**
 Set `nac` on the channel to your system's three-hex-digit NAC, for example
@@ -382,8 +382,7 @@ automatic gain: a `p25` channel without `nac` opens on signal level alone.
 **Does the DMR call gate work on a spectrum-inverted receiver?**
 Yes. DMR's data and voice sync words are each other's polarity flip, so the
 gate locks the stream's polarity from two cleanly decoded slot types and
-classifies every sync at that polarity. The idle-beacon test runs at both
-polarities.
+classifies every sync at that polarity.
 
 **Are the P25 NAC gate and the DMR call gate verified on air?**
 Not yet. Both are synthetic-verified: their tests modulate P25 LDUs and DMR

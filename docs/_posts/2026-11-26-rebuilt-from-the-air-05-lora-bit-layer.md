@@ -74,8 +74,8 @@ layer between a demodulated bin and a payload byte was made up.*
 
 ## Four months of green
 
-Every other part of this series starts with someone's radio not decoding.
-This one starts with nothing. The [LoRa]({{ '/reference/lora/' | relative_url }})
+Most parts of this series start with someone's radio not decoding. This
+one starts with nothing. The [LoRa]({{ '/reference/lora/' | relative_url }})
 receiver landed in v0.3.8 on 10 June 2026 as a complete feature: chirp
 synthesis, a dechirp-and-fold FFT kernel, preamble and SFD acquisition, a
 bit chain, a channelized streaming receiver, LoRaWAN MIC verification, a
@@ -109,10 +109,10 @@ Calibration is what you do to a structure you believe, and the belief was
 reasonable. Each stage is a textbook object — a
 [Gray code]({{ '/reference/gray-code/' | relative_url }}), a
 [Hamming code]({{ '/reference/hamming-code/' | relative_url }}), a diagonal
-interleaver, an LFSR whitener, a CRC-16 — and public descriptions of LoRa's
-PHY list exactly those stages in that order. If the stages and the order are
-right, what is left is sign conventions and seeds, and one golden packet
-settles those in an afternoon.
+interleaver, an LFSR whitener, a CRC-16 — and descriptions of LoRa's PHY
+list those stages in that order. If the stages and the order are right,
+what is left is sign conventions and seeds, and one golden packet settles
+those in an afternoon.
 
 What that skips is that a stage's *name* fixes almost nothing. A
 Hamming(8,4) code has many bit layouts; a diagonal interleaver is a family;
@@ -124,7 +124,7 @@ nothing about why.
 
 The capture was never coming, so the question changed from "what does the
 air carry?" to "what do decoders known to work on Semtech radios agree the
-air carries?" Two open implementations qualify, with no code in common:
+air carries?" Two open implementations qualify, independent of each other:
 
 - **gr-lora_sdr**, the GNU Radio implementation validated against an SX1276
   — whitening table, header checksum, CRC, Hamming encoder, interleaver and
@@ -351,9 +351,9 @@ was always pinned to RFC 4493's vectors rather than to itself.
   [SmartNet rebuild]({{ '/blog/deep-dives/from-spec-to-shipping-08-smartnet-rebuild/' | relative_url }})
   replaced a whole stack; here one half was right, and reading reference
   chips back out of modulated IQ proved which half.
-- **A closed issue is not a passed gate.** The ledger in
-  [Part 14]({{ '/blog/solution-postmortem/rebuilt-from-the-air-14-audit-checklist-errata/' | relative_url }})
-  carries LoRa as reference-pinned with the capture outstanding.
+- **A closed issue is not a passed gate.** Verification status is kept
+  per decoder, not per ticket; the ledger for this whole series is in
+  [Part 14]({{ '/blog/solution-postmortem/rebuilt-from-the-air-14-audit-checklist-errata/' | relative_url }}).
 
 ## Where this goes next
 

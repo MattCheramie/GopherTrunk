@@ -33,7 +33,7 @@ story; this post is the design.*
 > (`ctcssMinDeviationHz`) **and** beat 1.5× the largest reverse bin — the
 > target ±5 Hz plus the adjacent EIA tones. 150.0 / 151.4 Hz, 1.4 Hz apart,
 > open together by design. The scan window grows to 350 ms. On-air verified
-> 24 Sep on the reporter's Kenwood radios and a service monitor.
+> 24 Sep.
 
 **Key takeaways**
 
@@ -64,12 +64,12 @@ story; this post is the design.*
 
 ## In this post
 
-- **A tone under the voice** — what CTCSS is and what the gate must decide.
+- **A tone under the voice** — what the gate must decide.
 - **The shared front end** — one discriminator scale at any SDR rate.
 - **One bin, exactly on frequency** — `NewGoertzelExact` and what 250 ms buys.
 - **Neighbours as reverse bins** — the ratio test, the inseparable pair, the threshold.
-- **Carrier AND tone** — how the scanner uses the answer, and what it costs.
-- **What pins it** — the table sweep, the production rate, real air.
+- **Carrier AND tone** — how the scanner uses the answer, and its cost.
+- **What pins it** — the table, the production rate, real air.
 
 ## A tone under the voice
 
@@ -80,10 +80,10 @@ radio filters it out of the speaker and uses it for one decision: stay muted
 unless my tone is present. That is how two agencies share a frequency, and a
 scan list needs the same decision — without it, says the comment at the top
 of `ctcss.go`, the scanner "stops on every nearby transmission on the same
-frequency, including marine, business, and adjacent-county traffic".
+frequency".
 [Operator's Cookbook Part 6]({{ '/blog/tutorials/operator-cookbook-06-analog-fm-tone-out/' | relative_url }})
-showed the operator's side: a `tone:` block with `mode: ctcss` and
-`ctcss_hz`. This post is what runs behind those two keys.
+showed the operator's side, a `tone:` block with `mode: ctcss` and
+`ctcss_hz`.
 
 On an FM carrier the tone is a slow, small wobble of the carrier frequency.
 The code's figure is that radios put about 15 % of their peak
@@ -134,11 +134,10 @@ output is the phase step between consecutive samples — radians *per
 sample*. That unit carries the sample rate inside it: 350 Hz of deviation is
 a 0.046 rad step at 48 kHz and one fifty times smaller at 2.4 MS/s.
 `discScale` multiplies it back, so the output is always "radians per sample
-at 48 kHz"; a device at 2.048 MS/s decimates by 42 to about 48.8 kHz and
-scales by 1.016. The type's comment states the contract: "a threshold means
-the same deviation at any SDR sample rate". The detector before this one
-had a threshold calibrated at 48 kHz and was fed 2.4 MS/s, and a real tone
-sat about 3000× below it. That story belongs to the postmortem; the design
+at 48 kHz". The type's comment states the contract: "a threshold means the
+same deviation at any SDR sample rate". The detector before this one had a
+threshold calibrated at 48 kHz and was fed 2.4 MS/s, and a real tone sat
+about 3000× below it. That story belongs to the postmortem; the design
 consequence is that nothing after `toneFrontEnd` knows the SDR's rate.
 
 A one-pole low-pass at 500 Hz (`AudioCutoffHz`) then rolls the voice off.
@@ -161,8 +160,7 @@ misses by 2.2 Hz".
 `2π·targetHz/sampleHz`, the tone itself, where `NewGoertzel` uses a rounded
 bin index. The magnitude formula in `Process` is exact at any frequency, so
 nothing is lost by leaving the grid. `TestGoertzelExactHitsOffGridTone` pins
-the pair on a half-scale 162.2 Hz sine: the exact resonator reads the
-expected 0.25, the rounded one less than 0.8 of that.
+the pair on a 162.2 Hz sine.
 
 Putting the bin on the tone fixes *where* it looks. How *sharply* is set by
 the block length: a block of T seconds has a main lobe 1/T hertz wide to its
@@ -211,9 +209,8 @@ not sliding, so the gate decides once every quarter second.
 A 29 % leak means a wideband radio on the *wrong* tone still puts plenty of
 power in the target bin, so a magnitude threshold alone cannot reject it.
 The gate measures the competition as well. Every detector carries **reverse
-bins**, each its own exact Goertzel over the same block: two fixed ones at
-the target ±5 Hz (`ctcssReverseOffsetHz`, "catching non-EIA tones and
-broadband sub-audible energy") and the EIA tones immediately below and above
+bins**, each its own exact Goertzel over the same block: two at the target
+±5 Hz (`ctcssReverseOffsetHz`) and the EIA tones immediately below and above
 (`eiaNeighbourTones`). A 162.2 Hz gate also listens at 157.2, 167.2, 159.8
 and 165.5 Hz, and decides once per block:
 
@@ -241,11 +238,10 @@ ratio at about 1.5: on the limit, with no margin for noise. So
 `eiaNeighbourTones` skips any neighbour closer than
 `tonecode.MinSeparableCTCSSHz` (2.0 Hz), only that pair qualifies, and a
 gate on either tone opens on both — "as on most radios", the comment adds.
-The limit is stated once and used twice. A wideband dongle's `conventional:`
+The limit is stated once and used twice: a wideband dongle's `conventional:`
 list lets several logical channels share one frequency when their tone gates
-tell the transmissions apart, and config validation refuses a pair that
-could not: `tonecode.Overlap` treats CTCSS gates within 2.0 Hz as one, and
-the error reads "CTCSS tones under 2.0 Hz apart".
+tell the transmissions apart, and config validation (`tonecode.Overlap`)
+refuses a pair "under 2.0 Hz apart".
 
 The other test, `magThreshold`, is not a typed-in number.
 `ctcssToneMagnitude` computes what a steady tone of a given deviation reads
@@ -259,27 +255,26 @@ coherent in the target bin and the reverse-bin ratio holds".
 Here the gate meets the rule this series leans on, from
 [The Analog Edge Part 13]({{ '/blog/tutorials/analog-edge-13-coherence-not-dbfs/' | relative_url }}):
 never gate a decision on absolute dBFS when a scale-invariant statistic
-exists. Deviation is set by the transmitter's modulator, and a phase step
-does not grow when the tuner's gain does. One test is a number of hertz, the
-other a ratio; neither is a level.
+exists. A phase step does not grow when the tuner's gain does. One test is a
+number of hertz, the other a ratio; neither is a level.
 
 ## Carrier AND tone: how the scanner uses the answer
 
 The scanner knows a tone gate only as a `toneDetector` — `Process`,
-`Present`, `Reset` — and uses it in two places in `scanner.go`.
+`Present`, `Reset`, the interface the DCS, NAC and digital call gates also
+satisfy — and uses it in two places in `scanner.go`.
 
 In the **scan window**, the detector is fed only the chunks whose in-channel
 power clears `squelch_dbfs`, and the channel opens when the detector reports
 the tone *and* the carrier squelch is open on that chunk — which on an FM
 channel includes the noise squelch of
 [Part 3]({{ '/blog/deep-dives/squelch-03-noise-squelch/' | relative_url }}).
-The detector starts from the level alone on purpose: a tone's first block
-arrives before the noise squelch's window has filled. This is what an
-operator means by "CSQ AND tone". When the level test measured the whole SDR
-span (Part 2) it was always true and the tone detector was the only gate
-left — "Tone only, not CSQ AND Tone", as that issue put it.
+This is what an operator means by "CSQ AND tone". When the level test
+measured the whole SDR span (Part 2) it was always true and the tone
+detector was the only gate left — "Tone only, not CSQ AND Tone", as that
+issue put it.
 
-In the **dwell**, the tone has to stay. A chunk counts as active only while
+In the **dwell**, the tone has to stay: a chunk counts as active only while
 the carrier holds *and* `det.Process` still reports the tone, so a
 transmitter that drops its tone starts the hangtime countdown exactly as a
 dropped carrier does. The detector is `Reset` on every retune.
@@ -289,15 +284,14 @@ The gate has costs:
 - **Every scan window gets longer.** A decision needs one full block, so
   `New` raises the scanner's `MinDwellPerChannel` from its 100 ms default to
   `ctcssMinDwell` (350 ms) as soon as *any* channel is CTCSS-gated. A scan
-  window is a timer, so a ten-channel list goes from one second of windows
-  per lap to three and a half.
+  window is a timer, so ten channels go from one second of windows per lap
+  to three and a half.
 - **The call starts late.** A call is declared only once the gate confirms,
   "up to about half a second after the carrier came up". A retuning
   scan-list SDR starts recording there; the continuous wideband tap
-  implements `OnsetIQSource` and hands the voice chain the IQ from the
-  transmission's first samples instead.
-- **Data decoders ignore it.** MDC1200, FleetSync and ACARS taps run from
-  the level alone, by design
+  implements `OnsetIQSource` and hands over the IQ from the transmission's
+  first samples.
+- **Data decoders ignore it**, by design
   ([Part 11]({{ '/blog/deep-dives/squelch-11-data-on-the-scan-list/' | relative_url }})).
 - **It fails open, loudly.** If a detector cannot be built the scanner logs
   `conv: CTCSS detector failed to initialise; tone gate disabled — every
@@ -305,20 +299,18 @@ The gate has costs:
 
 ## What pins it
 
-Three kinds of test, each closing a hole the others leave.
-
 **The table.** `ctcss_eia_test.go` sweeps `EIACTCSSTones` on FM with added
 noise and a random tone phase.
 `TestCTCSSOpensOnEveryEIAToneAtNarrowbandDeviation` demands every tone open
 at 350 Hz of deviation in at least 90 % of chunks;
-`TestCTCSSRejectsAdjacentEIATones` sends the next tone up or down at the
-full wideband 750 Hz and demands the gate never open. Both skip the
-150.0 / 151.4 pair, whose inseparability is pinned where it has
-consequences — `TestOverlap` in `tonecode`.
+`TestCTCSSRejectsAdjacentEIATones` sends the next tone up or down at 750 Hz
+and demands the gate never open. Both skip the 150.0 / 151.4 pair, whose
+inseparability is pinned where it has consequences — `TestOverlap` in
+`tonecode`.
 
 **The production rate.** `TestCTCSSReportedToneOffsetAtSDRRate` runs at
 2 400 000 samples per second: 162.2 and 192.8 Hz gates must open on their
-own tone at both deviations and stay shut on 159.8 and 189.9 Hz.
+own tone and stay shut on 159.8 and 189.9 Hz.
 
 **Real air.** `ctcss_realair_test.go` loads two 48 kHz slices of the
 reporter's captures — a handheld keyed on 447.100 MHz with and without a
@@ -332,8 +324,7 @@ least 95 % of chunks and the 94.8, 103.5 and 107.2 Hz gates never;
 Status: **on-air verified** on 24 Sep, when the reporter ran the fixed build
 against Kenwood NX-300 and NX-5000 radios and a service monitor. The
 committed real-air fixtures carry one tone from one radio; the rest of the
-table is pinned by the synthetic sweeps. The 150.0 / 151.4 pair is a stated
-limit, not a defect awaiting a fix.
+table is pinned synthetically.
 
 ### How CTCSS shaped the Go code
 
@@ -344,18 +335,13 @@ limit, not a defect awaiting a fix.
 - **Facts DSP and config both need live in a package with no imports.**
   `tonecode` owns the separability limit, so validator and detector cannot
   disagree.
-- **A gate is three methods.** CTCSS, DCS, the NAC gate and the digital call
-  gates share the `toneDetector` interface; the scan loop does not care
-  which is which.
 
 ## Where this goes next
 
 CTCSS has a sibling that sends bits instead of a sine: a 23-bit word looped
 at 134.4 bit/s under the voice.
 [Part 6]({{ '/blog/deep-dives/squelch-06-dcs/' | relative_url }}) takes the
-DCS gate apart — the word as it goes on air, a slicer that ignores carrier
-offset, and why some codes are the same bits as others. The operator's
-recipe for both gates is
+DCS gate apart. The operator's recipe for both gates is
 [Cookbook Vol. 2 Part 4]({{ '/blog/tutorials/cookbook-volume-2-04-fleet-signalling/' | relative_url }}).
 
 ## FAQ
@@ -365,7 +351,8 @@ It decimates the channel to about 48 kHz, filters it to ±8 kHz, FM
 discriminates, low-passes at 500 Hz and runs a Goertzel resonator at exactly
 the configured frequency over 250 ms blocks. The tone must exceed the
 reading of a 100 Hz-deviation tone and be 1.5× stronger than every reverse
-bin — the target ±5 Hz and the adjacent EIA tones.
+bin — the target ±5 Hz and the adjacent EIA tones. Neither test depends on
+SDR gain or sample rate.
 
 **Why does a CTCSS gate need 250 ms to decide?**
 Frequency resolution is the reciprocal of the block length. Adjacent EIA
@@ -378,11 +365,6 @@ They are 1.4 Hz apart and each leaks about 66 % of its power into the
 other's bin over a 250 ms block, so the comparison has no margin. A gate on
 one opens on both, and config validation refuses the pair on one shared
 frequency.
-
-**Does the CTCSS threshold depend on SDR gain or sample rate?**
-No. The detector works on the FM discriminator's output, which does not
-scale with IQ amplitude, and the front end rescales it to radians per sample
-at 48 kHz whatever the device rate.
 
 **Is the CTCSS gate verified on air?**
 Yes — on-air verified on 24 Sep with the reporter's Kenwood NX-300 and
