@@ -42,8 +42,8 @@ the obvious demodulator.*
   2.4 MHz is dominated by the band's noise; the same samples behind a
   channel filter decode every burst.
 - **A burst in progress outranks the scan clock — within a bound.** A
-  locked sync holds the window, and a false lock on noise can delay the
-  scan by no more than the same bound.
+  locked sync holds the window; a false lock on noise can delay the scan by
+  no more than that bound.
 - **A line code that signals "changed" wants a coherent detector.** Deciding
   tones turns one error into a whole inverted block; reading the phase
   keeps it one bit.
@@ -124,8 +124,8 @@ type DataDecoder interface {
 }
 ```
 
-Each method stands for something the scanner owns so the decoder does not
-have to: the sample rate, the dwell, and the retune.
+Each stands for something the scanner owns so the decoder need not: the
+sample rate, the dwell, the retune.
 
 ## The data front end
 
@@ -234,8 +234,8 @@ long. Inside a dwell the same flag counts as channel activity, so hangtime
 cannot end the call mid-burst (`TestDataDecoderBusyHoldsHangtime`).
 
 **Every retune is a clean start.** `Reset` clears the resampler, the
-discriminator, the timing loop and the framer, so a burst cut off by a hop
-is abandoned rather than completed from the next channel's bits.
+demodulator, the timing loop and the framer, so a burst cut off by a hop is
+abandoned rather than completed from the next channel's bits.
 
 What the decoders deliberately do **not** wait for is the tone gate. A
 data burst carries its own sync word and block check, so it is published

@@ -37,7 +37,7 @@ a decoded frame, not a power reading, say "call".*
 
 - **Power answers "is a carrier up?", never "is someone talking?".** A
   keyed-but-idle DMR repeater and a foreign P25 system both clear
-  `squelch_dbfs` honestly; no threshold separates them from a call.
+  `squelch_dbfs`; no threshold separates them from a call.
 - **The evidence is a decoded frame, so the gate is a receiver.** Each gate
   runs the production demodulator on the channel's own narrowband IQ and
   reports the age of its last good frame.
