@@ -236,26 +236,24 @@ Two earlier finales listed open items that have since moved. From
   checklist rows — is outside this series, and no change is claimed.
 
 From
-[DMR End to End, Part 14]({{ '/blog/deep-dives/dmr-end-to-end-14-playbook/' | relative_url }}):
+[DMR End to End, Part 14]({{ '/blog/deep-dives/dmr-end-to-end-14-playbook/' | relative_url }}),
+one item moved and one did not. **"Enhanced Privacy through the daemon"** —
+the daemon's decrypt path can now be checked offline with the release
+binary, from a discriminator recording and an operator-held key:
 
-- **"Enhanced Privacy through the daemon"** — the daemon's decrypt path can
-  now be checked offline with the release binary, from a discriminator
-  recording and an operator-held key:
+```bash
+gophertrunk replay -in ep-call.wav -format disc -protocol dmr-tier2 -freq 1 \
+                  -record-voice -out-dir rec -key rc4:11:4E77AD0B51
+```
 
-  ```bash
-  gophertrunk replay -in ep-call.wav -format disc -protocol dmr-tier2 -freq 1 \
-                    -record-voice -out-dir rec -key rc4:11:4E77AD0B51
-  ```
-
-  `TestReplayDecryptsRealAirEnhancedPrivacyFromDiscAudio` pins it on
-  committed real-air ciphertext: 54 of 54 frames clear with the key, 54 of
-  54 ciphertext without. The reporter's own run, or a live call, is still
-  open on #1187
-  ([Cookbook Volume 2, Part 8]({{ '/blog/tutorials/cookbook-volume-2-08-your-own-keys/' | relative_url }})
-  is the recipe).
-- **"Direct mode on a live build"** — unchanged: capture-verified on the
-  reporter's 15 Sep captures, with the live run on a fixed build still the
-  gate on #836.
+`TestReplayDecryptsRealAirEnhancedPrivacyFromDiscAudio` pins it on committed
+real-air ciphertext: 54 of 54 frames clear with the key, 54 of 54
+ciphertext without. The reporter's own run, or a live call, is still open
+on #1187
+([Cookbook Volume 2, Part 8]({{ '/blog/tutorials/cookbook-volume-2-08-your-own-keys/' | relative_url }})
+is the recipe). **"Direct mode on a live build"** is unchanged:
+capture-verified on the reporter's 15 Sep captures, with the live run on a
+fixed build still the gate on #836.
 
 Two corrections fall outside the rebuilds. Protocol Decoders
 [10]({{ '/blog/deep-dives/protocol-decoders-10-alias-hunt-framing/' | relative_url }})

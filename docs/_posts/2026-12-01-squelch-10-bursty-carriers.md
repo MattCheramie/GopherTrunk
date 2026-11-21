@@ -132,9 +132,9 @@ second and not once does it stay up long enough to count. When the hangtime
 runs out the call ends, mid-sentence; the next burst opens a new one; and
 so on down the over.
 
-The same log held its own control. A ten-second call on that channel
-recorded in one piece — its source was 9990, the Parrot, heard through a
-repeater: a continuous carrier.
+The same log held its own control: the one ten-second call on that channel
+had source 9990 — the Parrot, heard through a repeater, which is a
+continuous carrier.
 
 The fix is one clause ahead of the debounce:
 
@@ -321,13 +321,14 @@ with the rig's own error text and requires the fourth call;
 ## What is still open
 
 **Why both dongles stalled at the same instant is not root-caused.** Two
-RTL-SDRs failing within half a second of each other is not two independent
-faults. The standing suspicion is a USB reset on one dongle disturbing a
-sibling on the same hub, but the reporter's log excerpt starts at the
-banner, so the device-open and tuner diagnostic lines — and whether the two
-dongles share a hub — are the next instrument. One trap for whoever reads
-that log: the start-up banner showing `rtlsdr[0]` twice is not a double
-open. The pool snapshot used to drop the device index; it is carried now.
+RTL-SDRs failing within half a second of each other are unlikely to be two
+independent faults. The standing suspicion is a USB reset on one dongle
+disturbing a sibling on the same hub, but the reporter's log excerpt starts
+at the banner, so the device-open and tuner diagnostic lines — and whether
+the two dongles share a hub — are the next instrument. One trap for whoever
+reads that log: the start-up banner showing `rtlsdr[0]` twice is not a
+double open. The pool snapshot used to drop the device index; it is carried
+now.
 
 **None of the four fixes has a confirming live run recorded.** The stall
 timeout and the retry loop are pinned failing-first by their tests; the

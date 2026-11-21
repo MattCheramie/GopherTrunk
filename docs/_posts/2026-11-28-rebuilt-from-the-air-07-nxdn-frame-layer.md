@@ -58,7 +58,7 @@ frames the decoder had never actually found.*
 | Real cause | fabricated framing — a 16-bit sync word, a doubled-bit LICH, a 32-dibit SACCH, no scrambler, a placeholder voice bit order — plus a voice receiver with no carrier correction and no channel filter |
 | Fix | `nxdn/airframe.go` and `TrafficChannel`; `EnableAFC` and `EnableChannelFilter` on the voice receiver; `mode: nxdn48` |
 | Diagnostic | the reporter's two `voice_iq_debug` recordings read against MMDVMHost and DSD-FME; speech judged by AMBE pitch continuity, never by level |
-| Status | capture-verified on two real-air slices in CI; on-air verified on the reporter's Kenwood radios; control channel, drift and scrambler follow in Parts 8 and 9 |
+| Status | capture-verified on two real-air slices in CI; confirmed live by the reporter on Kenwood radios in both widths; trunked NXDN voice, on the same frame layer, on-air verified 21 Oct (Part 8); scrambler in Part 9 |
 
 ## In this post
 
@@ -319,9 +319,10 @@ were written from the same model. The legacy files are still in the
 package for their own tests; nothing on the voice path reads them.
 
 Status, in the project's vocabulary: the voice frame layer is
-**capture-verified** — two real-air slices in CI — and **on-air verified**
-on the reporter's Kenwood radios, NXDN96 first and both widths once the
-drift fix in Part 8 landed. The scan-list
+**capture-verified** — two real-air slices in CI. Live, the reporter
+confirmed NXDN96 on the first fixed build and both widths, through
+temperature swings, on 21 October — the run in which trunked NXDN voice, on
+this same frame layer, became **on-air verified** (Part 8). The scan-list
 [call gate]({{ '/blog/deep-dives/squelch-09-call-gates-ysf-nxdn-dstar/' | relative_url }})
 and the operator recipe in
 [Cookbook Volume 2 Part 3]({{ '/blog/tutorials/cookbook-volume-2-03-nxdn/' | relative_url }})
@@ -377,10 +378,11 @@ the daemon logs a warning and ignores it. The NXDN receiver now applies its
 own channel filter automatically, ±3.5 kHz for `nxdn48`.
 
 **Is NXDN voice decoding verified on air?**
-Conventional voice is: capture-verified on two committed real-air slices,
-and confirmed live by the reporter on Kenwood radios in both channel
-widths. The control channel and the scrambler have their own status in
-Parts 8 and 9.
+The frame layer is capture-verified on two committed real-air slices, and
+the reporter confirmed conventional voice live on Kenwood radios in both
+channel widths. Trunked NXDN voice, which uses the same frame layer, was
+on-air verified on 21 October. The scrambler's live run is still open; see
+Part 9.
 
 ## Series navigation
 
