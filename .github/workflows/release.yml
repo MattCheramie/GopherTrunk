@@ -21,6 +21,14 @@ name: Release
 #   gophertrunk-<ver>-darwin-amd64.tar.gz       macOS Intel tarball
 #   gophertrunk-<ver>-darwin-arm64.tar.gz       macOS Apple Silicon tarball
 #   SHA256SUMS                                  per-file SHA-256 checksums
+#
+# The version is checked before anything is built (the `preflight` job,
+# scripts/release-refs.py preflight): it must be a vX.Y.Z newer than
+# every release already in the released commit's history. The dispatch
+# form used to pre-fill a placeholder; run #140 was started with it
+# still in the box and published a "v0.0.0" pre-release on the v1.4.2
+# commit. The form has no default now, so GitHub will not start a run
+# until a version is typed.
 on:
   push:
     tags:
@@ -28,16 +36,44 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish (e.g. v0.1.0). Must start with 'v'."
+        description: "Version to publish, e.g. v1.4.3. Must be newer than every release in this branch's history."
         required: true
-        default: "v0.0.0"
 
 permissions:
   contents: write
 
 jobs:
+  # Every build job waits for this one, so a wrong version stops the run
+  # before an artifact exists and long before the publish step.
+  preflight:
+    name: Check the release version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The check reads the tags in this commit's history. 0 fetches
+          # all of it, tags included; the default depth-1 checkout has
+          # neither, and the script refuses that rather than pass blind.
+          fetch-depth: 0
+
+      - name: Refuse a version that is not a new release of this commit
+        env:
+          # Through the environment, not spliced into the script: the
+          # version is typed by hand on a dispatch.
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$DISPATCH_VERSION"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          python3 scripts/release-refs.py preflight "$VERSION"
+
   windows:
     name: Build Windows installer
+    needs: [preflight]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -200,6 +236,7 @@ jobs:
 
   linux:
     name: Build Linux tarballs
+    needs: [preflight]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -297,6 +334,7 @@ jobs:
 
   macos:
     name: Build macOS bundles
+    needs: [preflight]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -422,6 +460,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
+          # On a dispatch the tag does not exist yet. Without this GitHub
+          # creates it on the default branch's head at publish time, which
+          # is not the commit preflight checked and the jobs built if main
+          # moved meanwhile or the run was started from a release branch.
+          # Ignored when the tag already exists (the tag-push path). The
+          # action's own notes say the workflow token may be refused when
+          # the tag is for an older commit; a 403 here means that, and a
+          # failed publish is still better than a tag on the wrong commit.
+          target_commitish: ${{ github.sha }}
           name: GopherTrunk ${{ steps.version.outputs.version }}
           generate_release_notes: true
           prerelease: ${{ steps.version.outputs.prerelease == 'true' }}

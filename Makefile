@@ -1,4 +1,10 @@
-VERSION ?= $(shell git describe --tags --dirty --always 2>/dev/null || echo dev)
+# v0.0.0 is excluded by name: release run #140 published the dispatch form's
+# old placeholder and left that tag on the v1.4.2 commit. Two tags on one
+# commit tie, git describe takes the first by name, and every source build
+# from there on called itself v0.0.0-N-g<sha>. A tag that went public stays
+# in the clones that fetched it, so deleting it upstream would not undo that.
+# (--exclude needs git 2.13; an older git falls back to the plain describe.)
+VERSION ?= $(shell git describe --tags --exclude v0.0.0 --dirty --always 2>/dev/null || git describe --tags --dirty --always 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "")
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 # RR_APP_KEY is the built-in RadioReference app key, injected at link time so it
@@ -16,7 +22,7 @@ TAGS    ?=
 GO      ?= go
 PKGS    := ./...
 
-.PHONY: all build dist test version-refs-check release-prep test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-airspyhf-real test-airspyhf-real-bias test-airspyhf-real-diag test-hackrf-real test-hackrf-real-bias test-hackrf-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-tetra-dmo integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build termux-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
+.PHONY: all build dist test version-refs-check release-refs-test release-prep test-dvsi test-cryptolab test-airspy-real test-airspy-real-bias test-airspy-real-diag test-airspyhf-real test-airspyhf-real-bias test-airspyhf-real-diag test-hackrf-real test-hackrf-real-bias test-hackrf-real-diag test-integration integration integration-cc integration-cc-grant integration-cc-nxdn integration-cc-dmr integration-cc-dpmr integration-cc-edacs integration-cc-motorola integration-cc-tetra integration-cc-tetra-dmo integration-cc-p25p2 integration-cc-mpt1327 integration-cc-ltr integration-cc-ysf lint tidy vet vulncheck licenses clean run proto cross-build termux-build release-archives release-dry-run web-build web-dev web-clean web-test siglab-web-build siglab-web-dev siglab-web-clean siglab-web-test rfscope-web-build rfscope-web-dev rfscope-web-clean rfscope-web-test cryptolab-web-build cryptolab-web-dev cryptolab-web-clean cryptolab-web-test
 
 all: build
 
@@ -343,6 +349,12 @@ termux-build:
 # The release workflow runs the same bump after publishing as a safety net.
 version-refs-check:
 	python3 scripts/release-refs.py check
+
+# The release-version guard's own tests (scripts/release-refs.py preflight,
+# release.yml calling it before any build, and VERSION above). CI runs this
+# in the `version-refs` job.
+release-refs-test:
+	python3 scripts/release_refs_test.py
 
 release-prep:
 	@case "$(VERSION)" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "usage: make release-prep VERSION=vX.Y.Z" >&2; exit 2 ;; esac

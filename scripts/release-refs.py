@@ -32,6 +32,21 @@ workflow enforce it:
       heading when nothing was recorded) unless one already exists, and —
       for a stable (non-hyphenated) tag — point README + fallback at it.
 
+  release-refs.py preflight vX.Y.Z [--commit REV] [--first-release]
+      The release workflow's first job, before anything is built: exit 1
+      unless vX.Y.Z is a NEW release of the commit being released. That
+      means it is a well-formed vX.Y.Z (or vX.Y.Z-prerelease), a tag of
+      that name does not already sit on a different commit, and it is
+      newer than every release tag already in that commit's history.
+      Release run #140 was dispatched with the form's old placeholder
+      and published a "v0.0.0" pre-release on the v1.4.2 commit; nothing
+      checked the version at all. The comparison is against the commit's
+      own history, not every tag in the repository, so a patch release
+      cut from an older release branch (docs/release.md) still passes.
+      Needs the full history and its tags (actions/checkout
+      fetch-depth: 0): a shallow checkout, or one with no release tag in
+      sight, is refused rather than waved through.
+
 Run from anywhere; paths resolve relative to the repository root. Only the
 standard library is used so it works on a bare CI runner.
 """
@@ -60,10 +75,19 @@ PLACEHOLDER = (
 
 
 def semver_key(tag: str):
-    """Sort key: numeric core, then a stable tag ranks above any prerelease."""
+    """Sort key in SemVer precedence order (semver.org §11).
+
+    Numeric core first; a stable tag ranks above any of its prereleases;
+    prerelease identifiers compare one by one, a numeric identifier as a
+    number and below an alphanumeric one, and a longer list above its own
+    prefix. (Comparing the prerelease as one string put rc.10 below rc.9.)
+    """
     core, _, pre = tag[1:].partition("-")
     nums = tuple(int(x) for x in core.split("."))
-    return (nums, 1 if not pre else 0, pre)
+    if not pre:
+        return (nums, 1, ())
+    ids = tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split("."))
+    return (nums, 0, ids)
 
 
 def is_stable(tag: str) -> bool:
@@ -220,6 +244,66 @@ def bump(tag: str, date: str | None) -> int:
     return check(tag)
 
 
+def _git(repo: pathlib.Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=60)
+
+
+def preflight(version: str, commit: str = "HEAD", first_release: bool = False, repo: pathlib.Path = ROOT) -> int:
+    """Exit status 0 only if `version` is a new release of `commit`."""
+
+    def refuse(msg: str) -> int:
+        print(f"release-refs: preflight: refusing to release {version!r}: {msg}", file=sys.stderr)
+        return 1
+
+    # fullmatch: a `$` alone also matches before a trailing newline.
+    if not TAG_RE.fullmatch(version):
+        return refuse("not a vX.Y.Z version (or vX.Y.Z-prerelease), e.g. v1.4.3")
+
+    head = _git(repo, "rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}")
+    if head.returncode != 0:
+        return refuse(f"cannot resolve the commit to release ({commit!r})")
+    sha = head.stdout.strip()
+
+    # Both blind spots fail closed: without the history, or without the
+    # tags, "nothing newer is in this commit's history" proves nothing.
+    if _git(repo, "rev-parse", "--is-shallow-repository").stdout.strip() == "true":
+        return refuse(
+            "this checkout is shallow, so the releases in the commit's history cannot be listed; "
+            "fetch the full history and its tags (actions/checkout fetch-depth: 0)"
+        )
+    listed = _git(repo, "tag", "-l")
+    if listed.returncode != 0:
+        return refuse("could not list git tags")
+    others = [t for t in listed.stdout.split() if TAG_RE.match(t) and t != version]
+    if not others and not first_release:
+        return refuse(
+            "no earlier release tag is visible in this checkout; fetch the tags (git fetch --tags), "
+            "or pass --first-release for a repository's very first release"
+        )
+
+    tagged = _git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{version}^{{commit}}")
+    if tagged.returncode == 0 and tagged.stdout.strip() != sha:
+        return refuse(
+            f"tag {version} already exists on another commit ({tagged.stdout.strip()[:8]}, "
+            f"releasing {sha[:8]}); a published tag is never moved, so pick a new version"
+        )
+
+    merged = _git(repo, "tag", "--merged", sha)
+    if merged.returncode != 0:
+        return refuse(f"could not list the tags in {sha[:8]}'s history")
+    earlier = [t for t in merged.stdout.split() if TAG_RE.match(t) and t != version]
+    newest = max(earlier, key=semver_key) if earlier else None
+    if newest and not semver_key(version) > semver_key(newest):
+        return refuse(
+            f"it is not newer than {newest}, which is already released from this commit's history "
+            f"({sha[:8]}); a release version only moves forward"
+        )
+
+    since = f"newest earlier release in its history: {newest}" if newest else "no earlier release in its history"
+    print(f"release-refs: preflight: {version} is a new release of {sha[:8]} ({since})")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -229,8 +313,16 @@ def main(argv: list[str]) -> int:
     b = sub.add_parser("bump", help="bring the references up to date for a tag")
     b.add_argument("tag")
     b.add_argument("--date", help="release date for the changelog heading (default: today, UTC)")
+    f = sub.add_parser("preflight", help="refuse a version that is not a new release of the commit (exit 1)")
+    f.add_argument("version")
+    f.add_argument("--commit", default="HEAD", help="the commit being released (default: HEAD)")
+    f.add_argument("--first-release", action="store_true", help="allow a repository with no earlier release tag")
     a = p.parse_args(argv)
-    return check(a.tag, not a.no_git) if a.cmd == "check" else bump(a.tag, a.date)
+    if a.cmd == "check":
+        return check(a.tag, not a.no_git)
+    if a.cmd == "preflight":
+        return preflight(a.version, a.commit, a.first_release)
+    return bump(a.tag, a.date)
 
 
 if __name__ == "__main__":
