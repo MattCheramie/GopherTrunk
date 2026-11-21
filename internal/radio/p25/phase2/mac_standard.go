@@ -4,56 +4,55 @@ import "encoding/binary"
 
 // Structured accessors for the standard (non-manufacturer-specific) P25
 // Phase 2 MAC opcodes beyond the group-voice-grant / NSB / IdentifierUp
-// trio handled in mac.go. Each As...() accessor returns (struct, false)
+// trio handled in mac.go. Field positions are SDRTrunk's (its bit indexes
+// count from the opcode's first bit); issue #1364. Each As...() accessor returns (struct, false)
 // when the PDU's opcode does not match, so a caller can probe a PDU
 // against several accessors in turn.
 
-// UnitToUnitVoiceChannelGrant is the structured shape of a Phase 2
-// unit-to-unit (private call) voice-grant MAC PDU (opcode 0x48):
-//
-//	byte 0    : service options
-//	bytes 1-2 : channel ID + channel number (4 + 12 bits)
-//	bytes 3-5 : target unit ID (24 bits)
-//	bytes 6-8 : source unit ID (24 bits)
+// UnitToUnitVoiceChannelGrant is a Phase 2 unit-to-unit (private call) voice
+// grant or grant update. Unlike a group grant it carries no service options.
 type UnitToUnitVoiceChannelGrant struct {
-	ServiceOptions uint8
-	ChannelID      uint8
-	ChannelNumber  uint16
-	TargetID       uint32
-	SourceID       uint32
+	ChannelID     uint8
+	ChannelNumber uint16
+	TargetID      uint32
+	SourceID      uint32
 }
 
-// AsUnitToUnitVoiceChannelGrant returns the structured grant if the PDU
-// opcode is a unit-to-unit voice grant or grant-update, otherwise
-// (zero, false).
+// AsUnitToUnitVoiceChannelGrant returns the grant if the PDU is a
+// Unit-to-Unit Voice Channel Grant (0x44) or its update (0x46), abbreviated
+// form, otherwise (zero, false). Octet 0 the opcode (SDRTrunk
+// UnitToUnitVoiceServiceChannelGrantAbbreviated / UnitToUnitVoiceChannel
+// GrantUpdateAbbreviated):
+//
+//	1-2 channel | 3-5 target | 6-8 source
 func (p MACPDU) AsUnitToUnitVoiceChannelGrant() (UnitToUnitVoiceChannelGrant, bool) {
 	switch p.Opcode {
 	case OpUnitToUnitVoiceChannelGrant, OpUnitToUnitVoiceChannelGrantUpdate:
 	default:
 		return UnitToUnitVoiceChannelGrant{}, false
 	}
-	if len(p.Payload) < 9 {
+	b := p.Payload
+	if len(b) < 8 {
 		return UnitToUnitVoiceChannelGrant{}, false
 	}
-	chanField := binary.BigEndian.Uint16(p.Payload[1:3])
-	return UnitToUnitVoiceChannelGrant{
-		ServiceOptions: p.Payload[0],
-		ChannelID:      uint8(chanField >> 12),
-		ChannelNumber:  chanField & 0x0FFF,
-		TargetID:       uint32(p.Payload[3])<<16 | uint32(p.Payload[4])<<8 | uint32(p.Payload[5]),
-		SourceID:       uint32(p.Payload[6])<<16 | uint32(p.Payload[7])<<8 | uint32(p.Payload[8]),
-	}, true
+	u := UnitToUnitVoiceChannelGrant{
+		TargetID: uint32(b[2])<<16 | uint32(b[3])<<8 | uint32(b[4]),
+		SourceID: uint32(b[5])<<16 | uint32(b[6])<<8 | uint32(b[7]),
+	}
+	u.ChannelID, u.ChannelNumber = macChannel(b)
+	return u, true
 }
 
 // RFSSStatusBroadcast is the structured shape of a Phase 2 RFSS Status
-// Broadcast - Update MAC PDU (opcode 0xFA). It names the site the
-// receiver is camped on so a scanner can log RFSS / site topology:
+// Broadcast (0xFA explicit, 0x7A implicit). It names the site the receiver
+// is camped on so a scanner can log RFSS / site topology. Octet 0 the opcode
+// (SDRTrunk RfssStatusBroadcast):
 //
-//	byte 0    : LRA (Location Registration Area)
-//	bytes 1-2 : System ID (12 bits, low 12)
-//	byte 3    : RFSS ID
-//	byte 4    : Site ID
-//	bytes 5-6 : channel ID + channel number (4 + 12 bits)
+//	1    LRA (Location Registration Area)
+//	2-3  System ID (low 12 bits)
+//	4    RFSS ID
+//	5    Site ID
+//	6-7  channel (explicit: the transmit channel)
 type RFSSStatusBroadcast struct {
 	LRA           uint8
 	SystemID      uint16 // 12-bit
@@ -63,10 +62,10 @@ type RFSSStatusBroadcast struct {
 	ChannelNumber uint16
 }
 
-// AsRFSSStatusBroadcast returns the structured RFSS status if the PDU
-// opcode is OpRFSSStatusBroadcastUpdate, otherwise (zero, false).
+// AsRFSSStatusBroadcast returns the structured RFSS status if the PDU is
+// either form of the RFSS Status Broadcast, otherwise (zero, false).
 func (p MACPDU) AsRFSSStatusBroadcast() (RFSSStatusBroadcast, bool) {
-	if p.Opcode != OpRFSSStatusBroadcastUpdate {
+	if p.Opcode != OpRFSSStatusBroadcastUpdate && p.Opcode != OpRFSSStatusBroadcastImplicit {
 		return RFSSStatusBroadcast{}, false
 	}
 	if len(p.Payload) < 7 {
@@ -98,36 +97,25 @@ func (s ServiceOptions) Encrypted() bool { return s&0x40 != 0 }
 // Priority returns the 3-bit call-priority field (0 = lowest).
 func (s ServiceOptions) Priority() uint8 { return uint8(s) & 0x07 }
 
-// EncryptionSync is the P25 Encryption Sync identification a Phase 2
-// MAC PDU carries for a protected call — the Algorithm ID, Key ID, and
-// 72-bit Message Indicator. GopherTrunk, like SDRtrunk, identifies
-// encryption (surfaces which algorithm/key) but does not decrypt.
-//
-// Layout note: the encryption-sync MAC opcode (OpEncryptionSync) and
-// this 12-byte payload packing are the project's working model —
-// TIA-102.BBAB does not appear in the repo's spec PDFs. The accessor
-// is confined here so a spec correction is a one-file change; the
-// grant's ServiceOptions "protected" bit flags encryption independently
-// of this, so the feature degrades gracefully if the layout is wrong.
-//
-//	byte 0     : Algorithm ID
-//	bytes 1-2  : Key ID
-//	bytes 3-11 : 72-bit Message Indicator
+// EncryptionSync is a call's encryption identification: the Algorithm ID,
+// Key ID and 72-bit Message Indicator. On the air it rides two places, and
+// neither is a MAC message of its own: the MAC_PTT PDU at key-up (AirMAC.PTT)
+// and the Encryption Synchronization Signal spread over the voice bursts
+// (ESSTracker), which is how a call joined after its key-up learns them.
 type EncryptionSync struct {
 	AlgorithmID      uint8
 	KeyID            uint16
 	MessageIndicator [9]byte
 }
 
-// GroupAffiliationResponse is the structured shape of a Phase 2 Group
-// Affiliation Response MAC PDU — published when a radio is granted or
-// denied affiliation with a talkgroup. Layout mirrors the Phase 1 TSBK
-// (phase1.GroupAffiliationResponse):
+// GroupAffiliationResponse is a Phase 2 Group Affiliation Response (0x68,
+// abbreviated): a radio was granted or denied affiliation with a talkgroup.
+// Octet 0 the opcode (SDRTrunk GroupAffiliationResponseAbbreviated):
 //
-//	byte 0     : bits 1-0 = affiliation response value
-//	bytes 1-2  : announcement group address
-//	bytes 3-4  : group address (talkgroup)
-//	bytes 5-7  : target unit ID (24 bits)
+//	2     bits 1-0 the response value (bit 7 local / global)
+//	3-4   announcement group
+//	5-6   group (talkgroup)
+//	7-9   target unit
 type GroupAffiliationResponse struct {
 	Response          uint8
 	AnnouncementGroup uint16
@@ -138,79 +126,58 @@ type GroupAffiliationResponse struct {
 // AsGroupAffiliationResponse returns the structured response if the PDU
 // opcode is OpGroupAffiliationResponse, otherwise (zero, false).
 func (p MACPDU) AsGroupAffiliationResponse() (GroupAffiliationResponse, bool) {
-	if p.Opcode != OpGroupAffiliationResponse {
-		return GroupAffiliationResponse{}, false
-	}
-	if len(p.Payload) < 8 {
+	b := p.Payload
+	if p.Opcode != OpGroupAffiliationResponse || len(b) < 9 {
 		return GroupAffiliationResponse{}, false
 	}
 	return GroupAffiliationResponse{
-		Response:          p.Payload[0] & 0x03,
-		AnnouncementGroup: binary.BigEndian.Uint16(p.Payload[1:3]),
-		GroupAddress:      binary.BigEndian.Uint16(p.Payload[3:5]),
-		TargetID:          uint32(p.Payload[5])<<16 | uint32(p.Payload[6])<<8 | uint32(p.Payload[7]),
+		Response:          b[1] & 0x03,
+		AnnouncementGroup: binary.BigEndian.Uint16(b[2:4]),
+		GroupAddress:      binary.BigEndian.Uint16(b[4:6]),
+		TargetID:          uint32(b[6])<<16 | uint32(b[7])<<8 | uint32(b[8]),
 	}, true
 }
 
-// UnitRegistrationResponse is the structured shape of a Phase 2 Unit
-// Registration Response MAC PDU — published when a radio completes or
-// is denied registration on a site. Layout mirrors the Phase 1 TSBK
-// (phase1.UnitRegistrationResponse):
+// UnitRegistrationResponse is a Phase 2 Unit Registration Response (0x6C,
+// abbreviated): a radio completed or was denied registration on a site.
+// Octet 0 the opcode (SDRTrunk UnitRegistrationResponseAbbreviated):
 //
-//	byte 0       : bits 1-0 = registration response value
-//	bytes 1-3    : WACN (20 bits, upper 20 of bytes 1-3)
-//	bytes 3-4    : System ID (low nibble of byte 3 + byte 4)
-//	bytes 5-7    : source unit ID (24 bits)
+//	2     bits 5-4 the response value, bits 3-0 the top of the System ID
+//	3     the rest of the System ID
+//	4-6   the radio's own unit ID
+//	7-9   the address the site assigned it (the ID its calls carry)
+//
+// The abbreviated form carries no WACN; WACN stays 0.
 type UnitRegistrationResponse struct {
 	Response uint8
-	WACN     uint32 // 20-bit
+	WACN     uint32 // 20-bit; 0 (not carried by the abbreviated form)
 	SystemID uint16 // 12-bit
-	SourceID uint32 // 24-bit
+	UnitID   uint32 // 24-bit
+	SourceID uint32 // 24-bit, the assigned address
 }
 
 // AsUnitRegistrationResponse returns the structured response if the PDU
 // opcode is OpUnitRegistrationResponse, otherwise (zero, false).
 func (p MACPDU) AsUnitRegistrationResponse() (UnitRegistrationResponse, bool) {
-	if p.Opcode != OpUnitRegistrationResponse {
-		return UnitRegistrationResponse{}, false
-	}
-	if len(p.Payload) < 8 {
+	b := p.Payload
+	if p.Opcode != OpUnitRegistrationResponse || len(b) < 9 {
 		return UnitRegistrationResponse{}, false
 	}
 	return UnitRegistrationResponse{
-		Response: p.Payload[0] & 0x03,
-		WACN:     uint32(p.Payload[1])<<12 | uint32(p.Payload[2])<<4 | uint32(p.Payload[3])>>4,
-		SystemID: uint16(p.Payload[3]&0x0F)<<8 | uint16(p.Payload[4]),
-		SourceID: uint32(p.Payload[5])<<16 | uint32(p.Payload[6])<<8 | uint32(p.Payload[7]),
+		Response: b[1] >> 4 & 0x03,
+		SystemID: uint16(b[1]&0x0F)<<8 | uint16(b[2]),
+		UnitID:   uint32(b[3])<<16 | uint32(b[4])<<8 | uint32(b[5]),
+		SourceID: uint32(b[6])<<16 | uint32(b[7])<<8 | uint32(b[8]),
 	}, true
 }
 
-// AsEncryptionSync returns the structured Encryption Sync if the PDU
-// opcode is OpEncryptionSync, otherwise (zero, false).
-func (p MACPDU) AsEncryptionSync() (EncryptionSync, bool) {
-	if p.Opcode != OpEncryptionSync {
-		return EncryptionSync{}, false
-	}
-	if len(p.Payload) < 12 {
-		return EncryptionSync{}, false
-	}
-	es := EncryptionSync{
-		AlgorithmID: p.Payload[0],
-		KeyID:       binary.BigEndian.Uint16(p.Payload[1:3]),
-	}
-	copy(es.MessageIndicator[:], p.Payload[3:12])
-	return es, true
-}
-
 // AsPushToTalk extracts the Encryption Sync (ALGID/KID/MI) that a P25
-// Phase 2 MAC_PTT message carries at key-up. On real systems this — not
-// the standalone OpEncryptionSync PDU AsEncryptionSync parses — is where
-// ALGID/KID/MI actually ride (issue #813): the PTT message is identified
-// by its slot type (SlotTypeMACPTT), not by a MAC opcode, so unlike
-// AsEncryptionSync this does NOT gate on the opcode byte. Callers must
-// only invoke it for a PTT-slot PDU (see DecodeSuperframeMACPDUsWithSlot
-// / the dispatcher), otherwise a long enough non-PTT payload would parse
-// as garbage.
+// Phase 2 MAC_PTT message carries at key-up, for the older superframe
+// working model's callers (the air path uses AirMAC.PTT). The PTT message is
+// identified by its slot type (SlotTypeMACPTT), not by a MAC opcode, so this
+// does NOT gate on the opcode byte. Callers must only invoke it for a
+// PTT-slot PDU (see DecodeSuperframeMACPDUsWithSlot), otherwise a long
+// enough non-PTT payload would parse as garbage.
 //
 // Layout note: field offsets follow SDRtrunk's PushToTalk MacStructure —
 // MESSAGE_INDICATOR at message bits 8-79 (72 bits), ALGORITHM_ID at

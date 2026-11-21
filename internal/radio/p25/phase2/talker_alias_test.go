@@ -4,9 +4,6 @@ import (
 	"encoding/hex"
 	"testing"
 	"time"
-
-	"github.com/MattCheramie/GopherTrunk/internal/events"
-	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
 func TestTalkerAliasFragmentRoundTrip(t *testing.T) {
@@ -306,29 +303,7 @@ func TestMotorolaAliasAssemblerWrongOpcodeRejected(t *testing.T) {
 	}
 }
 
-func TestControlChannelPublishesTalkerAlias(t *testing.T) {
-	bus := events.NewBus(8)
-	defer bus.Close()
-	sub := bus.Subscribe()
-	defer sub.Close()
-
-	cc := New(Options{Bus: bus, SystemName: "p2", FrequencyHz: 851_000_000})
-	cc.Ingest(EncodeTalkerAliasFragment(frag(0x1234, 0, 2, "UNIT")))
-	cc.Ingest(EncodeTalkerAliasFragment(frag(0x1234, 1, 2, "-7")))
-
-	for {
-		select {
-		case ev := <-sub.C:
-			if ev.Kind == events.KindTalkerAlias {
-				ta := ev.Payload.(trunking.TalkerAlias)
-				if ta.SourceID != 0x1234 || ta.Alias != "UNIT-7" {
-					t.Errorf("talker alias = (%#x, %q), want (0x1234, %q)",
-						ta.SourceID, ta.Alias, "UNIT-7")
-				}
-				return
-			}
-		default:
-			t.Fatal("no KindTalkerAlias event published")
-		}
-	}
-}
+// The control channel no longer acts on the working model's plain-text alias
+// fragment (opcode 0x82): control_patch_test.go's
+// TestControlChannelIgnoresUnidentifiedVendorMessages pins that. The real
+// Motorola alias (0x91 / 0x95) is assembled by MotorolaAliasAssembler above.

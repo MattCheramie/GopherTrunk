@@ -327,6 +327,18 @@ var airMACMsgLen = [256]uint8{
 	0, 0, 16, 14, 0, 0, 12, 0, 22, 0, 11, 13, 11, 0, 15, 0,
 }
 
+// motorolaFixedLength reports the two Motorola messages whose third octet
+// the references read differently: OP25's walk takes it for the message
+// length like any manufacturer message's, SDRTrunk reads the call's service
+// options there and gives the messages fixed lengths (8 and 7 octets, which
+// is also what a length octet would say). Taking the length from the table
+// is right under both readings; taking it from the octet would cut the
+// message short whenever service options had a priority set.
+func motorolaFixedLength(op, mfid uint8) bool {
+	return mfid == MFIDMotorola &&
+		(Opcode(op) == OpMotorolaRegroupVoiceChannelUser || Opcode(op) == OpMotorolaRegroupVoiceChannelUpdate)
+}
+
 // Messages splits a message-carrying MAC PDU into its MAC messages (OP25
 // decode_mac_msg): Null (0x00) and Null-Avoid-Zero-Bias (0x08) fill is
 // skipped, and a message of unknown length ends the walk. MAC_PTT and
@@ -360,7 +372,7 @@ func (m AirMAC) Messages() []MACPDU {
 				l = (int(m.Bytes[ptr+1]&3)+1)*3 + 2
 			}
 		default:
-			if b1b2 == 2 && ptr+2 < n {
+			if b1b2 == 2 && ptr+2 < n && !motorolaFixedLength(op, m.Bytes[ptr+1]) {
 				l = int(m.Bytes[ptr+2] & 0x3F)
 			}
 			if l == 0 {

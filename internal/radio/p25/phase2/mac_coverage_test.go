@@ -22,7 +22,7 @@ func TestAsGroupAffiliationResponse(t *testing.T) {
 
 func TestAsUnitRegistrationResponse(t *testing.T) {
 	in := UnitRegistrationResponse{
-		Response: 1, WACN: 0xABCDE, SystemID: 0x123, SourceID: 0x00BEEF,
+		Response: 1, SystemID: 0x123, UnitID: 0x00CAFE, SourceID: 0x00BEEF,
 	}
 	got, ok := EncodeUnitRegistrationResponse(in).AsUnitRegistrationResponse()
 	if !ok {
@@ -42,7 +42,8 @@ func TestAsUnitToUnitGrantAcceptsUpdateOpcode(t *testing.T) {
 }
 
 func TestAsMotorolaPatchDelete(t *testing.T) {
-	pdu := MACPDU{Opcode: OpMotorolaPatchDelete, MFID: MFIDMotorola, Payload: []byte{0x12, 0x34}}
+	// length 5, then the supergroup: the layout mac_reference_test.go pins.
+	pdu := MACPDU{Opcode: OpMotorolaPatchDelete, MFID: MFIDMotorola, Payload: []byte{0x05, 0x12, 0x34}}
 	super, ok := pdu.AsMotorolaPatchDelete()
 	if !ok || super != 0x1234 {
 		t.Errorf("AsMotorolaPatchDelete = (%#x, %v), want (0x1234, true)", super, ok)
@@ -78,7 +79,7 @@ func TestControlChannelEmitsAffiliationAndRegistration(t *testing.T) {
 		Response: 0, GroupAddress: 0x1234, TargetID: 0x00ABCD,
 	}))
 	cc.Ingest(EncodeUnitRegistrationResponse(UnitRegistrationResponse{
-		Response: 0, WACN: 0xABCDE, SystemID: 0x123, SourceID: 0x00BEEF,
+		Response: 0, SystemID: 0x123, UnitID: 0x00CAFE, SourceID: 0x00BEEF,
 	}))
 
 	var sawAff, sawReg bool
@@ -91,7 +92,7 @@ func TestControlChannelEmitsAffiliationAndRegistration(t *testing.T) {
 					sawAff = true
 				}
 			case events.KindUnitRegistration:
-				if r := ev.Payload.(trunking.UnitRegistration); r.SourceID == 0x00BEEF && r.WACN == 0xABCDE {
+				if r := ev.Payload.(trunking.UnitRegistration); r.SourceID == 0x00BEEF && r.SystemID == 0x123 {
 					sawReg = true
 				}
 			}
@@ -228,7 +229,7 @@ func TestControlChannelPatchDelete(t *testing.T) {
 	defer sub.Close()
 
 	cc := New(Options{Bus: bus, SystemName: "p2", FrequencyHz: 851_000_000})
-	cc.Ingest(MACPDU{Opcode: OpMotorolaPatchDelete, MFID: MFIDMotorola, Payload: []byte{0x05, 0x55}})
+	cc.Ingest(MACPDU{Opcode: OpMotorolaPatchDelete, MFID: MFIDMotorola, Payload: []byte{0x05, 0x05, 0x55}})
 
 	p := nextPatch(t, sub)
 	if p.SuperGroup != 0x0555 || p.Add {

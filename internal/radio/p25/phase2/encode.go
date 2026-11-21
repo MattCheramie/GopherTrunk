@@ -157,16 +157,6 @@ func EncodeMACPDURS(pdu MACPDU) MACPDU {
 	return out
 }
 
-// EncodeEncryptionSync builds the MAC PDU form of an Encryption Sync —
-// the inverse of MACPDU.AsEncryptionSync.
-func EncodeEncryptionSync(es EncryptionSync) MACPDU {
-	payload := make([]byte, 12)
-	payload[0] = es.AlgorithmID
-	binary.BigEndian.PutUint16(payload[1:3], es.KeyID)
-	copy(payload[3:12], es.MessageIndicator[:])
-	return MACPDU{Opcode: OpEncryptionSync, Payload: payload}
-}
-
 // EncodePushToTalk builds the MAC PDU form of a MAC_PTT message carrying
 // an Encryption Sync — the inverse of MACPDU.AsPushToTalk. The opcode
 // octet is left OpUnknown because real Phase 2 PTT is routed by slot
@@ -185,28 +175,28 @@ func EncodePushToTalk(es EncryptionSync) MACPDU {
 // EncodeGroupAffiliationResponse builds the MAC PDU form of a Group
 // Affiliation Response — the inverse of AsGroupAffiliationResponse.
 func EncodeGroupAffiliationResponse(g GroupAffiliationResponse) MACPDU {
-	p := make([]byte, 8)
-	p[0] = g.Response & 0x03
-	binary.BigEndian.PutUint16(p[1:3], g.AnnouncementGroup)
-	binary.BigEndian.PutUint16(p[3:5], g.GroupAddress)
-	p[5] = byte(g.TargetID >> 16)
-	p[6] = byte(g.TargetID >> 8)
-	p[7] = byte(g.TargetID)
+	p := make([]byte, 9)
+	p[1] = g.Response & 0x03
+	binary.BigEndian.PutUint16(p[2:4], g.AnnouncementGroup)
+	binary.BigEndian.PutUint16(p[4:6], g.GroupAddress)
+	p[6] = byte(g.TargetID >> 16)
+	p[7] = byte(g.TargetID >> 8)
+	p[8] = byte(g.TargetID)
 	return MACPDU{Opcode: OpGroupAffiliationResponse, Payload: p}
 }
 
 // EncodeUnitRegistrationResponse builds the MAC PDU form of a Unit
 // Registration Response — the inverse of AsUnitRegistrationResponse.
 func EncodeUnitRegistrationResponse(u UnitRegistrationResponse) MACPDU {
-	p := make([]byte, 8)
-	p[0] = u.Response & 0x03
-	p[1] = byte(u.WACN >> 12)
-	p[2] = byte(u.WACN >> 4)
-	p[3] = byte(u.WACN<<4) | byte((u.SystemID>>8)&0x0F)
-	p[4] = byte(u.SystemID)
-	p[5] = byte(u.SourceID >> 16)
-	p[6] = byte(u.SourceID >> 8)
-	p[7] = byte(u.SourceID)
+	p := make([]byte, 9)
+	p[1] = u.Response&0x03<<4 | byte(u.SystemID>>8)&0x0F
+	p[2] = byte(u.SystemID)
+	p[3] = byte(u.UnitID >> 16)
+	p[4] = byte(u.UnitID >> 8)
+	p[5] = byte(u.UnitID)
+	p[6] = byte(u.SourceID >> 16)
+	p[7] = byte(u.SourceID >> 8)
+	p[8] = byte(u.SourceID)
 	return MACPDU{Opcode: OpUnitRegistrationResponse, Payload: p}
 }
 

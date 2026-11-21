@@ -130,3 +130,98 @@ func TestDispatchAirSkipsVoice(t *testing.T) {
 		t.Fatalf("DispatchAir on voice = %d/%d, want 0/0", sig, dec)
 	}
 }
+
+// TestDispatcherReadsPrivateAndRegroupCallTalkers: a unit-to-unit call and a
+// Motorola regroup (patch) call announce their talker in their own in-call
+// messages (opcode 0x02; MFID 0x90 opcode 0x80), not in
+// GROUP_VOICE_CHANNEL_USER. Neither used to reach OnCallSource, so such a
+// call's recording had no source radio unless its MAC_PTT happened to be
+// caught (issue #1364). Byte layouts are SDRTrunk's
+// UnitToUnitVoiceChannelUserAbbreviated (service options, target, source)
+// and MotorolaGroupRegroupVoiceChannelUserAbbreviated (MFID, one octet,
+// supergroup, source).
+func TestDispatcherReadsPrivateAndRegroupCallTalkers(t *testing.T) {
+	masks := p25p2.NewAirMasks(testSeed)
+	uu := []byte{0x02, 0x40, 0x00, 0xAB, 0xCD, 0x04, 0xCF, 0x43}      // target 0x00ABCD, source 315203
+	regroup := []byte{0x80, 0x90, 0x08, 0x0C, 0x82, 0x04, 0xCF, 0x44} // supergroup 3202, source 315204
+	sf := voiceSlots()
+	sf[2] = p25p2.AirSlotContent{DUID: p25p2.DUIDFACCHScrambled,
+		MAC: macPDU(t, p25p2.AirMACActive, p25p2.DUIDFACCHScrambled, uu)}
+	sf[4] = p25p2.AirSlotContent{DUID: p25p2.DUIDFACCHScrambled,
+		MAC: macPDU(t, p25p2.AirMACActive, p25p2.DUIDFACCHScrambled, regroup)}
+
+	var got []p25p2.GroupVoiceChannelUser
+	d := NewMACDispatcher(MACDispatcherOptions{
+		Log: quietLog(), System: "TestSys", Serial: "tap-0",
+		OnCallSource: func(u p25p2.GroupVoiceChannelUser) { got = append(got, u) },
+	})
+	if sig, dec := d.DispatchAir(airBursts(t, masks, sf), masks); sig != 2 || dec != 2 {
+		t.Fatalf("DispatchAir = %d signalling / %d decoded, want 2/2", sig, dec)
+	}
+	if len(got) != 2 {
+		t.Fatalf("OnCallSource called %d times, want 2: %+v", len(got), got)
+	}
+	if got[0].SourceID != 315203 || got[0].ServiceOptions != 0x40 {
+		t.Errorf("unit-to-unit user: %+v, want source 315203, encrypted", got[0])
+	}
+	if got[1].SourceID != 315204 || got[1].GroupAddress != 3202 {
+		t.Errorf("regroup user: %+v, want source 315204 on supergroup 3202", got[1])
+	}
+}
+
+// TestDispatcherSynchronizationBroadcastIsNotEncryption: opcode 0x70 is the
+// site's clock. The dispatcher used to parse it as an encryption sync
+// (algorithm from its first payload octet, key from the next two), so a
+// clock whose octet happened to be a registered algorithm stamped that
+// algorithm and a random key on a clear call. Issue #1364.
+func TestDispatcherSynchronizationBroadcastIsNotEncryption(t *testing.T) {
+	masks := p25p2.NewAirMasks(testSeed)
+	clock := []byte{0x70, 0x84, 0x01, 0x23, 0x35, 0x74, 0x9A, 0xBC, 0xDE}
+	sf := voiceSlots()
+	sf[4] = p25p2.AirSlotContent{DUID: p25p2.DUIDSACCHScrambled,
+		MAC: macPDU(t, p25p2.AirMACActive, p25p2.DUIDSACCHScrambled, clock, gvcuMsg(315203, 0x4EEA))}
+
+	enc, src := 0, 0
+	d := NewMACDispatcher(MACDispatcherOptions{
+		Log: quietLog(), System: "TestSys", Serial: "tap-0",
+		OnCallEncryption: func(p25p2.EncryptionSync) { enc++ },
+		OnCallSource:     func(p25p2.GroupVoiceChannelUser) { src++ },
+	})
+	if _, dec := d.DispatchAir(airBursts(t, masks, sf), masks); dec != 1 {
+		t.Fatalf("decoded %d PDUs, want 1", dec)
+	}
+	if enc != 0 {
+		t.Errorf("a Synchronization Broadcast reached OnCallEncryption %d time(s)", enc)
+	}
+	// The message after it in the same PDU is still walked to.
+	if src != 1 {
+		t.Errorf("OnCallSource called %d times, want 1", src)
+	}
+}
+
+// TestDispatcherEndPTTEndsTheTransmission: MAC_END_PTT is the radio
+// releasing its PTT. The dispatcher reports each copy.
+func TestDispatcherEndPTTEndsTheTransmission(t *testing.T) {
+	masks := p25p2.NewAirMasks(testSeed)
+	end := make([]byte, 18)
+	end[0] = byte(p25p2.AirMACEndPTT) << 5
+	end[1], end[2] = 0x01, 0x64 // colour code 0x164
+	end[13], end[14], end[15] = 0x04, 0xCF, 0x43
+	end[16], end[17] = 0x4E, 0xEA
+	sf := voiceSlots()
+	sf[2] = p25p2.AirSlotContent{DUID: p25p2.DUIDFACCHScrambled, MAC: end}
+	sf[4] = p25p2.AirSlotContent{DUID: p25p2.DUIDFACCHScrambled, MAC: end}
+
+	ends, src := 0, 0
+	d := NewMACDispatcher(MACDispatcherOptions{
+		Log: quietLog(), System: "TestSys", Serial: "tap-0",
+		OnTransmissionEnd: func() { ends++ },
+		OnCallSource:      func(p25p2.GroupVoiceChannelUser) { src++ },
+	})
+	if _, dec := d.DispatchAir(airBursts(t, masks, sf), masks); dec != 2 {
+		t.Fatalf("decoded %d PDUs, want 2", dec)
+	}
+	if ends != 2 || src != 0 {
+		t.Errorf("OnTransmissionEnd %d, OnCallSource %d; want 2 and 0", ends, src)
+	}
+}

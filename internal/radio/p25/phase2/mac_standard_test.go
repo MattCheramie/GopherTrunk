@@ -13,7 +13,6 @@ func u2uPDU(target, src uint32, chanID uint8, chanNum uint16) MACPDU {
 	return MACPDU{
 		Opcode: OpUnitToUnitVoiceChannelGrant,
 		Payload: []byte{
-			0x00,
 			byte(chanField >> 8), byte(chanField),
 			byte(target >> 16), byte(target >> 8), byte(target),
 			byte(src >> 16), byte(src >> 8), byte(src),
