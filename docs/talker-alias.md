@@ -120,9 +120,11 @@ Broadcast supply them.
 
 If a followed Phase 2 call shows neither line, the MAC PDUs are not decoding
 on that channel — check the per-call census in the call-end log line
-(`mac_pdus`, `mac_rs_valid`): `mac_rs_valid=0` on a locked superframe is a
-weak-signal / framing condition, not an alias defect, and the knobs above are
-the lever. If you see ciphertext lines with `reliable=false` on a strong,
+(`composer: p25p2 call census`): `mac_bursts` counts the signalling bursts
+the call carried and `mac_pdus` how many of them decoded. `mac_pdus=0` with
+`mac_bursts` above zero is a weak-signal or wrong-identity condition, not an
+alias defect, and the knobs above are the lever; `air_bursts=0` means the
+channel was never framed at all. If you see ciphertext lines with `reliable=false` on a strong,
 clean channel, that *would* be an alias-decode defect — please open an issue
 with the `encoded_hex` and the radio's known name.
 

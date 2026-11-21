@@ -169,7 +169,7 @@ confirmation before any close-as-completed.
   0.15–1 s (or never) from ~1 start phase in 4, the #836 hang-up, now seeded feed-forward
   (`Receiver.ArmTimingAcquisition` → `sync.EstimateSymbolPhaseCM`, a constant-modulus eye search:
   E|y|⁴/E|y|²² ≈ 1.01 at the instant, ≥ 1.67 on noise), armed in the voice chain and sigfollow
-  only (the CC pipelines are not); (2) the `AirFramer` flywheeled 720 ms on a stale grid after an
+  (and, since 21 Nov, the CC pipelines); (2) the `AirFramer` flywheeled 720 ms on a stale grid after an
   IQ hole — it now re-anchors on an off-grid S-ISCH after ONE missed ISCH, searching from inside
   the missed packet (the new grid's S-ISCH sat there on the real hole). The nine files are separate
   `rtl_sdr` grabs, not one recording, and five contain a hole (grid shifts fit whole dropped 16 KiB
@@ -192,9 +192,41 @@ confirmation before any close-as-completed.
   `vocoderProtocolMap` had drifted (`TestRuntimeVocoderMapMatchesRecorderDefaults`). Open from that log:
   a second call (LCH 0, +787 kHz) had `corrected_bit_errs=356` over 48 voice bursts beside MAC 70/72
   (~2 Golay corrections per voice frame, unexplained; needs `voice_iq_debug`); one tap got `air_bursts=0`
-  for a ts1 grant while another tap framed the same carrier; the 2V burst's ESS-B is not decoded (the ES
-  comes from MAC_PTT only); MAC opcodes 0x42 / 0x7C print unnamed. The daemon path with the fix is not yet
-  confirmed by the reporter (#764/#771).
+  for a ts1 grant while another tap framed the same carrier (both now have census counters, see the MAC
+  message note below). The voice bursts' ESS was not decoded and MAC opcodes 0x42 / 0x7C printed unnamed;
+  both done in #1364. The daemon path with the fix is not yet confirmed by the reporter (#764/#771).
+- **The Phase 2 MAC MESSAGE table (what each decoded message is) was still the invented model's after
+  #1290 rebuilt the framing under it; corrected against SDRTrunk `MacOpcode` + OP25 `decode_mac_msg`
+  (#1364, 21 Nov).** Real opcodes: 0x01/0x21 group user, 0x02/0x22 unit-to-unit user, 0x05/0x25/0x42/0xC3
+  grant updates, 0x40/0xC0 group grant, 0x44/0x46 unit-to-unit grant, 0x68 affiliation, 0x6C registration,
+  0x70 Synchronization Broadcast (a CLOCK), 0x7A/0xFA RFSS, 0x7B/0xFB NSB, 0x7C/0xFC adjacent, 0x73/0xF3/
+  0x7D identifier updates. GT had MAC_END/IDLE/HANGTIME/ACTIVE as "opcodes" 0x02/0x03/0x05/0x06 (they
+  are PDU types, `AirMACType`), the group grant at 0x44, affiliation/registration at 0x4C/0x4D, and 0x70
+  parsed as an "encryption sync" (a clock with a registered ALGID in its first octet stamped that
+  algorithm + a random key on the call: the #924 "smear" gate was papering over this). There is NO
+  standalone encryption-sync MAC message: the ES rides MAC_PTT and the voice bursts' ESS. Real-air proof
+  that was in the repo all along: the MMR SACCH `81 90 0b 0c82 00c9 00c9 00c9` is Motorola group regroup
+  add, octet 2 a LENGTH, supergroup 3202 / tg 201; GT read the supergroup from the length octet (2828,
+  members 33280 / 51456) while `realair_mmr_test.go` only searched for the bytes. Motorola 0x83 is a
+  regroup voice channel update (a call in progress), not "patch delete" (0x89). Removed: a "Harris
+  regroup" (0x81/A4) and a plain-text alias (0x82) no reference has. `Opcode.String()` names standard
+  opcodes only; a vendor opcode needs its MFID (`MACPDU.Name()`), the P1 naming rule again. Test
+  pattern: `macMessage` builds a message from SDRTrunk's BIT INDEXES (mac_reference_test.go), nothing
+  shared with the parsers. Not settled: octet 2 of Motorola 0x80 is service options to SDRTrunk and a
+  length to OP25's walk (GT keeps OP25's walk and ignores the octet). Also in that pass:
+  **`p25p2.ESSTracker`** reads the ES from the voice bursts (ESS-B: 4 hexbits at body dibits 74..85 of
+  each VOICE-4; ESS-A: 28 parity hexbits at 74..121 + 123..158 of the VOICE-2; RS(63,35) shortened to
+  (44,16), ESS-B at RS index 19..34; the run of 4×4V + 2V starts at ANY of the channel's five voice
+  timeslots, so parts are placed relative to the VOICE-2; pinned to words from OP25's own ezpwd code).
+  It names the NEXT superframe's MI. MAC_END_PTT now rolls the recording (`onTransmissionEnd`), and the
+  chain dispatches signalling bursts in stream order, not after the chunk's voice. The CC pipelines
+  (ccdecoder + widebandt2) now `ArmTimingAcquisition` at start and after each resync: on the real MMR
+  carrier one of eight start phases decoded 0 MAC messages in 1.09 s, now 10-14 at all eight. Known and
+  NOT fixed: both CC factories build the descramble seed from `System.Site` (8 bits) as the 12-bit
+  colour code; a real TDMA CC installs it from its clear NSB. Census instruments for the two open
+  on-air questions: `voice_errs_by_frame` / `voice_errs_by_timeslot` (the call with ~2 corrections per
+  voice frame beside clean MAC) and `iq_seconds` / `dibits` / `first_burst_ms` (the tap with
+  `air_bursts=0`). All of this is reference-pinned; a live Phase 2 call is still the gate (#764/#771).
 - **A Phase 2 traffic channel repeats GROUP_VOICE_CHANNEL_USER on every FACCH / SACCH burst (~60 ms), and
   the chain published each one** (same report: 79 `call source update` INFO lines in 4 s over three calls,
   one `call.source` bus event each). Invisible until MAC decoded on air (v1.3.1). `callSourceFilter`

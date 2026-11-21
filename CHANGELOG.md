@@ -8,6 +8,14 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **More in the Phase 2 end-of-call log line** (`composer: p25p2 call
+  census`), for two things the first on-air Phase 2 log could not explain:
+  - `voice_errs_by_frame` and `voice_errs_by_timeslot`: where the voice
+    error corrections fell. All in one position or one timeslot points at
+    the decoder; spread evenly is the signal.
+  - `iq_seconds`, `dibits` and `first_burst_ms`: whether a call that framed
+    nothing (`air_bursts=0`) was fed any signal at all.
+  - `ess_syncs`: encryption syncs read from the voice bursts.
 - **The daemon warns about config keys that nothing reads.** A section
   indented one level too far, or a misspelled key, used to load without a word
   and leave its feature at the default. At start-up (and on a config reload)
@@ -20,6 +28,60 @@ for tagged releases.
   capture never switched on.
 
 ### Fixed
+- **P25 Phase 2 signalling messages were read from a table that did not match
+  the air** (#1364). #1290 rebuilt how a Phase 2 signalling burst is framed
+  and error-corrected, and that part is confirmed on real air. The table that
+  says what each decoded message *is* was still an older model's. Checked
+  against two decoders that receive Phase 2 (SDRTrunk, OP25) and against a
+  real capture already in the repository:
+  - *A site's clock was read as an encryption key.* Message 0x70 is the
+    Synchronization Broadcast (date, time, superframe count). It was parsed as
+    an "encryption sync", so a clock whose first byte happened to equal a
+    registered algorithm number put that algorithm and a made-up key on the
+    call. A call's algorithm and key are now read only where they are sent.
+  - *Motorola patches were decoded one byte off.* A real MMR burst announces
+    supergroup 3202 patching talkgroup 201; it decoded as supergroup 2828 with
+    talkgroups 33280 and 51456. Fixed, and a patch is no longer cancelled by
+    message 0x83, which is a patched call in progress, not a delete (that is
+    0x89).
+  - *The talker of a private call or a patched call was never read.* Those
+    calls name their talker in their own messages (0x02 / 0x22, and Motorola
+    0x80 / 0xA0), not in the group message. Both now fill in the call's
+    source radio.
+  - *On a Phase 2 (TDMA) control channel:* a unit-to-unit grant (0x44) came
+    out as a group grant on a talkgroup read from the called radio's ID; the
+    explicit group grant (0xC0) and all four grant updates (0x42, 0xC3, 0x05,
+    0x25), which is how a receiver finds a call whose grant it missed, were
+    not parsed; affiliation and registration responses were looked for at
+    0x4C / 0x4D (they are 0x68 / 0x6C).
+  - *Log names.* `p25p2 mac pdu` lines printed 0x05 (a grant update) as
+    `MAC_HANGTIME`, 0x02 as `MAC_END`, 0x03 as `MAC_IDLE`, and 0x42 / 0x7C as
+    bare numbers. Every standard message is now named, a manufacturer message
+    is named with its manufacturer (`Motorola.GroupRegroupAdd`), and the line
+    carries `opcode_hex`.
+  - Two parsers that no reference has were removed: a "Harris regroup" and a
+    plain-text talker alias (0x81 / 0x82). The real Motorola alias (0x91 /
+    0x95) is unchanged.
+- **A P25 Phase 2 call joined after its key-up had no encryption algorithm or
+  key** (#1364). They were read only from the burst a radio sends as it keys
+  up. They also ride the voice itself, every 360 ms; that copy is now decoded
+  (four parts in the voice bursts, with Reed-Solomon parity that fills in a
+  lost burst), so `call.encryption` is published for such a call. One event
+  per change of algorithm or key, not one per repeat.
+- **A P25 Phase 2 call was one recording however many radios keyed** (#1364).
+  `trunking.voice_call_grouping: transmission`, the default, promises one
+  file per over for every protocol; Phase 1 and TETRA calls did that and
+  Phase 2 calls did not, because the burst a radio sends as it releases its
+  PTT (MAC_END_PTT) was ignored. It now ends the file, so each over is its
+  own recording with its own talker. `conversation` mode is unchanged.
+- **A P25 Phase 2 control channel could take a second to start decoding, or
+  miss a whole scan dwell** (#1364). The receiver starts at an arbitrary point
+  in the carrier's symbol timing; from about one start in four its timing loop
+  was slow to settle. #1377 fixed this for voice calls. The control-channel
+  decoder and the wideband engine now use the same fix, at start-up and after
+  every re-sync. On a real Phase 2 carrier, from the eight possible start
+  points: before, one of them decoded nothing in the 1.09 s capture; now all
+  eight decode 10 to 14 messages.
 - **dPMR voice could not decode a real transmission** (#1374). Three things
   were wrong, each of which alone left a call silent or garbled:
   - *The vocoder frame layout.* The 72 bits of each voice frame were split
