@@ -151,7 +151,7 @@ real hardware until your first transcript line appears.
 | Item | Price (rough) | Notes |
 |---|---|---|
 | A recording rig | $0 | with `recordings.dir` and `storage.path` set: no file, nothing to send; no database, nowhere to keep the text |
-| A Whisper server | $0 | whisper.cpp built from source on this box or another; or a hosted API billed by the minute of audio |
+| A Whisper server | $0 | whisper.cpp built from source on this box or another; or a hosted API, which bills for the audio you send |
 | CPU for it | varies | the one real cost; see below |
 
 Sizing it honestly means admitting what is not measured. The project has
@@ -169,8 +169,9 @@ own answer easy to get:
   such as a [Raspberry Pi]({{ '/reference/raspberry-pi/' | relative_url }}),
   a model using every core competes with the DSP. If IQ-drop WARNs appear
   while a transcription runs, limit the server's threads or move it:
-  `url` can point at any machine on your LAN. Part 14 sizes the decoder
-  side of a Pi 4.
+  `url` can point at any machine on your LAN.
+  [Part 14]({{ '/blog/tutorials/cookbook-volume-2-14-pi4-budget-kitchen-sink/' | relative_url }})
+  sizes the decoder side of a Pi 4.
 
 ## The config
 
@@ -228,9 +229,9 @@ as recorded, for a server that does its own conversion.
 **Filter before you transcribe.** `systems` and `talkgroups` decide what
 is worth a request. `min_duration_ms` (default 1000) skips squelch tails,
 which a speech model turns into confident nonsense at the same cost as a
-real call, and `recordings.min_duration_ms` drops those files before they
-exist at all. `skip_encrypted` defaults to true because ciphertext
-transcribes to nothing useful.
+real call, and `recordings.min_duration_ms` discards such recordings
+outright, before History or the transcriber see them. `skip_encrypted`
+defaults to true because ciphertext transcribes to nothing useful.
 
 **One worker keeps the text in order.** A local server serialises requests
 anyway and a hosted one rate-limits. There is a second reason: the
@@ -291,7 +292,8 @@ INF transcribe: transcript system=Metro-P25 tg=1001 segment=... latency=... text
 ```
 
 The third line is the whole feature: one per transcribed file, with the
-round-trip time and the first 120 characters of text. The counters:
+round-trip time and the first 120 characters of text. The counters
+(trimmed):
 
 ```bash
 curl -s http://127.0.0.1:8080/api/v1/transcription
@@ -330,7 +332,7 @@ WRN transcribe: store failed path=... err=...
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| No start-up line about transcription | the section is commented out or disabled | `enabled: true` and a `url` beginning with http:// or https:// |
+| No start-up line about transcription | the section is commented out or disabled | `enabled: true`; once it is on, a missing or non-HTTP `url` stops the daemon with a config error instead |
 | Enabled, but nothing is ever queued | decode-only daemon: with no recordings directory there is no file to send | Set `recordings.dir` |
 | The first WARN with a refused connection | the server is not running, or is on another port | Start it; repeat the curl test against the same `url` |
 | The first WARN with HTTP 405 or 404 | the URL points at GopherTrunk's own API, which shares whisper.cpp's default port | Move the server to another port and update `url` |
