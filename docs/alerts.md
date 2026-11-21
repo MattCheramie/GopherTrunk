@@ -75,9 +75,11 @@ Each delivery carries a short title ("Call", "EMERGENCY call",
 text reads like `Metro P25 · TG FIRE DISP (1001) · from 70001 · 851.0125
 MHz`. Override it per rule with a Go `text/template`:
 
+{% raw %}
 ```yaml
 message: "{{.System}} TG {{.TalkgroupAlpha}} ({{.Talkgroup}}) from {{.SourceLabel}}{{if .Emergency}} EMERGENCY{{end}}"
 ```
+{% endraw %}
 
 Fields: `.Kind .System .Protocol .Talkgroup .TalkgroupAlpha .TalkgroupLabel
 .PatchedGroups .Source .SourceAlpha .SourceLabel .FrequencyHz .FrequencyMHz
