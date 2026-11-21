@@ -210,6 +210,7 @@ scanner:
       frequency_hz: 131_550_000
       mode: am                  # required: acars is refused on an fm channel
       decoders: [acars]
+      hangtime_ms: 250          # no voice here: keep the burst "calls" short
       talkgroup_id: 2147500103
 
 audio:
@@ -240,10 +241,13 @@ charts are labels, not frequencies: the name "118.005" denotes the 118.000 MHz
 carrier. The ±4.5 kHz channel filter passes both spacings.
 
 **`decoders: [acars]`.** Config validation accepts `acars` only on a
-`mode: am` channel and rejects it on `fm` or `nfm` with `acars needs mode:
-am`. A block lasts up to about 0.9 s; once the decoder has locked a block's
-sync, the scanner holds the channel for up to one second so a hop cannot cut
-it off.
+`mode: am` channel; on `fm` or `nfm` the file is refused with an error that
+says so. A block lasts up to about 0.9 s; once the decoder has locked a
+block's sync, the scanner holds the channel for up to one second so a hop
+cannot cut it off. The short `hangtime_ms` on that entry is deliberate: a
+data burst raises a carrier, so it opens an AM call like any transmission,
+and with no voice to wait for there is no reason to hold the channel 1.5 s
+after each one.
 
 **`storage.path`.** Decoded blocks reach you only through the SQLite log.
 Without `storage.path` the decoder still runs, but `GET
@@ -327,8 +331,9 @@ The same row shows in the web console's **ACARS** panel (`/acars`) with
 columns Received, Aircraft, Flight, Dir, Label, Text, Channel and Check;
 `web.tabs.acars: false` hides the tab. A block that needed bits repaired
 before its check validated carries a `corrected` count. That run also showed
-the known limit plainly: the 0.66 s burst opened an ordinary AM call and
-left a 2.17 s recording — the burst plus the 1.5 s hangtime.
+the known limit plainly: the 0.66 s burst opened an ordinary AM call. With
+the default 1.5 s hangtime it left a 2.17 s recording; with `hangtime_ms:
+250` as configured above, 0.92 s — and the block decoded either way.
 
 **Status, in one sentence each.** AM voice on the scan list is on-air
 verified: on 29 Sep a reporter on a build with the carrier-tracking fix heard
@@ -344,12 +349,12 @@ audio — but the reporter's live scanner run is still pending (#1231).
 |---|---|---|
 | `daemon: scanner.conventional / manual_tune_enabled configured but no Voice SDRs in the pool; skipping` | no `role: voice` device | Give the scanner a voice SDR; on a combined trunked + airband rig, add a second one — the scanner takes the last |
 | Config refused: `acars needs mode: am` | the ACARS channel is `fm` or `nfm` | Set `mode: am` on that entry |
-| Channel never opens, though you hear traffic elsewhere | carrier under 12 dB C/N, or the wrong frequency | Read `level_cn_db` in `conv: squelch opened` on a channel that does open; fix the antenna first, then try `squelch_cn_db: 9` |
+| Channel never opens, though you hear traffic elsewhere | carrier under 12 dB C/N, or the wrong frequency | Read `level_cn_db` in `conv: squelch opened` on a channel that does open; fix the antenna first, then lower `squelch_cn_db` a little — noise alone reaches about 7 dB, so stay well above that |
 | Channel opens on noise or a neighbour | local interference in the channel | Raise `squelch_cn_db` (the advanced guide's ATIS example uses 15) |
 | `composer: AM carrier found off the tuned frequency; tracked and recentred` | `frequency_hz` or the dongle's `ppm` is off by 1 kHz or more | Nothing is lost — the chain recentres within ±4.5 kHz — but set `frequency_hz` to the carrier, or the device `ppm` |
 | Low hum under every transmission | mains or airframe hum below 300 Hz | Leave `recordings.fm_audio_highpass_hz` at its default 300; it applies to AM too. If you disabled it (`-1`), re-enable it |
 | `GET /api/v1/acars/messages` returns 503, panel empty | no `storage.path` | Set `storage.path` |
-| Short AM recordings beside every ACARS row | by design today: a burst raises the channel's carrier, so it opens an AM call | Expected; set `recordings.min_duration_ms` if they clutter History |
+| Short AM recordings beside every ACARS row | by design today: a burst raises the channel's carrier, so it opens an AM call | Expected; keep them short with a small `hangtime_ms` on the ACARS entry, as in the config above |
 | Scanner parks on one channel for hours | a continuous carrier (ATIS, VOLMET) is on the scan list | Take it off the list, or use the wideband variation below, where nothing scans |
 
 Two of those rows deserve their history. The **off-frequency** row comes
@@ -361,7 +366,7 @@ spectral peak within ±4.5 kHz, at least 15 dB over the window's median, held
 on noise) and mixes it to the centre before filtering. The **hum** row is
 not hypothetical either: in that reporter's recordings most of the decoded
 energy sat below 300 Hz, from interference in a hangar. The audio high-pass
-that Volume 1 introduced for CTCSS tones is what removes it.
+that strips sub-audible CTCSS tones from FM channels is what removes it.
 
 One caveat on reading levels. `GET /api/v1/scanner` reports each channel's
 `level_cn_db`, and during a dwell it is trustworthy. Between dwells the
@@ -455,8 +460,8 @@ on issue #1231 is still outstanding.
 **Why do I get short recordings on my ACARS channel?**
 An ACARS burst is a keyed AM carrier, so it opens the channel's squelch like
 a voice transmission and is recorded as a short call. That is a documented
-limit of the scan-list tap; `recordings.min_duration_ms` discards recordings
-shorter than a threshold you choose.
+limit of the scan-list tap. A small `hangtime_ms` on the ACARS entry keeps
+each one to the length of the burst plus that hangtime.
 
 ## Series navigation
 

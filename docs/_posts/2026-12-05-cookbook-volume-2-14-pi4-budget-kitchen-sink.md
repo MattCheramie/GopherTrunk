@@ -15,9 +15,9 @@ series_part: 14
 part.
 [Part 13]({{ '/blog/tutorials/cookbook-volume-2-13-pluto-native/' | relative_url }})
 put a Pluto on the network without SoapySDR. This closing part does two
-jobs. First it answers the question every small rig eventually asks — how
-much can a Raspberry Pi 4 carry? — with a reporter's drop counts instead of
-a guess. Then it does what
+jobs. First it answers the question every small rig asks — how much can a
+Raspberry Pi 4 carry? — with a reporter's drop counts instead of a guess.
+Then it does what
 [Volume 1's finale]({{ '/blog/tutorials/operator-cookbook-14-kitchen-sink-config/' | relative_url }})
 did: one kitchen-sink `config.yaml`, every block stamped with the part that
 owns it, and a table that turns a goal into a recipe across both volumes.*
@@ -75,10 +75,11 @@ The case is issue
 [#1321](https://github.com/MattCheramie/GopherTrunk/issues/1321): an
 [Airspy Mini]({{ '/reference/airspy-mini/' | relative_url }}), which cannot
 stream below 3 MS/s, on a
-[Raspberry Pi 4]({{ '/raspberry-pi-sdr-scanner/' | relative_url }}),
-decoding several [TETRA]({{ '/reference/tetra/' | relative_url }}) cells
-from one capture. The symptom was "one thread at 90 %, dropping live IQ
-chunks". The rig itself is short:
+[Raspberry Pi 4]({{ '/raspberry-pi-sdr-scanner/' | relative_url }})
+(the hardware guide's own pick is a Pi 5), decoding several
+[TETRA]({{ '/reference/tetra/' | relative_url }}) cells from one capture.
+The symptom was "one thread at 90 %, dropping live IQ chunks". The rig
+itself is short:
 
 ```yaml
 sdr:
@@ -162,10 +163,10 @@ INF tetra cc lost freq=467912500 mcc=… mnc=… la=… system=Cell-A reason="no
 **Reading the margin.** 0.51× means the pump spends half of every second
 working, on average — and averages are not what drop IQ. On a desktop CPU
 the same bench showed a typical chunk taking a quarter of its own duration
-and the slowest one in a hundred taking three times it, which is why an
-11 ms queue shed IQ with the cores mostly idle and a 400 ms one does not.
-So treat a Pi 4 as full at the cell count you have verified, and spend
-nothing you do not need: every symbol view the web console opens (the
+and the slowest in a hundred three times it, which is why an 11 ms queue
+shed IQ with the cores mostly idle and a 400 ms one does not. So treat a
+Pi 4 as full at the cell count you have verified, and spend nothing you do
+not need: every symbol view the web console opens (the
 [Tuning panel]({{ '/tuning.html' | relative_url }}) and the scopes, and the
 signal-quality readout on the Dashboard and Scanner panels) builds its own
 down-converter from the full input rate plus a receiver. Several open tabs
@@ -224,7 +225,7 @@ treat that as this recipe's open gate.
 
 Here is a rig that has absorbed both volumes, abridged to the keys Volume 2
 added. Every key is in `config.example.yaml`, and this exact block loads
-and validates; every `← Part` note is a link target in this series:
+and validates; every `← Part` note names the part that owns the line:
 
 ```yaml
 storage:
@@ -262,7 +263,7 @@ sdr:
   iio:                              # Pluto / PlutoSky, no Soapy    ← Part 13
     - addr: "192.168.2.1"
       serial: "plutosky"
-      role: control                 # hunts the NXDN control channel
+      role: control                 # hunts the NXDN CC (on-air-gated)
       gain: "400"                   # tenths of a dB; "auto" = AGC
 
 trunking:
@@ -272,7 +273,7 @@ trunking:
       control_channels: [857_262_500]
       encryption_keys:              # only keys you hold            ← Part 8
         - key_id: 1
-          algorithm: adp            # rc4 | des | tdes | aes by key length
+          algorithm: adp            # adp = rc4; also des | tdes | aes
           key: "0000000000"         # placeholder, never a real key in a post
     - name: "County-NXDN"
       protocol: nxdn                #                               ← Part 3
@@ -349,12 +350,11 @@ audio:
 Three observations at this altitude. **Volume 2 grew the scan list and the
 aftermath.** Most new keys hang off `scanner.conventional` entries or act
 on a finished call (`recordings`, `alerts`, `transcription`); the trunking
-half barely moved. **Three recipes have no block.** The band survey, the
-meter walk and the board probe are commands that read no config file — an
-`sdr.iio` entry does nothing for `gophertrunk power`. **Encryption keys are
-the one block you should not keep here**: a system's `encryption_key_files`
-loads them from an encrypted key container instead, with the password in an
-environment variable.
+half gained one protocol and a key list. **Three recipes have no block.**
+The band survey, the meter walk and the board probe are commands that read
+no config file. **Encryption keys are the one block not to keep here**: a
+system's `encryption_key_files` loads them from an encrypted key container,
+with the password in an environment variable.
 
 ## The decision table
 
@@ -394,8 +394,7 @@ of a dB, secrets out of the file, one knob at a time. Volume 2 adds four:
 - **Read the source line.** Startup logs `config: source` with the path it
   loaded, warns `config: no config file found — running built-in defaults`
   when it found none, and warns when several were found and all but one
-  were ignored. A rig that "lost its settings" after an update usually
-  loaded a different file.
+  ignored. A rig that "lost its settings" usually loaded a different file.
 - **Ask the doctor about the dongle, not the config.**
   `gophertrunk sdr doctor` reports which OS driver is bound to each RTL-SDR
   and HackRF it finds, read-only, alongside a running daemon;
@@ -403,12 +402,12 @@ of a dB, secrets out of the file, one knob at a time. Volume 2 adds four:
   [Running It For Real Part 7]({{ '/blog/deep-dives/running-it-for-real-07-sdr-doctor-preflight/' | relative_url }})
   covers both.
 - **Know which tools never read the file.** `power`, `capture`, `wmbus` and
-  `iio probe` take flags only.
+  `iio probe` take flags only: an `sdr.iio` entry does nothing for them.
 
 ## Where to go from here
 
-Two volumes, twenty-eight parts, one rule that outlived all of them: say
-what was verified, and on what. The series pages are the index —
+Two volumes, twenty-eight parts, one rule throughout: say what was
+verified, and on what. The series pages are the index —
 [Volume 2]({{ '/blog/series/operator-cookbook-volume-2/' | relative_url }})
 and [Volume 1]({{ '/blog/series/operator-cookbook/' | relative_url }}) — and
 three sibling series pick up where the recipes stop:
@@ -446,7 +445,8 @@ daemon warns about the first shape at startup.
 **How do I know a fix is in the build I am running?**
 Compare commits, not dates:
 `git merge-base --is-ancestor <fix-commit> <release-tag>` succeeds only
-when the release contains the fix.
+when the release contains the fix. A release cut before the fix merged
+cannot contain it, whatever its version number suggests.
 
 **Is there one config file that enables every Volume 2 recipe?**
 The map above loads and validates, but it is a merge guide, not a rig:
