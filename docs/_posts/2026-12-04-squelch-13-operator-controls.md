@@ -264,8 +264,10 @@ is followable. `TestEngineHoldFollowsOnlyTheHeldTalkgroup` and
 Neither is written anywhere. A restart clears them, like a scanner power
 cycle — deliberately. A hold is a statement about *now*: a daemon that came
 back from a reboot still pinned to last night's talkgroup, dropping every
-other grant, would look broken. A conventional lockout is a statement about
-the channel, and holds until the operator takes it back.
+other grant, would look broken. A
+[conventional]({{ '/reference/conventional-radio/' | relative_url }})
+lockout is a statement about the channel, and holds until the operator
+takes it back.
 
 One consequence is easy to miss. A scan-list call does not enter through
 `HandleGrant` at all. The scanner announces it with `HandleSyntheticCall`,

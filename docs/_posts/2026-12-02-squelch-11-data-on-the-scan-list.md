@@ -102,10 +102,11 @@ scanner:
 An unknown or repeated name is rejected, `acars` is refused on anything
 but `mode: am`, and the digital modes refuse `decoders` altogether.
 
-Behind the config, `convDataDecoderFactory` builds the very receivers the
-dedicated sections run — there is no second implementation to drift —
-handing each the channel's sample rate, the scanner's SDR serial and the
-channel frequency. They publish on the same bus kinds, so the rest of
+Behind the config, `convDataDecoderFactory` — the scanner's
+`Options.DataDecoders` — builds the very receivers the dedicated sections
+run, with no second implementation to drift, handing each the channel's
+sample rate, the scanner's SDR serial and the channel frequency. They
+publish on the same bus kinds, so the rest of
 [Beyond Voice Part 1]({{ '/blog/deep-dives/beyond-voice-01-eleven-place-pattern/' | relative_url }})'s
 wiring — the log tables, REST endpoints and web panels of the
 [MDC1200]({{ '/mdc1200.html' | relative_url }}),

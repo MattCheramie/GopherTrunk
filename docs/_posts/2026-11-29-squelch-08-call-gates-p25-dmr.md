@@ -146,13 +146,14 @@ if d.any || nid.NAC == d.want {
 }
 ```
 
-Three rules fall out of those lines. The sync may miss by `nacSyncTolerance`
-= 4 dibits, the LDU assembler's default, because a false sync almost never
-survives the BCH decode behind it. A matching NID keeps the gate present for
-`nacHold` = 750 ms — a voice transmission carries a NID on every LDU, one
-each 180 ms, so the hold rides out three or four frames lost to a fade. And
-a NID with any *other* NAC closes the gate immediately: when a different
-system keys up mid-dwell, the hangtime countdown starts on its first frame.
+Three rules fall out of those lines. The sync may miss by four dibits
+(`nacSyncTolerance`, the LDU assembler's default), because a false sync
+almost never survives the BCH decode behind it. A matching NID keeps the
+gate present for `nacHold` = 750 ms — a voice transmission carries a NID on
+every LDU, one each 180 ms, so the hold rides out three or four frames lost
+to a fade. And a NID with any *other* NAC closes the gate immediately: when
+a different system keys up mid-dwell, the hangtime countdown starts on its
+first frame.
 
 `ParseNAC` reads hex with or without a `0x` prefix — a bare `"293"` is
 0x293, never decimal. `F7E` and `F7F`, the values a radio programs to
