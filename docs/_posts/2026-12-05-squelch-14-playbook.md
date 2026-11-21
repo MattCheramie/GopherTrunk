@@ -262,9 +262,10 @@ DCS** are on-air verified (24 Sep), **AM** is on-air verified (29 Sep),
 - **Wide FM has no mode** — a broadcast station reads as noise and never
   opens; `noise_squelch: false` leaves the level as that channel's only
   test.
-- **DMR call gate** — synthetic-verified only. Part 10's burst bridge and
-  stream-reopen fix are on-air-gated, and why both dongles stalled at the
-  same instant in the FleetSync coexistence run is not root-caused.
+- **P25 NAC and DMR call gates** — synthetic-verified only. Part 10's
+  burst bridge and stream-reopen fix are on-air-gated, and why both
+  dongles stalled at the same instant in the FleetSync coexistence run is
+  not root-caused.
 - **System Fusion and D-STAR** — no real capture of either yet. The YSF
   gate is pinned against a real-air slice it must *not* open on; D-STAR is
   rebuilt to the MMDVM firmware's air format and unverified on real air.
@@ -327,9 +328,9 @@ no carrier on it`.
 **Which GopherTrunk squelch gates are verified on air?**
 CTCSS and DCS (24 Sep), AM (29 Sep) and MDC1200 through a scan-list
 channel are on-air verified; the NXDN call gate is pinned on real-air
-slices. The DMR call gate is synthetic-verified only, System Fusion and
-D-STAR have no real capture yet, and the noise squelch has not been run on
-the PlutoSky that prompted it.
+slices. The NAC and DMR gates are synthetic-verified only, System Fusion
+and D-STAR have no real capture yet, and the noise squelch has not been
+run on the PlutoSky that prompted it.
 
 **Should I raise squelch_dbfs to stop false opens?**
 Rarely. `squelch_dbfs` is an absolute level that moves with gain, and

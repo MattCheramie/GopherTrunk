@@ -229,7 +229,7 @@ and validates; every `← Part` note names the part that owns the line:
 
 ```yaml
 storage:
-  path: "../data/calls.db"          # call log + ACARS / pager / MDC logs  ← Parts 1, 2, 4
+  path: "../data/calls.db"          # calls + message logs          ← Parts 1, 2, 4
 
 recordings:
   dir: "../recordings"
@@ -259,7 +259,7 @@ sdr:
       gain: "auto"
     - serial: "00000004"            # pinned by paging below        ← Part 2
       role: dedicated
-  rtl_tcp: []                       # a phone's dongle behind its driver app ← Part 10
+  rtl_tcp: []                       # a phone's dongle              ← Part 10
   iio:                              # Pluto / PlutoSky, no Soapy    ← Part 13
     - addr: "192.168.2.1"
       serial: "plutosky"
@@ -274,7 +274,7 @@ trunking:
       encryption_keys:              # only keys you hold            ← Part 8
         - key_id: 1
           algorithm: adp            # adp = rc4; also des | tdes | aes
-          key: "0000000000"         # placeholder, never a real key in a post
+          key: "0000000000"         # placeholder
     - name: "County-NXDN"
       protocol: nxdn                #                               ← Part 3
       control_channels: [453_775_000]
@@ -339,7 +339,7 @@ alerts:                             # rules x channels              ← Part 6
 
 transcription:                      #                               ← Part 7
   enabled: true
-  url: "http://192.168.1.20:8080/inference"   # whisper.cpp server on a bigger box
+  url: "http://192.168.1.20:8080/inference"   # a whisper.cpp server
   upload_format: wav16k
 
 audio:
@@ -425,10 +425,10 @@ three sibling series pick up where the recipes stop:
 ## FAQ
 
 **Can a Raspberry Pi 4 decode several TETRA cells at once?**
-Yes, with little to spare. A reporter's Pi 4 with an Airspy Mini at 3 MS/s
-went to zero dropped chunks with four cells on one wideband device once
-the DDC and stream-buffer fixes landed, but the same Pi runs the pump's
-stall bench at about half of real time. Verify your own cell count.
+Yes, with little to spare. A reporter's Pi 4 went to zero dropped chunks
+with four cells on one wideband Airspy Mini once the DDC and stream-buffer
+fixes landed, but the same Pi runs the pump's stall bench at about half of
+real time. Verify your own cell count.
 
 **Why does GopherTrunk drop IQ chunks when the CPU is mostly idle?**
 Because drops come from the slowest moment, not the average: a driver

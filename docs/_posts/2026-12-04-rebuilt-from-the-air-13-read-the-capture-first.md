@@ -274,7 +274,9 @@ Present means IQ was lost upstream; absent means signal or demod
    discriminator carry — a continuous spectrum, or one line?
 4. **Sync spacing.** Are frame syncs the fixed distance apart? Early syncs
    mean missing samples, whatever the eye looks like.
-5. **Then theory.**
+5. **Then theory.** These are the first rungs of the
+   [diagnostic playbook]({{ '/reference/diagnostic-playbook/' | relative_url }}),
+   applied to the file itself.
 
 One caution keeps step 2 honest. Rail share is a measurement to report, not
 a verdict to act on alone. The

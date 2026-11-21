@@ -108,9 +108,10 @@ especially one that "works".
    one reference's literal per-frame order ranked the known NXDN scrambler
    key about 500th of 32768; the reseed schedule the captures settled
    ranked it first.
-3. **Are there literal vectors in the test file?** A constant typed from a
-   reference fails when yours drifts; one taken from your own encoder never
-   does. PN44 is 4320 bits of hex. DCS code 023 is `0x763813`, from
+3. **Are there literal vectors in the test file?** A
+   [golden vector]({{ '/reference/golden-test-vectors/' | relative_url }})
+   typed from a reference fails when your constant drifts; one taken from
+   your own encoder never does. PN44 is 4320 bits of hex. DCS code 023 is `0x763813`, from
    published parity equations. SmartNet's sync bits, interleave permutation
    and XOR masks are literals
    ([Literal Vectors, Not Round-Trips]({{ '/blog/deep-dives/from-spec-to-shipping-03-literal-vectors/' | relative_url }})).
@@ -277,7 +278,9 @@ not on-air correct.
 
 - **A decoder is a claim about someone else's transmitter.** Only
   something from outside the repository can test it — a reference's
-  literal output, an encoder you did not write, a recording.
+  literal output, an encoder you did not write, a recording. Everything
+  else is the
+  [self-consistent test trap]({{ '/reference/self-consistent-test-trap/' | relative_url }}).
 - **Say which of the four words you have earned.** "Works" is not one of
   them. Six ledger rows say *no* twice, and that is their accurate state.
 - **A fabricated layer hides under a correct one.** LoRa's chirp was right
