@@ -2,7 +2,9 @@ package composer
 
 import (
 	"context"
+	"math"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -144,8 +146,11 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// its engine-backfill publishers; the alias the dispatcher publishes
 	// itself (identical in both paths).
 	// srcFilter keeps the call's source updates to the ones that say
-	// something new; see callSourceFilter.
+	// something new; see callSourceFilter. encFilter does the same for the
+	// encryption sync, which now also arrives every 360 ms in the voice
+	// bursts' ESS (below).
 	var srcFilter callSourceFilter
+	var encFilter callEncryptionFilter
 	dispatcher := sigfollow.NewMACDispatcher(sigfollow.MACDispatcherOptions{
 		Bus:              c.bus,
 		Log:              c.log,
@@ -153,8 +158,19 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		System:           system,
 		Serial:           serial,
 		OnCallSource:     func(u p25p2.GroupVoiceChannelUser) { c.publishP25Phase2CallSource(serial, u, &srcFilter) },
-		OnCallEncryption: func(es p25p2.EncryptionSync) { c.publishP25Phase2CallEncryption(serial, es) },
+		OnCallEncryption: func(es p25p2.EncryptionSync) { c.publishP25Phase2CallEncryption(serial, es, &encFilter) },
+		// MAC_END_PTT is the radio releasing its PTT: the Phase 2 form of
+		// the Phase 1 terminator. In per-transmission recording mode it
+		// rolls the file, so each over is a file of its own carrying its
+		// own talker (issue #1379 did this for Phase 1 and TETRA).
+		OnTransmissionEnd: bt.onTransmissionEnd,
 	})
+	// ess reads the encryption sync carried in the voice bursts themselves
+	// (four parts in the VOICE-4 bursts, the Reed-Solomon parity in the
+	// VOICE-2 burst). MAC_PTT gives the same sync, but only at key-up: a
+	// call this chain joined late, or whose key-up burst was lost, had no
+	// algorithm or key at all (issue #1364).
+	var ess p25p2.ESSTracker
 	// voiceSubframes counts P25 Phase 2 voice-bearing subframes the
 	// receiver delivered — i.e. real voice activity. The touch ticker
 	// (below) only refreshes the engine's LastHeardAt when this counter
@@ -183,22 +199,36 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 		macBursts      atomic.Uint64
 		macPDUsDecoded atomic.Uint64
 		duidHist       [16]atomic.Uint64
+		// essSyncs counts encryption syncs decoded from the voice bursts.
+		essSyncs atomic.Uint64
+		// Where the voice FEC corrections fell: by the frame's position in
+		// its burst (four) and by the burst's voice timeslot (five per
+		// logical channel). The first on-air Phase 2 log had one call with
+		// about two corrections in every voice frame beside signalling that
+		// decoded 70 of 72 bursts. Corrections that sit in one position or
+		// one timeslot are a layout or mask fault; spread evenly they are
+		// the signal. The next log can tell which without a capture.
+		errsByFrame [4]atomic.Uint64
+		errsBySlot  [5]atomic.Uint64
+		// What reached the chain at all, for a call whose framer never
+		// locked (air_bursts=0): IQ samples in, dibits out of the receiver,
+		// and the stream position of the first burst framed (-1: none).
+		iqSamples  atomic.Uint64
+		dibitsSeen atomic.Uint64
+		firstBurst atomic.Int64
 	)
-	// macRun collects this call's signalling bursts for the dispatcher.
-	var macRun []p25p2.AirBurst
+	firstBurst.Store(-1)
+	// oneBurst hands the dispatcher one signalling burst at a time, in
+	// stream order with the voice bursts around it: a MAC_END_PTT must roll
+	// the recording before the next over's first voice burst is written.
+	var oneBurst [1]p25p2.AirBurst
 	// drainAirBursts records the granted logical channel's voice frames and
 	// dispatches its MAC signalling.
 	drainAirBursts := func(bursts []p25p2.AirBurst) {
-		macRun = macRun[:0]
-		defer func() {
-			if len(macRun) > 0 {
-				nSig, nDec := dispatcher.DispatchAir(macRun, airMasks)
-				macBursts.Add(uint64(nSig))
-				macPDUsDecoded.Add(uint64(nDec))
-			}
-		}()
 		for _, b := range bursts {
-			airBursts.Add(1)
+			if airBursts.Add(1) == 1 {
+				firstBurst.Store(int64(b.StartDibit))
+			}
 			if b.DUID >= 0 && int(b.DUID) < len(duidHist) {
 				duidHist[b.DUID].Add(1)
 			}
@@ -207,7 +237,10 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 				// belongs to the other call; a clear LCCH is the
 				// carrier's own and is always taken.
 				if b.DUID == p25p2.DUIDLCCHClear || wantLCH < 0 || b.LogicalChannel == wantLCH {
-					macRun = append(macRun, b)
+					oneBurst[0] = b
+					nSig, nDec := dispatcher.DispatchAir(oneBurst[:], airMasks)
+					macBursts.Add(uint64(nSig))
+					macPDUsDecoded.Add(uint64(nDec))
 				}
 				continue
 			}
@@ -225,12 +258,26 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			}
 			voiceSubframes.Add(1)
 			bt.onVoice(0)
-			if rs == nil || airMasks == nil {
+			if airMasks == nil {
 				continue
 			}
-			frames, errBits := p25p2.ExtractAirVoiceFrames(b, airMasks)
-			if errBits > 0 {
-				corrErrBits.Add(uint64(errBits))
+			if es, _, ok := ess.Add(b, airMasks); ok {
+				essSyncs.Add(1)
+				c.publishP25Phase2CallEncryption(serial, es, &encFilter)
+			}
+			if rs == nil {
+				continue
+			}
+			frames, errs := p25p2.ExtractAirVoiceFramesDetail(b, airMasks)
+			for i, e := range errs {
+				if e <= 0 {
+					continue
+				}
+				corrErrBits.Add(uint64(e))
+				errsByFrame[i].Add(uint64(e))
+				if vs := b.Slot >> 1; vs >= 0 && vs < len(errsBySlot) {
+					errsBySlot[vs].Add(uint64(e))
+				}
 			}
 			for _, f := range frames {
 				if werr := rs.WriteRawFrame(serial, f); werr != nil {
@@ -254,10 +301,12 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	if macCfg.SoftDecision {
 		rxOpts.SoftDecision = true
 		rxOpts.SoftSink = func(dibits []uint8, soft []complex64, baseIdx int) {
+			dibitsSeen.Add(uint64(len(dibits)))
 			drainAirBursts(airFramer.Process(dibits, baseIdx))
 		}
 	} else {
 		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
+			dibitsSeen.Add(uint64(len(dibits)))
 			drainAirBursts(airFramer.Process(dibits, baseIdx))
 		}
 	}
@@ -289,7 +338,9 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// even when nothing ever framed. It is the field diagnostic that
 	// disambiguates the failure modes when no "composer: p25p2 mac pdu"
 	// line ever appears:
-	//   - air_bursts=0                     → the TDMA framer never locked
+	//   - air_bursts=0                     → the TDMA framer never locked;
+	//                                         iq_seconds / dibits say whether
+	//                                         the chain was fed at all
 	//   - descramble_seed_known=false      → voice and scrambled MAC cannot
 	//                                         be descrambled (no identity)
 	//   - mac_bursts>0, mac_pdus=0         → every signalling burst failed
@@ -307,6 +358,12 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			"descramble_seed_known", airMasks != nil,
 			"mac_bursts", macBursts.Load(),
 			"mac_pdus", macPDUsDecoded.Load(),
+			"ess_syncs", essSyncs.Load(),
+			"voice_errs_by_frame", p25p2CensusCounts(errsByFrame[:]),
+			"voice_errs_by_timeslot", p25p2CensusCounts(errsBySlot[:]),
+			"iq_seconds", math.Round(float64(iqSamples.Load())/iqHz*100) / 100,
+			"dibits", dibitsSeen.Load(),
+			"first_burst_ms", p25p2FirstBurstMs(firstBurst.Load()),
 		}
 		for d := range duidHist {
 			if cnt := duidHist[d].Load(); cnt > 0 {
@@ -333,6 +390,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 				return
 			}
 			bt.observe(iq)
+			iqSamples.Add(uint64(len(iq)))
 			rx.Process(fe.Process(nil, iq))
 		}
 	}
@@ -350,6 +408,46 @@ func p25p2CensusDUIDKey(d p25p2.DUID) string {
 		return "duid_reserved_" + strconv.Itoa(int(d))
 	}
 	return "duid_" + name
+}
+
+// p25p2CensusCounts renders a row of counters as "a/b/c".
+func p25p2CensusCounts(c []atomic.Uint64) string {
+	var sb strings.Builder
+	for i := range c {
+		if i > 0 {
+			sb.WriteByte('/')
+		}
+		sb.WriteString(strconv.FormatUint(c[i].Load(), 10))
+	}
+	return sb.String()
+}
+
+// p25p2FirstBurstMs is the stream time of the first burst the framer cut,
+// from its dibit index at 6000 symbols a second; -1 when it cut none.
+func p25p2FirstBurstMs(startDibit int64) int64 {
+	if startDibit < 0 {
+		return -1
+	}
+	return startDibit * 1000 / p25p2rx.SymbolRate
+}
+
+// callEncryptionFilter passes a call's encryption sync only when its
+// algorithm or key differs from the last one passed. The sync arrives at
+// every key-up (MAC_PTT) and, from the voice bursts' ESS, every 360 ms; its
+// message indicator changes each time, but the engine keeps only the
+// algorithm and key. Not safe for concurrent use; one per voice chain.
+type callEncryptionFilter struct {
+	alg  uint8
+	key  uint16
+	have bool
+}
+
+func (f *callEncryptionFilter) admit(es p25p2.EncryptionSync) bool {
+	if f.have && f.alg == es.AlgorithmID && f.key == es.KeyID {
+		return false
+	}
+	f.alg, f.key, f.have = es.AlgorithmID, es.KeyID, true
+	return true
 }
 
 // callSourceFilter passes a call's in-call source update only when it tells
@@ -403,10 +501,12 @@ func (c *Composer) publishP25Phase2CallSource(serial string, u p25p2.GroupVoiceC
 }
 
 // publishP25Phase2CallEncryption mirrors the Phase 1 LDU2 in-call
-// encryption-sync path for Phase 2 traffic-channel EncryptionSync MAC
-// PDUs. The engine backfills ALGID/KID onto the bound ActiveCall's
-// Grant and republishes with the call's identity.
-func (c *Composer) publishP25Phase2CallEncryption(serial string, es p25p2.EncryptionSync) {
+// encryption-sync path for the Phase 2 traffic channel's two copies of the
+// sync: MAC_PTT at key-up and the voice bursts' ESS. The engine backfills
+// ALGID/KID onto the bound ActiveCall's Grant and republishes with the
+// call's identity. Repeats of the same algorithm and key are dropped by
+// filter (nil publishes every one).
+func (c *Composer) publishP25Phase2CallEncryption(serial string, es p25p2.EncryptionSync, filter *callEncryptionFilter) {
 	if c.bus == nil {
 		return
 	}
@@ -417,6 +517,9 @@ func (c *Composer) publishP25Phase2CallEncryption(serial string, es p25p2.Encryp
 	if !p25.AlgorithmKnown(es.AlgorithmID) {
 		c.log.Debug("composer: p25p2 dropping out-of-set encryption sync",
 			"serial", serial, "alg", p25.FormatAlgorithm(es.AlgorithmID), "key", es.KeyID)
+		return
+	}
+	if filter != nil && !filter.admit(es) {
 		return
 	}
 	c.bus.Publish(events.Event{
