@@ -2657,7 +2657,7 @@ confirmation before any close-as-completed.
   AND the voice Golay: `framing.GolayDecode23_12` is a DIFFERENT (23,12) Golay code from mbelib's,
   so it corrupted even a clean frame — D-STAR now uses DMR's mbelib Golay
   (`dmrvoice.GolayDecode2312`). dPMR's `voice_ambe.go` had the same defect; fixed in #1376 (#1374),
-  pinned by MMDVMHost's DMR_SILENCE sub-vectors; its on-air interleave is still a placeholder. Real format: sync patterns are MMDVM's RX words in time order
+  pinned by MMDVMHost's DMR_SILENCE sub-vectors; its interleave and framing were rebuilt after that (the dPMR note below). Real format: sync patterns are MMDVM's RX words in time order
   (frame `0x557650` = preamble tail + `111011001010000` + the four zero bits before the FEC
   section; slow-data `0xAAB468`; end `0xAAAAAAAA135E`); header = 41 bytes LSB first + 2 tail bits
   → K=3 (g1 = d⊕d₋₁⊕d₋₂ first, g0 = d⊕d₋₂) → rows of 24 read column by column (first 12 columns
@@ -2679,6 +2679,37 @@ confirmation before any close-as-completed.
   sync from history (late entry, up to 0.42 s per join), gated on re-encode distance ≤ 2: do NOT
   gate on `DecodeDVVoiceBits`' error count, which is mbelib's corrected-DATA-bit count and passes a
   third of random frames. A real D-STAR capture is the gate (#764/#771).
+- **The dPMR voice path was a model that matched nothing on the air, and is rebuilt to ETSI
+  TS 102 658 (#1374, 21 Nov); it has still never decoded a real transmission, and nothing on the
+  air can start a dPMR call.** Three separate defects, each fatal alone. (1) The 72-bit vocoder
+  frame was split C0|C1|C2|C3 in order, an admitted placeholder; it is DMR's rW..rZ schedule bit
+  for bit (dsdcc `dpmr.cpp` and DSD-FME `dpmr_const.h` both carry it for dPMR, element for
+  element GT's `dmrvoice` tables), so `DecodeTCHFrame` now calls `dmrvoice.DecodeAMBEFrame`. The
+  AMBE silence frame `B9E881526173002A6B`, which a dPMR radio sends from PTT release to the end
+  of the superframe (clause 11), decodes with 0 corrections to b0 = 124; on the old code it
+  decoded to another payload. (2) The framing was invented: 48-bit "FS1/FS2" and a 48-bit CCH.
+  Real (clause 6.1, 4.2.2, 7; `airframe.go`): FS1 57FF5F75D577 (header), FS2 5FF77D (payload
+  frames 1 and 3), FS3 7DDFF5 (END frame, not a signalling burst), FS4 = FS1 complemented; a
+  payload frame is FS2-or-channel-code (12 dibits) | CCH (36) | 4 x TCH (36); the CCH is 41 bits
+  + CRC7 (x^7+x^3+1) -> six Hamming (12,8) blocks (x^4+x+1) -> 12x6 interleave -> scrambler
+  x^9+x^5+1 preset all ones; the voice TCH is not scrambled. Nine CCH vectors from GT's encoder
+  were decoded by DSD-FME's own routines compiled outside the repo (`airCCHVectors`). (3) The
+  dPMR receiver has no carrier correction, and the inner symbols are 350 Hz from the carrier
+  (clause 14.2.2: +-350 / +-1050 Hz, not the 900 Hz the code assumed): 0 of 128 frames at
+  +-400 Hz. dPMR and NXDN48 are one physical layer, so the voice chain uses `nxdnrx` at 2400
+  sym/s with carrier tracking (128/128 from -1500 to +1200 Hz with a same-power neighbour); its
+  mean-following tracker survives 8 s of unscrambled silence frames (bias under 80 Hz).
+  Framer rules worth keeping: FS2 is 12 symbols and matches noise 9 times in 15 minutes at
+  tolerance 1, so a lock needs a CRC-valid CCH with the right frame-number parity and <= 2
+  Hamming corrections (a noise CCH passes CRC7 0.22 % of the time), or a clean channel code plus
+  the next sync word; after a small slip most of the channel-code field still overlaps the real
+  one, so "outer symbols" is not enough and the field must carry the lock's known code; lost
+  dibits bring the next sync word EARLY, so a re-hunt looks 48 dibits back. **Still fabricated:
+  the whole Mode 3 control channel** (`sync.go`, `csbk.go`, `process.go`): dPMR has no "CSBK", a
+  beacon sends SYScast and message frames (clause 4.2.2.5), and FS3 is the end frame. Only that
+  control channel issues a `dpmr` grant and the scan list has no dPMR mode, so the rebuilt voice
+  chain is unreachable from real air until one of the two exists; a `dpmr` scan-list mode for
+  dPMR446 handhelds is the short road. siglab's dPMR sync patterns are the invented ones too.
 - **A DMR scan-list channel's squelch is now a CALL gate, not a power gate (#1261 follow-up).** A
   keyed-but-idle repeater (Idle bursts / CSBK beacons) held the conventional scanner on its channel.
   `conventional.DMRCallDetector` (`dmr_gate.go`, the NAC-gate shape) runs the production DMR receiver on

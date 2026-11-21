@@ -20,6 +20,31 @@ for tagged releases.
   capture never switched on.
 
 ### Fixed
+- **dPMR voice could not decode a real transmission** (#1374). Three things
+  were wrong, each of which alone left a call silent or garbled:
+  - *The vocoder frame layout.* The 72 bits of each voice frame were split
+    into their FEC sub-vectors in order, a placeholder. dPMR uses the AMBE+2
+    layout DMR and NXDN use, bit for bit, and the decoder now reads it that
+    way. (#1376 had already fixed the Golay code underneath.)
+  - *The framing.* The voice path looked for 48-bit sync words and a 48-bit
+    control field that are not in the standard. It now follows ETSI
+    TS 102 658: the 24-bit FS2 sync word, the channel code, the 72-bit
+    control channel (CRC7, Hamming (12,8), interleave, scrambler) and four
+    vocoder frames per 80 ms frame, to the end frame. It locks only on a
+    sync word the frames behind it confirm, takes either signal polarity,
+    and finds the frame grid again at once after dropped IQ.
+  - *The receiver.* It had no carrier correction, and dPMR's inner symbols
+    sit only 350 Hz from the carrier: a call 400 Hz off frequency decoded
+    nothing. The voice chain now uses the receiver NXDN48 uses, which is the
+    same modulation, with carrier tracking and a channel filter.
+
+  The call's calling ID is now published as its source, and an end frame
+  rolls the recording in per-transmission mode. The format is checked against
+  the standard and two decoders that receive dPMR on the air, **not yet
+  against a real transmission**. And nothing on the air can start a dPMR call
+  yet: the voice chain runs only on a grant from the dPMR Mode 3 control
+  channel, which is still an older model that cannot frame a real beacon, and
+  the scan list has no dPMR channel mode.
 - **P25 Phase 2 voice came out as garbled noise, "as if it is encrypted".**
   The recorder decoded Phase 2 voice with the wrong AMBE table set: the
   3600x2400 one, which only D-STAR uses. Phase 2 carries the AMBE+2 3600x2450

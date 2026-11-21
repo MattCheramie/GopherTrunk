@@ -322,10 +322,11 @@ log, per-talkgroup policy) all ship.
   audio — TETRA verified bit-exact against the ETSI EN 300 395-2
   reference codec (reproducible via the env-gated harness in
   `internal/voice/acelp/etsi_reference_test.go`; the ETSI vectors are
-  copyrighted and not committed). NXDN, dPMR, and D-STAR are wired
-  end-to-end but not yet verified on air: each chain's AMBE
-  interleave table is a documented placeholder awaiting a real voice
-  capture (see `internal/radio/{nxdn,dpmr,dstar}/voice_ambe.go`).
+  copyrighted and not committed). NXDN voice is checked on real
+  captures. dPMR and D-STAR voice follow their air formats as
+  reference decoders have them but have not decoded a real
+  transmission yet, and for dPMR nothing on the air can start a call
+  yet (see [docs/status.md](docs/status.md)).
   TETRA DMO records audio through the same ACELP vocoder but is
   experimental: call source / destination identity is not decoded
   (recordings file under group 0) and the chain still awaits its
