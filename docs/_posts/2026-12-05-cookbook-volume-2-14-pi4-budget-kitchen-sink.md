@@ -129,7 +129,7 @@ INF tetra cc lost freq=467912500 mcc=… mnc=… la=… system=Cell-A reason="no
 
 | Round | What was wrong | What changed | Measured |
 |---|---|---|---|
-| 1 | Below 5 MS/s nothing was pre-decimated, so each 144 kHz tap resampled the full 3 MS/s stream | The [DDC]({{ '/reference/digital-down-converter/' | relative_url }}) bank's shared decimator now sizes itself to the channel plan, and taps run on workers | Reporter's Pi 4, 2 cells: 513 → 7 drops per 10 min (28 Oct) |
+| 1 | Below 5 MS/s nothing was pre-decimated, so each 144 kHz tap resampled the full 3 MS/s stream | The [DDC]({{ '/reference/digital-down-converter/' | relative_url }}) bank's shared decimator now sizes itself to the channel plan, and taps run on workers | Bench on a desktop CPU: 0.39× → 0.18× of real time. Reporter's Pi 4, 2 cells: 513 → 7 drops per 10 min (28 Oct) |
 | 2 | The Airspy driver's output queue held 8 USB buffers, about 11 ms at 3 MS/s | Every USB driver sizes its stream buffer by time: 400 ms | Reporter's Pi 4, 4 cells: 46 → 0 drops per 10 min (3 Nov) |
 | 3 | The TETRA receiver's sync search, AFC and filters were the next costs in the pump | Packed sync compare, cheaper AFC, folded filters | Stall bench, five-cell pump: 0.51× → 0.43× of real time (4 Nov) |
 
@@ -440,8 +440,7 @@ persist, read the runtime fields on the WARN line.
 **Why does only one of my two systems decode on one SDR?**
 A `role: control` or `auto` tuner hunts systems one at a time and camps on
 the first that locks. To decode them together, host every control channel
-on a `role: wideband` device with one `channels:` entry per system; the
-daemon warns about the first shape at startup.
+on a `role: wideband` device with one `channels:` entry per system.
 
 **How do I know a fix is in the build I am running?**
 Compare commits, not dates:
