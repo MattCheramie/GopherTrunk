@@ -34,6 +34,17 @@ modes when the dictionary is late, missing, or wrong.*
 > with `stage="no-bandplan"` — and an explicit uplink channel from Part 4's
 > AMBT broadcasts resolves as plain base+spacing with **no** tx offset.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 11 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** for a TDMA channel ID
+> (opcode 0x33) the channel number counts logical channels, so the downlink is
+> base + spacing × (n ÷ slots per carrier) and the slot is n mod slots. The
+> arithmetic below carried no slot divide and resolved a grant on a two-slot
+> Phase 2 carrier to the wrong frequency.
+> [Rebuilt From the Air, Part 11]({{ rfa_fix.url | relative_url }}) has the
+> fix. The FDMA forms are unaffected.
+{% endif %}
+
 **Key takeaways**
 
 - **A grant is not tunable by itself.** Its 16 bits index a table the site
