@@ -24,6 +24,19 @@ shape from Part 1; a different set of dials.*
 > to route — the whole frame is one channel. GopherTrunk decodes their structured
 > surface today; the heaviest FEC/interleave stages are staged, honest deferrals.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 7 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** the NXDN frame this
+> post describes — a 16-bit frame sync `0xC55A`, a 32-dibit SACCH and no
+> scrambler — was an invented layout that never framed real air. NXDN voice
+> and the control channel now run on the real format: a 20-bit frame sync, an
+> 8-dibit LICH, a 30-dibit SACCH and PN9 scrambling.
+> [Rebuilt From the Air, Part 7]({{ rfa_fix.url | relative_url }}) starts the
+> three-part NXDN rebuild, and Part 10 of
+> [the series]({{ '/blog/series/rebuilt-from-the-air/' | relative_url }})
+> covers the dPMR voice Golay code.
+{% endif %}
+
 **Key takeaways**
 
 - **FDMA, not TDMA**: one call per 6.25 kHz carrier, so there's no ISCH/slot-type

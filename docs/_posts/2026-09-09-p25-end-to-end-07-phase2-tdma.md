@@ -33,6 +33,18 @@ pipeline can silently default to zero on its twin.*
 > proved the FEC knobs can validate, display, and still never arrive on
 > one pipeline.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 11 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** the Golay-protected
+> ISCH, the alternating-slot rule and the trellis → RS(24,16,9) MAC chain
+> described here were GopherTrunk's working model of Phase 2 and matched no
+> reference decoder. The voice and MAC paths now run on the real air format —
+> twelve 180-dibit timeslots, S-ISCH and I-ISCH, RS(63,35) MAC PDUs, and
+> logical channels that are not slot parity.
+> [Rebuilt From the Air, Part 11]({{ rfa_fix.url | relative_url }}) has what
+> changed.
+{% endif %}
+
 **Key takeaways**
 
 - **Phase 2 is a traffic-channel upgrade, not a new system.** The control

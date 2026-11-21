@@ -37,6 +37,18 @@ placeholders waiting for a capture.*
 > The D-STAR and dPMR voice chains (v1.1.2) decode AMBE 3600×2400 and AMBE+2
 > 3600×2450 on placeholder deinterleave tables — **unverified on air**.
 
+{% assign rfa_fix = site.posts | where: "series", "Rebuilt From the Air" | where: "series_part", 6 | first %}
+{% if rfa_fix %}
+> **Update ({{ rfa_fix.date | date: "%-d %b %Y" }}):** the YSF FICH codec and
+> the D-STAR sync words, header FEC and voice tables described here did not
+> match the air and have been rebuilt; dPMR's voice Golay code was corrected
+> in the same pass.
+> [Rebuilt From the Air, Part 6]({{ rfa_fix.url | relative_url }}) covers
+> System Fusion, and Part 10 of
+> [the series]({{ '/blog/series/rebuilt-from-the-air/' | relative_url }})
+> covers D-STAR and dPMR.
+{% endif %}
+
 **Key takeaways**
 
 - **The same sync → slice → parse → grant shape covers all three.**
