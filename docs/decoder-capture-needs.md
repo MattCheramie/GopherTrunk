@@ -288,11 +288,12 @@ YSF and EDACS ProVoice voice are followed and logged but **not yet
 turned into PCM** — that's an *implementation* gap (vocoder/composer
 wiring), not something a capture unblocks. (TETRA, NXDN, dPMR, and
 D-STAR voice now decode to PCM — TETRA verified bit-exact against the
-ETSI EN 300 395-2 reference; NXDN, dPMR, and D-STAR wired end-to-end
-but unverified on air: each needs a real voice capture to confirm its
-AMBE interleave table — a documented placeholder in
-`internal/radio/{nxdn,dpmr,dstar}/voice_ambe.go` — plus the frame
-geometry and codebook choice, exactly the #764/#771 gate.)
+ETSI EN 300 395-2 reference, NXDN on real captures. dPMR and D-STAR
+voice follow their air formats as two reference decoders each have
+them — dPMR per ETSI TS 102 658, with the AMBE+2 frame layout DMR and
+NXDN use — but neither has decoded a real transmission yet: a voice
+capture is the #764/#771 gate. For dPMR nothing on the air can start a
+call either; see [the status page](status.md).)
 
 ---
 
@@ -303,9 +304,10 @@ geometry and codebook choice, exactly the #764/#771 gate.)
 3. **YSF** DN mode (≥ 10 s IQ, 48 kHz).
 4. **DMR 2-slot** both-timeslots-active call (≥ 10 s `.cfile`).
 5. **IMBE + AMBE+2** voice `.raw` + DSD-FME WAV pairs (level calibration).
-6. **dPMR / D-STAR voice** (≥ 10 s IQ, 48 kHz, clear voice) — confirms
-   the placeholder AMBE interleave tables + frame geometry behind the
-   new experimental voice chains.
+6. **dPMR / D-STAR voice** (≥ 10 s IQ, 48 kHz, clear voice) — the
+   first real transmission through voice chains that so far are checked
+   against reference decoders only. For dPMR a licence-free dPMR446
+   handheld is enough.
 7. POCSAG / FLEX / DSC / APRS / AIS / M17 real-fixture confirmation.
 
 Every capture needs a `metadata.json` sidecar with `sample_rate_hz`,
