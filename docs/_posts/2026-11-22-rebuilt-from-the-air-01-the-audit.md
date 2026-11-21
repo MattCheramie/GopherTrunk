@@ -27,8 +27,8 @@ corrects.*
 > and the first real signal decoded nothing. Each was rebuilt from
 > independent references proven on air, pinned with literal vectors, and
 > pinned again on a real-air slice where one exists. Today MDC1200, the tone
-> gates and NXDN trunked voice are **on-air verified**; FLEX at 1600 bps,
-> NXDN voice and control and an idle P25 Phase 2 carrier are
+> gates and NXDN trunked voice are **on-air verified**, and P25 Phase 2
+> voice at the frame level; FLEX at 1600 bps and NXDN voice and control are
 > **capture-verified**; LoRa, System Fusion, D-STAR and SmartNet still wait
 > for a recording.
 
@@ -57,7 +57,7 @@ corrects.*
 | Real cause | fabricated framing — the test encoder and the decoder shared one invented layout |
 | Fix | rebuild from implementations proven on air; literal vectors in the test file; a real-air slice in `testdata/` |
 | Diagnostic | an encoder nobody here wrote, or one recording of a real transmitter |
-| Status | MDC1200, the tone gates and NXDN trunked voice on-air verified; LoRa, System Fusion, D-STAR and SmartNet still gated on a capture |
+| Status | MDC1200, the tone gates and NXDN trunked voice on-air verified; P25 Phase 2 voice on-air verified at the frame level; LoRa, System Fusion, D-STAR and SmartNet still gated on a capture |
 
 ## In this post
 
@@ -160,7 +160,7 @@ sends; statuses use the vocabulary defined at the end of this post.
 | System Fusion ([#1261](https://github.com/MattCheramie/GopherTrunk/issues/1261)) | a FICH of 100 bits — on air it is 100 dibits | MMDVMHost's encoder; a control channel that locked and never granted | reference-pinned; unverified on air | [Part 6]({{ '/blog/solution-postmortem/rebuilt-from-the-air-06-ysf-fich/' | relative_url }}) |
 | NXDN ([#1261](https://github.com/MattCheramie/GopherTrunk/issues/1261)) | 16-bit frame sync `0xC55A`, 32-dibit SACCH, no scrambler; the control channel's coding; the voice scrambler's register and schedule | the reporter's Kenwood captures — the old code decoded 0 frames | voice and control channel capture-verified; trunked voice on-air verified 21 Oct; scrambler capture-verified, live run open | Parts [7]({{ '/blog/solution-postmortem/rebuilt-from-the-air-07-nxdn-frame-layer/' | relative_url }}), [8]({{ '/blog/solution-postmortem/rebuilt-from-the-air-08-nxdn-control-channel/' | relative_url }}), [9]({{ '/blog/solution-postmortem/rebuilt-from-the-air-09-nxdn-scrambler/' | relative_url }}) |
 | D-STAR, dPMR voice ([#1261](https://github.com/MattCheramie/GopherTrunk/issues/1261), [#1374](https://github.com/MattCheramie/GopherTrunk/issues/1374)) | sync words, header FEC, CRC, the voice bit schedule — and a (23,12) Golay that is not the vocoder's | a diff against the MMDVM firmware's format | reference-pinned; no real D-STAR capture yet | [Part 10]({{ '/blog/solution-postmortem/rebuilt-from-the-air-10-dstar/' | relative_url }}) |
-| P25 Phase 2 ([#1273](https://github.com/MattCheramie/GopherTrunk/issues/1273), [#1364](https://github.com/MattCheramie/GopherTrunk/issues/1364)) | one sync per superframe, a Golay ISCH with an invented SlotType, contiguous unscrambled voice; mirrored PN44 taps | a hybrid site that never followed a call; OP25 and SDRTrunk agreeing against it | reference-pinned; an idle real carrier decodes CRC-valid; no live call yet | Parts [11]({{ '/blog/solution-postmortem/rebuilt-from-the-air-11-p25-phase2-airframe/' | relative_url }}), [12]({{ '/blog/solution-postmortem/rebuilt-from-the-air-12-pn44-gardner-real-carrier/' | relative_url }}) |
+| P25 Phase 2 ([#1273](https://github.com/MattCheramie/GopherTrunk/issues/1273), [#1364](https://github.com/MattCheramie/GopherTrunk/issues/1364)) | one sync per superframe, a Golay ISCH with an invented SlotType, contiguous unscrambled voice; mirrored PN44 taps; and, above the FEC, D-STAR's vocoder tables | a hybrid site that never followed a call; OP25 and SDRTrunk agreeing against it; then a live call that played as noise | reference-pinned; an idle real carrier decodes CRC-valid; voice on-air verified at the frame level (18 Nov); the vocoder fix is pinned on that call, and the reporter's run on the fixed build is open | Parts [11]({{ '/blog/solution-postmortem/rebuilt-from-the-air-11-p25-phase2-airframe/' | relative_url }}), [12]({{ '/blog/solution-postmortem/rebuilt-from-the-air-12-pn44-gardner-real-carrier/' | relative_url }}) |
 
 Two things stand out. The first is how long some of these ran: the LoRa
 bit layer shipped in June and was replaced in October, and the MDC1200
@@ -187,7 +187,8 @@ of the NXDN reporter's two captures framed nothing under the old layout and
 thirty-six and fifty-six voice frames under the new one. A Phase 2 capture
 had failed its ISCH on 46–62 % of sub-frames under the old model — a number
 that reads like a weak signal until you learn the air does not carry the
-field being checked.
+field being checked. Phase 2's last layer surfaced the same way: a live
+call whose counters were clean and whose audio was noise.
 
 **A second implementation.** FLEX, LoRa, the System Fusion FICH and D-STAR
 were found by reading a decoder known to work and comparing layouts. FLEX is
@@ -321,10 +322,12 @@ another implementation, or a recording of a real transmitter — can disagree.
 
 **Which of these GopherTrunk decoders are verified on air today?**
 MDC1200 (28 Sep 2026), the CTCSS and DCS tone gates (24 Sep) and NXDN
-trunked voice (21 Oct) are on-air verified. FLEX at 1600 bps, NXDN voice and
-control and an idle P25 Phase 2 carrier are capture-verified. LoRa, System
-Fusion, D-STAR, FLEX at 3200 and 6400 bps and SmartNet are reference-pinned
-or synthetic-verified and still wait for a recording.
+trunked voice (21 Oct) are on-air verified. P25 Phase 2 voice is on-air
+verified at the frame level (18 Nov): a live call framed and FEC-decoded
+cleanly, and the vocoder fix its audio needed still waits on the reporter's
+run. FLEX at 1600 bps and NXDN voice and control are capture-verified.
+LoRa, System Fusion, D-STAR, FLEX at 3200 and 6400 bps and SmartNet are
+reference-pinned or synthetic-verified and still wait for a recording.
 
 **Do the earlier blog posts about these protocols still apply?**
 Their descriptions of GopherTrunk's wiring, bus events, storage and panels

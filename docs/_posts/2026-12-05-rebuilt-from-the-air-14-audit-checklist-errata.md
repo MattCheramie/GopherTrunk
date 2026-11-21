@@ -1,6 +1,6 @@
 ---
 title: "Rebuilt From the Air, Part 14: The Audit Checklist — and the Errata for This Blog"
-description: "The finale: seven questions that separate a real decoder from a fabricated one, a status ledger of sixteen decoders in the project's four verification words — which are on-air verified, which are capture-verified, which still wait for a recording — and the errata for the seven earlier posts this series corrects."
+description: "The finale: eight questions that separate a real decoder from a fabricated one, a status ledger of sixteen decoders in the project's four verification words — which are on-air verified, which are capture-verified, which still wait for a recording — and the errata for the seven earlier posts this series corrects."
 category: solution-postmortem
 keywords: sdr decoder audit checklist, self-consistent test trap, independent encoder test, literal test vectors, real air regression slice, on-air verified decoder status, capture verified vs reference pinned, decoder errata, fabricated framing postmortem, gophertrunk decoder verification
 tags: [rebuilt-from-the-air, checklist, verification, testing, errata, postmortem]
@@ -23,17 +23,18 @@ still waits for a recording, and the errata for the earlier posts on this
 blog that described the formats these decoders used to implement.*
 
 > **TL;DR:** A fabricated decoder passes every test it has, because its
-> test encoder shares its invented layout. Seven questions find one: is
+> test encoder shares its invented layout. Eight questions find one: is
 > there an encoder you did not write; do two references agree, and where
 > don't they; are there literal vectors in the test file; does the fixture
 > transmitter behave like a radio; is a real-air slice in CI; is the PDU
 > shape the *live* FEC chain hands out pinned; do the fake servers enforce
-> strictness. The ledger: MDC1200, FleetSync, CTCSS/DCS, AM and NXDN
-> trunked voice are **on-air verified**; FLEX 1600 bps, NXDN voice, control
-> channel and scrambler, and the P25 Phase 2 MAC path are
-> **capture-verified**; LoRa, System Fusion, D-STAR and SmartNet are
-> **reference-pinned** and wait for a recording. The errata corrects seven
-> earlier posts and updates two finales' open lists.
+> strictness; has anything judged the output. The ledger: MDC1200,
+> FleetSync, CTCSS/DCS, AM and NXDN trunked voice are **on-air verified**,
+> and P25 Phase 2 voice at the frame level; FLEX 1600 bps and NXDN voice,
+> control channel and scrambler are **capture-verified**; LoRa, System
+> Fusion, D-STAR and SmartNet are **reference-pinned** and wait for a
+> recording. The errata corrects seven earlier posts and updates two
+> finales' open lists.
 
 **Key takeaways**
 
@@ -58,13 +59,13 @@ blog that described the formats these decoders used to implement.*
 | Wrong theories | weak signal, gain, ppm, encryption — and "the tests pass" |
 | Real cause | the decoder and its test encoder were written from one layout, and the layout was invented or misread |
 | Fix | rebuild against decoders proven on air; pin with literal vectors and an independent encoder; commit a real-air slice where one exists |
-| Diagnostic | the seven questions below |
-| Status | five rows on-air verified, five capture-verified, six still waiting on a recording — the ledger below |
+| Diagnostic | the eight questions below |
+| Status | five rows on-air verified and a sixth at the frame level, four capture-verified, six still waiting on a recording — the ledger below |
 
 ## In this post
 
-- **The four words** — the vocabulary the ledger is written in.
-- **The audit checklist** — seven questions, each with the decoder that failed it.
+- **The four words** — the ledger's vocabulary.
+- **The audit checklist** — eight questions, each with the decoder that failed it.
 - **The status ledger** — sixteen rows, no rounding up.
 - **The errata** — seven posts corrected, and the open items that moved.
 - **What we keep** — the operating principle.
@@ -125,9 +126,9 @@ especially one that "works".
    built with the P25 modulator gave about 45 % dibit agreement and looked
    like a receiver bug.
 5. **Is a real-air slice in CI?** MDC1200, FleetSync, CTCSS, AM, NXDN
-   voice and control channel, the P25 Phase 2 carrier and five FLEX frames
-   each have one committed. So does the FM test tone that was filed as
-   System Fusion — it pins a gate shut.
+   voice and control channel, a P25 Phase 2 carrier and a Phase 2 call, and
+   five FLEX frames each have one committed. So does the FM test tone that
+   was filed as System Fusion — it pins a gate shut.
 6. **Is the PDU shape the live FEC chain hands out pinned?** The
    talker-alias fixtures came from another decoder's 15-byte dumps. A live
    MAC PDU is 144 bits — a 16-byte vendor payload — and the fragment
@@ -142,6 +143,14 @@ especially one that "works".
    consumed, and `TestOpenSetAntennaUsesUpstreamOpcode` pins the numbers
    against upstream literals
    ([Wire Protocols Without Schemas]({{ '/blog/deep-dives/from-spec-to-shipping-09-wire-protocols-without-schemas/' | relative_url }})).
+8. **Has anything judged the output?** P25 Phase 2 had two references,
+   literal vectors and a real-air slice, and the first live call still
+   played as noise: 175 of 175 MAC PDUs, ten corrected bits over 115 voice
+   bursts — and frames sent to the AMBE 3600x2400 vocoder when Phase 2 is
+   AMBE+2 3600x2450. Every Phase 2 test used synthetic frames and none
+   judged the audio. With clean FEC counters and noise for audio, read the
+   pitch field b0 from the `.raw` before any DSP theory
+   ([Part 12]({{ '/blog/solution-postmortem/rebuilt-from-the-air-12-pn44-gardner-real-carrier/' | relative_url }})).
 
 ## The status ledger
 
@@ -168,15 +177,15 @@ project's engineering notes; a dash means they record nothing.
 | NXDN scrambler · P9 | DSD-FME's LFSR and the references' CRC-6; the schedule settled by the captures | yes — two known-key captures; the programmed key ranks first on both | no | the reporter's live run with the key on a scan-list channel |
 | D-STAR · P10 | the MMDVM firmware's air format: its `txHeader` output and null AMBE frame | no | no | a real D-STAR capture |
 | dPMR · P10 | voice Golay corrected to mbelib's code, pinned by MMDVMHost's silence vectors | no | no | a dPMR voice capture; the on-air interleave is still a placeholder |
-| P25 Phase 2 · P11–12 | OP25 and SDRTrunk, which agree on every constant | partly — the SACCH MAC path on an idle carrier, valid with the site's seed only | no | a live call: voice, source RID, talker alias |
+| P25 Phase 2 · P11–12 | OP25 and SDRTrunk, which agree on every constant; mbelib's 3600x2450 decode for the vocoder | yes — the SACCH MAC path on an idle carrier; the vocoder fix on 118 frames of a recorded live call | **at the frame level, 18 Nov** — a live call framed and FEC-decoded cleanly, 175 of 175 MAC PDUs; its audio was noise until the vocoder fix | the reporter's run on the fixed build; a second call's unexplained Golay corrections; a tap that framed nothing; ESS-B and two unnamed MAC opcodes; a talker alias from a live call; the #1273 reporter's site |
 | SmartNet | OP25 and trunk-recorder | no | no | the #1143 reporter's 854.5625 MHz capture |
 
-The scrambler row needs its one sentence: GopherTrunk decrypts only with
-keys the operator already holds, for systems they are authorised to monitor
-— there, a key the reporter programmed into their own radios.
+The scrambler row needs one sentence: GopherTrunk decrypts only with keys
+the operator already holds, for systems they are authorised to monitor —
+there, a key the reporter programmed into their own radios.
 
 <figure class="lab-figure">
-<svg viewBox="0 0 680 232" width="680" height="232" role="img" aria-label="Three columns showing the highest verification rung each decoder has reached. Reference-pinned: LoRa, System Fusion, D-STAR, the dPMR voice Golay code, SmartNet, and FLEX 3200 and 6400 marked as reference-derived only. Capture-verified: FLEX 1600, NXDN conventional voice, NXDN control channel, NXDN scrambler and the P25 Phase 2 MAC path. On-air verified: MDC1200, FleetSync, CTCSS and DCS, AM and NXDN trunked voice, each with its date.">
+<svg viewBox="0 0 680 232" width="680" height="232" role="img" aria-label="Three columns showing the highest verification rung each decoder has reached. Reference-pinned: LoRa, System Fusion, D-STAR, the dPMR voice Golay code, SmartNet, and FLEX 3200 and 6400 marked as reference-derived only. Capture-verified: FLEX 1600, NXDN conventional voice, NXDN control channel and NXDN scrambler. On-air verified: MDC1200, FleetSync, CTCSS and DCS, AM and NXDN trunked voice, each with its date, and P25 Phase 2 voice at the frame level only.">
   <text x="340" y="16" text-anchor="middle" fill="var(--fg-muted)" font-size="9">the highest rung each decoder has reached</text>
   <rect x="10" y="30" width="210" height="172" rx="6" fill="none" stroke="var(--fg-muted)"/>
   <rect x="235" y="30" width="210" height="172" rx="6" fill="none" stroke="currentColor"/>
@@ -192,16 +201,17 @@ keys the operator already holds, for systems they are authorised to monitor
     <text x="115" y="74">LoRa</text><text x="115" y="90">System Fusion (YSF)</text><text x="115" y="106">D-STAR</text>
     <text x="115" y="122">dPMR voice Golay</text><text x="115" y="138">SmartNet</text><text x="115" y="154">FLEX 3200 / 6400 *</text>
     <text x="340" y="74">FLEX 1600 bps</text><text x="340" y="90">NXDN conventional voice</text><text x="340" y="106">NXDN control channel</text>
-    <text x="340" y="122">NXDN scrambler</text><text x="340" y="138">P25 Phase 2 MAC path</text>
+    <text x="340" y="122">NXDN scrambler</text>
     <text x="565" y="74">MDC1200 — 28 Sep</text><text x="565" y="90">FleetSync — 16 Sep</text><text x="565" y="106">CTCSS / DCS — 24 Sep</text>
     <text x="565" y="122">AM — 29 Sep</text><text x="565" y="138">NXDN trunked voice — 21 Oct</text>
   </g>
+  <text x="565" y="154" text-anchor="middle" font-size="9" fill="var(--accent)">P25 Phase 2 voice — frame level, 18 Nov</text>
   <text x="115" y="180" text-anchor="middle" font-size="8" fill="var(--fg-muted)">* reference-derived, synthetic-verified only</text>
   <text x="340" y="180" text-anchor="middle" font-size="8" fill="var(--fg-muted)">needs a recording to get here</text>
-  <text x="565" y="180" text-anchor="middle" font-size="8" fill="var(--fg-muted)">needs a reporter's live run</text>
+  <text x="565" y="180" text-anchor="middle" font-size="8" fill="var(--fg-muted)">needs a live run — Phase 2 audio awaits one</text>
   <text x="340" y="222" text-anchor="middle" fill="var(--accent)" font-size="9">nothing moves a column to the right without evidence from outside the repository</text>
 </svg>
-<figcaption>Sixteen ledger rows by the highest rung reached: five on air, five on a capture, six still on references alone.</figcaption>
+<figcaption>Sixteen ledger rows by the highest rung reached: five on air and a sixth at the frame level, four on a capture, six still on references alone.</figcaption>
 </figure>
 
 ## The errata
@@ -257,7 +267,13 @@ is the recipe). **"Direct mode on a live build"** is unchanged:
 capture-verified on the reporter's 15 Sep captures, with the live run on a
 fixed build still the gate on #836.
 
-Two corrections fall outside the rebuilds. Protocol Decoders
+Three corrections fall outside the rebuilds.
+[Voice Coding 7]({{ '/blog/deep-dives/voice-coding-07-ambe-plus-2/' | relative_url }})
+and
+[9]({{ '/blog/deep-dives/voice-coding-09-the-composer/' | relative_url }})
+give P25 Phase 2 the 3600x2400 `ambe2` decoder; Phase 2 is AMBE+2
+3600x2450 and decodes through `ambe2-dmr` — the mapping the first live
+call exposed. Protocol Decoders
 [10]({{ '/blog/deep-dives/protocol-decoders-10-alias-hunt-framing/' | relative_url }})
 and
 [11]({{ '/blog/deep-dives/protocol-decoders-11-alias-hunt-cryptanalysis/' | relative_url }})
@@ -281,14 +297,16 @@ not on-air correct.
   literal output, an encoder you did not write, a recording. Everything
   else is the
   [self-consistent test trap]({{ '/reference/self-consistent-test-trap/' | relative_url }}).
-- **Say which of the four words you have earned.** "Works" is not one of
-  them. Six ledger rows say *no* twice, and that is their accurate state.
-- **A fabricated layer hides under a correct one.** LoRa's chirp was right
+- **Say which of the four words you have earned.** "Works" is not one.
+  Six ledger rows say *no* twice, and that is their accurate state.
+- **A wrong layer hides beside a correct one.** LoRa's chirp was right
   over six invented layers; the rebuilt Phase 2 frame sat over a mirrored
-  scrambler. Audit each layer on its own evidence.
+  scrambler and under the wrong vocoder tables. Audit each layer on its own
+  evidence.
 - **Correct the prose when you correct the code.** A post that explains an
   invented format teaches it.
-- **Every open gate is a named recording.** None is blocked on effort.
+- **Every open gate is a named recording or a named live run.** None is
+  blocked on effort.
 
 ## Where to go from here
 
@@ -296,35 +314,35 @@ The [series index]({{ '/blog/series/rebuilt-from-the-air/' | relative_url }})
 lists all fourteen parts. Two series ran beside this one.
 [Squelch]({{ '/blog/series/squelch/' | relative_url }}) is the design half
 of stories told here as investigations — how a scan list decides a call
-exists, from the CTCSS and DCS gates to the System Fusion, NXDN and D-STAR
-call gates.
+exists, from the tone gates to the System Fusion, NXDN and D-STAR call
+gates.
 [The Operator's Cookbook, Volume 2]({{ '/blog/series/operator-cookbook-volume-2/' | relative_url }})
-is the bench half: recipes for the rigs these decoders run on — NXDN,
-fleet signalling, paging, your own keys. And
+is the bench half: NXDN, fleet signalling, paging, your own keys. And
 [From Spec to Shipping]({{ '/blog/series/from-spec-to-shipping/' | relative_url }})
-is the method this series kept having to apply after the fact.
+is the method this series kept applying after the fact.
 
 ## FAQ
 
 **How can I tell whether a decoder has ever decoded a real signal?**
-Look at where its fixtures come from. If every test vector is produced by
-the project's own encoder, nothing in the suite can disagree with the
-decoder's idea of the format. Look for a committed real-air slice, or a
-literal vector attributed to an independent decoder.
+Look at where its fixtures come from. If every test vector comes from the
+project's own encoder, nothing in the suite can disagree with the decoder.
+Look for a committed real-air slice, or a literal vector attributed to an
+independent decoder.
 
 **Which GopherTrunk decoders in this series are verified on air?**
 MDC1200 (28 Sep), FleetSync (16 Sep), the CTCSS and DCS tone gates
-(24 Sep), AM (29 Sep) and NXDN trunked voice (21 Oct). FLEX 1600 bps, the
-NXDN control channel and scrambler and the P25 Phase 2 MAC path are
-capture-verified; LoRa, System Fusion, D-STAR and SmartNet have not yet
-met a recording.
+(24 Sep), AM (29 Sep) and NXDN trunked voice (21 Oct). P25 Phase 2 voice is
+on-air verified at the frame level (18 Nov); its audio fix is pinned on
+the recorded call and waits on the reporter's run. FLEX 1600 bps and the
+NXDN control channel and scrambler are capture-verified; LoRa, System
+Fusion, D-STAR and SmartNet have not yet met a recording.
 
 **What capture would help most right now?**
 Any open row: a LoRa IQ capture, a System Fusion DN-mode transmission at
 a gain that does not clip, a D-STAR or dPMR voice transmission, a
-929–932 MHz multi-rate FLEX channel, a P25 Phase 2 voice call, or a
-SmartNet control channel. Record IQ, not audio, and say what the radio was
-doing.
+929–932 MHz multi-rate FLEX channel, a P25 Phase 2 call with
+`voice_iq_debug` on, or a SmartNet control channel. Record IQ, not audio,
+and say what the radio was doing.
 
 **Were the earlier posts wrong when they were published?**
 They described the code accurately; the code was wrong about the air. Each

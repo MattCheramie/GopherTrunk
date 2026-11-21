@@ -34,7 +34,8 @@ matched nothing on the air.*
 > 20-dibit ISCH — sync word `0x575D57F7FF` or a (40,9,16) codeword — and a
 > 160-dibit body with a DUID; logical channels are not slot parity, because
 > timeslots 10 and 11 swap. MAC PDUs (`macframe.go`) are RS(63,35) hexbits
-> with a CRC-12 or CRC-16. Reference-pinned against OP25 and SDRTrunk.
+> with a CRC-12 or CRC-16. Reference-pinned against OP25 and SDRTrunk;
+> on-air verified at the frame level since 18 Nov (Part 12).
 
 **Key takeaways**
 
@@ -60,7 +61,7 @@ matched nothing on the air.*
 | Real cause | channel numbers resolved as carriers; and a fabricated framing: one sync per superframe, a Golay ISCH, contiguous unscrambled voice, a trellis + RS(24,16) MAC chain |
 | Fix | `BandPlan.Frequency` / `Timeslot` with `SlotsPerCarrier`; TDMA identifier forms `0x73` / `0xF3`; `AirFramer`, `DecodeAirMAC`, `ExtractAirVoiceFrames` |
 | Diagnostic | payloads built from OP25's bit positions; literal I-ISCH, DUID and mask values from the references; five packets decoded by OP25's own code |
-| Status | reference-pinned and synthetic-verified; the reporter's site is still the on-air gate; Part 12 has the first real carrier |
+| Status | reference-pinned and synthetic-verified; voice on-air verified at the frame level on another rig's live call (18 Nov, Part 12); the #1273 reporter's site has still not confirmed it |
 
 ## In this post
 
@@ -69,7 +70,7 @@ matched nothing on the air.*
 - **Layer two: a model that matched no reference** — why the slot exposed the framing.
 - **The real timeslot** — ISCH, DUID, voice positions, and the swap.
 - **The MAC path** — RS(63,35), two CRCs and a length table.
-- **What is wired, what is verified** — consumers, dead config keys, the open gate.
+- **What is wired, what is verified** — consumers, dead config keys, what a live call has shown.
 
 ## A hybrid site that never followed a call
 
@@ -288,7 +289,9 @@ lookup.
 **Voice.** A VOICE-4 burst holds four 72-bit AMBE+2 frames at body dibits 1,
 38, 86 and 123; VOICE-2 holds the first two. The codeword layout is DMR's,
 so `ExtractAirVoiceFrames` hands each to `dmrvoice.DecodeAMBEFrame` after
-descrambling with the timeslot's slice of the PN44 sequence.
+descrambling with the timeslot's slice of the PN44 sequence. The vocoder is
+DMR's too — AMBE+2 3600x2450 — which the recorder had wrong until the first
+live call (Part 12).
 
 ```go
 // internal/radio/p25/phase2/airframe.go (shape)
@@ -360,9 +363,17 @@ tests, pending deletion.
 
 Everything in this post is **reference-pinned** against two decoders and
 **synthetic-verified**. The #1273 reporter's site has not confirmed it, so
-the on-air gate is open. Two defects in shared primitives turned up on the
-way — a scrambler with mirrored taps and a timing loop with a sign error —
-and a real Phase 2 carrier was later found in the repository's own samples.
+that gate is open. What has happened since came from a different rig. On
+18 November another operator's live call, on an 867 MHz site with a Phase 1
+control channel and Phase 2 voice, framed and FEC-decoded cleanly through
+this path: 579 bursts framed, 175 of 175 MAC PDUs, ten corrected bits over
+115 voice bursts. That makes Phase 2 voice **on-air verified at the frame
+level**. The call's audio was noise for a reason above this layer, and the
+reporter's run on the fixed build is still open.
+
+Part 12 has that call, the two defects in shared primitives that turned up
+on the way — a scrambler with mirrored taps and a timing loop with a sign
+error — and the real Phase 2 carrier found in the repository's own samples.
 
 ## What this overturns
 
@@ -395,8 +406,8 @@ slot divide; for a TDMA channel ID the arithmetic above replaces it.
 
 The framing was half of what was wrong. The scrambler every Phase 2 burst
 depends on tapped the wrong bits, the timing loop under the receiver walked
-half a symbol off, and the capture that said so had been in `samples/` all
-along —
+half a symbol off, a real carrier had been in `samples/` all along, and the
+first live call decoded cleanly and played as noise —
 [Part 12]({{ '/blog/solution-postmortem/rebuilt-from-the-air-12-pn44-gardner-real-carrier/' | relative_url }}).
 
 ## FAQ
@@ -421,9 +432,12 @@ trellis code.
 
 **Is GopherTrunk's P25 Phase 2 decode verified on air?**
 The framing, voice positions and MAC coding are pinned to OP25 and SDRTrunk
-constants and to packets OP25's own code accepts. The reporter's hybrid site
-has not confirmed it; Part 12 covers the first real Phase 2 carrier decoded
-with the rebuilt path.
+constants and to packets OP25's own code accepts. On 18 Nov another
+operator's live call framed and FEC-decoded cleanly — 175 of 175 MAC PDUs —
+so Phase 2 voice is on-air verified at the frame level; its audio needed a
+vocoder fix whose live confirmation is still open. The #1273 reporter's
+hybrid site has not confirmed. Part 12 covers the real carrier and the
+live call.
 
 ## Series navigation
 
