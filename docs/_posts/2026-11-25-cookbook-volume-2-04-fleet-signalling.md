@@ -202,12 +202,12 @@ web:
 Frequencies, tone and code are placeholders. What the keys do:
 
 **`decoders`.** `mdc1200` and `fleetsync` belong on `fm` and `nfm` channels;
-a digital mode rejects them. The scanner reduces its IQ to one channel at about 48 kHz behind a
-±8 kHz filter before a decoder sees it, so the result does not depend on the
-dongle's rate. The decoders run on every chunk that clears `squelch_dbfs`
-and through the whole dwell. One that has locked a sync word holds the scan
-window for up to another 500 ms and counts as activity, so the scanner
-neither hops away nor ends the call mid-burst.
+a digital mode rejects them. The scanner reduces its IQ to one channel at
+about 48 kHz behind a ±8 kHz filter before a decoder sees it, so the result
+does not depend on the dongle's rate. The decoders run on every chunk that
+clears `squelch_dbfs` and through the whole dwell. One that has locked a
+sync word holds the scan window for up to another 500 ms and counts as
+activity, so the scanner neither hops away nor ends the call mid-burst.
 
 **`tone.mode: ctcss`.** Enter the tone your radios are programmed with, to
 the tenth of a hertz. Standard tones sit 2.3 to 3.0 Hz apart and the gate now
@@ -230,7 +230,8 @@ that dongle's list, toned or not.
 navigation. The keys are the panel paths: `mdc1200`, `fleetsync`, `pagers`
 and so on.
 
-The other way to run the decoders pins a dongle to one channel for good:
+The other way to run the decoders pins a dongle to one channel for good.
+Beside the same `log:` and `storage:` blocks:
 
 ```yaml
 sdr:
@@ -247,8 +248,11 @@ mdc1200:
 ```
 
 `fleetsync.channels` has the same shape plus `baud_hz` (omit it for 1200;
-2400 is accepted). A pinned receiver misses nothing on its channel and
-records no voice. Prefer the tap unless the IDs matter more than the dongle.
+2400 is accepted). At start-up each pinned receiver logs a line beginning
+`mdc1200: tuning the SDR off-channel` (or `fleetsync:`): at 2.4 MS/s the
+dongle sits 518 kHz below the channel, clear of its own DC spur. A pinned
+receiver misses nothing on its channel and records no voice. Prefer the tap
+unless the IDs matter more than the dongle.
 
 ## First run — what healthy looks like
 
@@ -264,7 +268,7 @@ tuner — so `device=` names the replay source. A transmission carrying a
 ```text
 INF conv: squelch opened freq_hz=447100000 label="Public Works" mode=nfm level_dbfs=-11.8 squelch_dbfs=-50 quieting_db=46
 INF synthetic call started device=replay-ctcss grant="scanner/fm-conv tg=2147500301 src=0 freq=447100000 "
-INF recorder: call started device=replay-ctcss wav=../recordings/scanner/2147500301/20261121_193112_2147500301.wav tg=2147500301 provoice=false vocoder=""
+INF recorder: call started device=replay-ctcss wav=…/recordings/scanner/2147500301/20261121_193112_2147500301.wav tg=2147500301 provoice=false vocoder=""
 ```
 
 `quieting_db` is the noise squelch's reading; 46 dB is a full-quieting

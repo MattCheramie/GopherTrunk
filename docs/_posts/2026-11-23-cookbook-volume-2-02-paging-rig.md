@@ -121,7 +121,7 @@ are entitled to, and keep message bodies and pager addresses to yourself.
   <rect x="374" y="94" width="8" height="24" fill="none" stroke="currentColor"/>
   <text x="386" y="90" fill="currentColor" font-size="9">POCSAG 153.350</text>
   <rect x="656" y="94" width="8" height="24" fill="none" stroke="var(--fg-muted)" stroke-dasharray="2 2"/>
-  <text x="672" y="136" text-anchor="end" fill="var(--fg-muted)" font-size="9">a channel 1.3 MHz away: outside the band, skipped at start-up</text>
+  <text x="672" y="136" text-anchor="end" fill="var(--fg-muted)" font-size="9">1.3 MHz away: outside the band, skipped</text>
   <line x1="296" y1="118" x2="296" y2="158" stroke="currentColor"/>
   <line x1="378" y1="118" x2="378" y2="158" stroke="currentColor"/>
   <rect x="150" y="158" width="168" height="36" rx="4" fill="none" stroke="currentColor"/>
@@ -171,7 +171,7 @@ sdr:
 paging:
   wideband:
     - serial: "00000001"
-      center_freq_hz: 153_200_000   # chosen: inside both channels' reach, on neither
+      center_freq_hz: 153_200_000   # chosen by hand: on neither channel
       channels:
         - protocol: flex
           frequency_hz: 153_025_000
@@ -235,9 +235,9 @@ log at DEBUG. POCSAG prints nothing on sync; its proof is a row.
 
 The signal in that run was three of the real-air FLEX frames committed in
 `internal/radio/pager/flex/testdata/p2000_1600x2_frames.hex`, re-modulated
-175 kHz below the group centre. `curl
-'http://127.0.0.1:8080/api/v1/pager/messages?limit=2'` returned the network's
-own test pages:
+175 kHz below the group centre. The first two rows it wrote, in the order
+`curl 'http://127.0.0.1:8080/api/v1/pager/messages'` returns them (newest
+first), are that network's own test pages:
 
 ```json
 [
@@ -286,10 +286,10 @@ the run above used a replay tuner.
 | Pagers panel empty and the REST route answers 503 | no database | Set `storage.path`; the daemon also prints a start-up warning that paging is configured without it |
 | A channel is missing from the group's start line | it is outside the window | The warning reads `paging.wideband[<serial>]: channel … Hz is … kHz from the group center … — skipped`. Move `center_freq_hz`, or put that channel on another SDR |
 | Pages arrive only while a Spectrum tab is open | a build from before the fix | Update. The signature is the pair `sdr: no decoder is streaming this SDR — streaming it for the live view` and `sdr: last live view closed — stopping its IQ stream` on a dongle that has a paging group |
-| One channel of an odd-count group decodes badly or not at all | it sits on the centre, under the DC spike | Set `center_freq_hz` explicitly, off every channel |
+| The middle channel of an odd, evenly spaced group decodes worse than its neighbours | the automatic centre put it at 0 Hz, on the DC spike | Set `center_freq_hz` explicitly, off every channel |
 | The group never starts | the serial is not in the pool | Look for `paging.wideband: SDR not found, skipping group`, then compare the serial with `gophertrunk sdr list` |
 | Daemon refuses the config over a dedicated role | no decoder section names that dongle | Fix the serial in the `paging:` entry, or change the role |
-| POCSAG channel is strong but silent | wrong rate | Try `baud_hz: 512` or `2400` |
+| POCSAG channel is strong but silent | wrong rate, or the unverified receiver | Try `baud_hz: 512` or `2400`. If neither works, remember that the POCSAG receiver has no real-capture pin yet; a recording attached to an issue is the useful next step |
 | FLEX syncs at a fast rate but pages are missing or garbled | the 3200 / 6400 bps paths are not capture-verified | Record discriminator audio and replay it with `GT_FLEX_AUDIO=<file> go test ./internal/radio/pager/flex/receiver -run TestFLEXAudioReplay -v`; a capture of a multi-rate channel is what closes this gate |
 | Pages stop after a USB hiccup | the stream ended | The group retries with a back-off and logs `paging.wideband: decoder stopped — restarting`; if that repeats without recovering, restart the daemon — the paging decoders do not yet re-acquire an unplugged dongle the way the control-channel decoder does |
 

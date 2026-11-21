@@ -309,13 +309,13 @@ scanner:
         dcs_code: "023"
         dcs_polarity: normal        # normal | inverted | both      ← Part 4
     - label: "Plant ops"
-      frequency_hz: 447_100_000
+      frequency_hz: 461_037_500
       mode: nxdn                    # nxdn (NXDN96) | nxdn48        ← Part 3
       squelch_dbfs: -50
       encryption_keys:
-        - key_id: 3
+        - key_id: 2
           algorithm: scrambler      # decimal 15-bit key            ← Part 8
-          key: "12345"              # placeholder
+          key: "1"                  # placeholder
 
 paging:                             #                               ← Part 2
   wideband:

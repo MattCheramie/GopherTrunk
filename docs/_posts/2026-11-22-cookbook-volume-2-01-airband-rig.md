@@ -80,8 +80,8 @@ already run `gophertrunk sdr list` and `gophertrunk run -config config.yaml`.
 
 Two conventions hold for all fourteen parts. Log lines are printed as Volume
 1 printed them — level abbreviated to `INF` / `WRN`, timestamp dropped — but
-the message text and the `key=value` fields are exactly what the daemon
-writes, so they grep. And each recipe uses the project's four status words
+message text and `key=value` fields are exactly what the daemon writes, so
+they grep. And each recipe uses the project's four status words
 literally: **synthetic-verified** (decodes its own test signals),
 **reference-pinned** (matches an independent decoder), **capture-verified**
 (decodes a recording off the air) and **on-air verified** (an operator ran it
@@ -143,7 +143,7 @@ is the deep dive on that meter and the captures that shaped it.
   <text x="555" y="175" text-anchor="middle" fill="var(--accent)" font-size="10">decoders: [acars]</text>
   <text x="555" y="189" text-anchor="middle" fill="var(--fg-muted)" font-size="9">2400 bit/s MSK → block check</text>
   <text x="555" y="203" text-anchor="middle" fill="var(--fg-muted)" font-size="9">acars_log → REST → ACARS panel</text>
-  <text x="555" y="232" text-anchor="middle" fill="var(--fg-muted)" font-size="9">the data tap runs only on the channel that lists it</text>
+  <text x="670" y="232" text-anchor="end" fill="var(--fg-muted)" font-size="9">the data tap runs only on the channel that lists it</text>
 </svg>
 <figcaption>One dongle, one scan list: every AM channel opens on carrier-to-noise and records voice, and the channel that lists the ACARS decoder also turns its bursts into log rows.</figcaption>
 </figure>
@@ -161,8 +161,8 @@ Frequencies are per airport — the
 covers where to find them — and the
 [ACARS operator page]({{ '/acars.html' | relative_url }}) lists the common
 data frequencies: 131.550, 131.525, 130.025, 129.125 and 131.125 MHz among
-them. Receiving airband is lawful in many countries and restricted in some;
-check yours before you record.
+them. Airband reception is lawful in many countries and restricted in some;
+check yours first.
 
 ## The config
 
@@ -186,7 +186,7 @@ sdr:
 scanner:
   conventional:
     - label: "Tower"
-      frequency_hz: 118_700_000 # the actual carrier, not an 8.33 kHz channel name
+      frequency_hz: 118_700_000 # the carrier, not an 8.33 kHz channel name
       mode: am
       squelch_cn_db: 12         # carrier-to-noise in dB; 12 is the default
       hangtime_ms: 1500
@@ -207,8 +207,7 @@ audio:
   enabled: true                 # hear dwells on the host speakers
 ```
 
-The frequencies are placeholders for your airport's. The decisions behind
-the rest:
+The frequencies are placeholders. The decisions behind the rest:
 
 **`role: voice`.** The conventional scanner takes the last voice device in
 the pool; on an airband-only rig that is your only dongle.
@@ -226,10 +225,11 @@ passes both spacings.
 
 **`decoders: [acars]`.** Accepted only on a `mode: am` channel. A block
 lasts up to about 0.9 s, and once the decoder has locked a block's sync the
-scanner holds the channel for up to one second so a hop cannot cut it off.
-The short `hangtime_ms` is deliberate: a data burst raises a carrier, so it
-opens an AM call like any transmission, and with no voice to wait for there
-is no reason to hold the channel 1.5 s after each one.
+scanner holds the channel for up to one second so a hop cannot cut it off
+([Squelch, Part 11]({{ '/blog/deep-dives/squelch-11-data-on-the-scan-list/' | relative_url }})
+has the detector). The short `hangtime_ms` is deliberate: a data burst
+raises a carrier, so it opens an AM call like any transmission, and with no
+voice to wait for there is no reason to hold the channel after each one.
 
 **`storage.path`.** Decoded blocks reach you only through the SQLite log;
 without it the REST route answers 503 and the panel stays empty.
@@ -261,7 +261,7 @@ ran through an AM scan-list channel:
 ```text
 INF conv: squelch opened freq_hz=126400000 label=Departure mode=am level_cn_db=60.6 squelch_cn_db=12
 INF synthetic call started device=replay-am grant="scanner/am-conv tg=2147500101 src=0 freq=126400000 "
-INF recorder: call started device=replay-am wav=../recordings/scanner/2147500101/20261121_193112_2147500101.wav tg=2147500101 provoice=false vocoder=""
+INF recorder: call started device=replay-am wav=…/recordings/scanner/2147500101/20261121_193112_2147500101.wav tg=2147500101 provoice=false vocoder=""
 ```
 
 `level_cn_db` against `squelch_cn_db` is the whole squelch decision: 60.6 dB
@@ -299,10 +299,10 @@ entry, produced this from
 
 The same row shows in the web console's **ACARS** panel (`/acars`). A block
 that needed bits repaired before its check validated carries a `corrected`
-count. That run
-also showed the known limit plainly: the 0.66 s burst opened an ordinary AM
-call. With the default 1.5 s hangtime it left a 2.17 s recording; with
-`hangtime_ms: 250`, 0.92 s — and the block decoded either way.
+count. That run also showed the known limit plainly: the 0.66 s burst opened
+an ordinary AM call. With the default 1.5 s hangtime it left a 2.17 s
+recording; with `hangtime_ms: 250`, 0.92 s — and the block decoded either
+way.
 
 **Status, in one sentence each.** AM voice on the scan list is on-air
 verified: on 29 Sep a reporter on a build with the carrier-tracking fix heard
@@ -323,7 +323,7 @@ but the reporter's own capture and live scanner run are still pending
 | A channel never opens though traffic is audible elsewhere | carrier under the threshold, or the wrong frequency | Fix the antenna first, then lower `squelch_cn_db` a little — noise alone reaches about 7 dB, so stay well above that |
 | A channel opens on noise or a neighbour | interference inside the channel | Raise `squelch_cn_db`; the advanced guide's ATIS example uses 15 |
 | An INFO line says the AM carrier was found off the tuned frequency | the entry or the dongle is 1 kHz or more off | Nothing is lost — the chain recentres within ±4.5 kHz — but correct `frequency_hz`, or set the device `ppm` |
-| Low hum under every transmission | mains or airframe hum below 300 Hz | Leave `recordings.fm_audio_highpass_hz` at its default 300; it applies to AM too |
+| Low hum under every transmission | mains or other interference below 300 Hz | Leave `recordings.fm_audio_highpass_hz` at its default 300; it applies to AM too |
 | ACARS panel empty, REST route answers 503 | no database | Set `storage.path` |
 | Short AM recordings beside every ACARS row | by design today: a burst raises a carrier | Keep them short with a small `hangtime_ms` on the ACARS entry |
 | Scanner parks on one channel for hours | a continuous carrier such as ATIS is on the list | Take it off, or use the wideband variation below, where nothing scans |
@@ -344,7 +344,7 @@ and can read far below zero. Trust the value in `conv: squelch opened`.
 
 ### How this recipe shapes operator practice
 
-- **Stop tuning squelch against gain.** On AM the threshold is a ratio. A
+- **Stop tuning squelch against gain.** On AM the threshold is a ratio; a
   misbehaving channel means antenna, frequency or interference.
 - **Enter carriers, not channel names.** The recentring line in the log is
   how you catch a wrong 8.33 kHz conversion.

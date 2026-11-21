@@ -221,8 +221,8 @@ regular grid: `freq = base_hz + (channel − offset) × spacing_hz`, with
 the snippet). Where do the numbers come from? The licence or a frequency
 listing gives the frequencies. The site tells you one number itself — the
 `nxdn: site info` line carries `control_channel_1`, the channel number of
-the control channel you are tuned to. Every other gap announces itself the
-first time it is used, in a WARN that names the channel number.
+the site's first control channel. Every other gap announces itself the first
+time it is used, in a WARN that names the channel number.
 
 **Two dongles.** The example config documents the one-dongle `voice_taps`
 arrangement for P25 and DMR Tier III; it does not list NXDN, so this recipe
@@ -277,11 +277,10 @@ scanner:
 
 The frequencies in both files are placeholders. `squelch_dbfs` is still
 there, and still an absolute in-channel level, but it only nominates the
-channel. The gate decides: a frame sync, then another
-exactly 192 dibits later, with a valid link-information field marking a
-traffic frame. Once the level breaks, the scan window stretches to half a
-second for `nxdn` and a full second for `nxdn48` so the gate can hear that
-pair. Tone gates and data decoders are analog-only and rejected on these
+channel. The gate decides: a frame sync, then another exactly 192 dibits
+later, with a valid link-information field marking a traffic frame. Once the
+level breaks, the scan window stretches to half a second for `nxdn` and a
+full second for `nxdn48` so the gate can hear that pair. Tone gates and data decoders are analog-only and rejected on these
 entries, and there is no
 [RAN]({{ '/reference/ran-nxdn/' | relative_url }}) filter key: any NXDN
 traffic of the right width on the frequency opens the channel. To run both
@@ -308,8 +307,8 @@ INF nxdn: site info system=Plant-NXDN ran=1 location_id=4197025 category=local s
 
 In that replay the lock arrived 90 ms after the hunt started. `site info`
 is the line to copy into your notes: system 85, site 1, RAN 1, two adjacent
-sites, and `control_channel_1=1` — the control channel is channel 1, the
-first row of the table. The capture is idle, so it cannot show a grant. On a
+sites, and `control_channel_1=1` — this site's control channel is channel 1,
+the first row of the table. The capture is idle, so it cannot show a grant. On a
 live system each call adds `call started` with a grant reading
 `Plant-NXDN/nxdn tg=… src=… freq=…`, then the voice-chain and recorder lines
 below and, with the feed enabled, `broadcast: call streamed`.
@@ -320,7 +319,7 @@ the `Plant ops` entry:
 ```text
 INF conv: call gate opened gate=NXDN freq_hz=447100000 label="Plant ops"
 INF synthetic call started device=replay-01 grant="scanner/nxdn tg=2147500201 src=0 freq=447100000 "
-INF recorder: call started device=replay-01 wav=../recordings/scanner/2147500201/20261121_192928_2147500201.wav tg=2147500201 provoice=false vocoder=ambe2-dmr
+INF recorder: call started device=replay-01 wav=…/recordings/scanner/2147500201/20261121_192928_2147500201.wav tg=2147500201 provoice=false vocoder=ambe2-dmr
 INF composer: nxdn voice chain started serial=replay-01 system=scanner group=2147500201 symbol_rate=4800
 INF composer: nxdn voice chain ended serial=replay-01 voice_frames=1236 frames=617 lich_ok=617 carrier_offset_hz=395 carrier_offset_at_voice_hz=426 iq_samples=59429888 sacch_ok=617 sacch_fail=0 sacch_superframes=154 src=8814 dst=0 cipher=clear
 ```
