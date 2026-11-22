@@ -105,7 +105,7 @@ depends on the path:
 - **Many conventional channels on one wideband SDR, all at once.** List them
   under the device's `conventional:` key (the same fields as a
   `scanner.conventional` channel, and every scan-list mode: `fm`, `nfm`, `am`,
-  `p25`, `dmr`, `nxdn`, `nxdn48`, `dstar`, `ysf`). Each channel gets its own tap, squelch, tone gate
+  `p25`, `dmr`, `nxdn`, `nxdn48`, `dstar`, `ysf`, `dpmr`). Each channel gets its own tap, squelch, tone gate
   and hangtime, so overlapping transmissions on different channels record as
   separate, simultaneous calls; nothing scans, so a long call on one channel
   never hides another. They can sit on the same dongle as trunked `channels:`
@@ -183,7 +183,7 @@ depends on the path:
   `p25` channel takes `nac` and `p25_phase1_demod_mode` and opens only on its
   own NAC (#1262), a `dmr` channel opens only on a call, not on a repeater's
   idle beacons, a `ysf` channel only on a System Fusion frame sync, not on an
-  analog carrier (#1261), and each call runs the same voice chain as a scan-list
+  analog carrier (#1261), a `dpmr` channel only once its frames decode (#1374), and each call runs the same voice chain as a scan-list
   call. P25 channels may share one frequency when each sets its own `nac`
   (not F7E / F7F), the P25 counterpart of a tone gate: an operator's own units
   and another agency's on one frequency record as two channels. Their serials

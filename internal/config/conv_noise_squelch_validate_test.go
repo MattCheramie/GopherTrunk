@@ -19,7 +19,7 @@ func TestValidateConvChannelNoiseSquelch(t *testing.T) {
 			}
 		}
 	}
-	for _, mode := range []string{"am", "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf"} {
+	for _, mode := range []string{"am", "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf", "dpmr"} {
 		if err := validateConvChannel(0, ConvChannelConfig{FrequencyHz: 446_006_250, Mode: mode}); err != nil {
 			t.Errorf("mode %q without noise_squelch rejected: %v", mode, err)
 		}

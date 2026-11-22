@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **dPMR channels in the scan list** (#1374): `mode: dpmr` on a
+  `scanner.conventional` entry, or on a wideband dongle's `conventional:` list,
+  decodes 6.25 kHz dPMR, such as the licence-free dPMR446 handhelds on
+  446.1–446.2 MHz, through the dPMR voice chain. Until now nothing on the air
+  could start a dPMR call: the voice chain ran only on a grant from the dPMR
+  Mode 3 control channel, which is still not decoded. The channel opens only once
+  the dPMR framer locks onto a transmission: a sync word followed by a valid
+  control channel. Analog FM, NXDN48 (the same modulation, different frames)
+  and noise are skipped. It closes on the radio's end frame, so the hangtime
+  starts when the transmitter releases. The scanner may stay on a `dpmr` channel
+  whose carrier is up for up to a second while it checks. Experimental: checked
+  against the standard and two decoders, not yet on a real dPMR radio.
 - **More in the Phase 2 end-of-call log line** (`composer: p25p2 call
   census`), for two things the first on-air Phase 2 log could not explain:
   - `voice_errs_by_frame` and `voice_errs_by_timeslot`: where the voice
@@ -28,6 +40,14 @@ for tagged releases.
   capture never switched on.
 
 ### Fixed
+- **A dPMR call could decode nothing at all, depending on when the voice chain
+  started** (#1374). The chain's timing loop starts at an arbitrary point in the
+  signal's symbol timing and could sit at a wrong point for a whole call.
+  Started at twenty points within one symbol, a call decoded nothing from five
+  of them and only part of the call from five more. The receiver now measures
+  the symbol timing at the start of a transmission and starts the loop there,
+  so the call decodes from every start point, including a radio that re-keys
+  within the hangtime. The call's end log line now reports `timing_seeds`.
 - **P25 Phase 2 signalling messages were read from a table that did not match
   the air** (#1364). #1290 rebuilt how a Phase 2 signalling burst is framed
   and error-corrected, and that part is confirmed on real air. The table that

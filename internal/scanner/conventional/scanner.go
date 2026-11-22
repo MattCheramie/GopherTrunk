@@ -48,8 +48,8 @@ type Channel struct {
 	// or "p25" (issue #1239): P25 Phase 1 conventional, the FM
 	// channel's in-channel power squelch with the call decoded by the
 	// composer's P25 Phase 1 voice chain (protocol "p25") — or "dmr",
-	// "nxdn", "dstar", "ysf" (issue #1261), likewise decoded by that protocol's
-	// voice chain.
+	// "nxdn", "dstar", "ysf" (issue #1261) or "dpmr" (issue #1374), likewise
+	// decoded by that protocol's voice chain.
 	Mode string
 	// SquelchDbFS is the threshold above which the scanner declares
 	// "carrier present", compared against the CHANNEL's power
@@ -595,7 +595,7 @@ func New(opts Options) (*Scanner, error) {
 			ch.Mode = "fm"
 		}
 		if !ValidMode(ch.Mode) {
-			return nil, fmt.Errorf("conventional: channel %q: mode %q must be fm|nfm|am|p25|dmr|nxdn|nxdn48|dstar|ysf", ch.Label, ch.Mode)
+			return nil, fmt.Errorf("conventional: channel %q: mode %q must be fm|nfm|am|p25|dmr|nxdn|nxdn48|dstar|ysf|dpmr", ch.Label, ch.Mode)
 		}
 		if IsDigitalMode(ch.Mode) {
 			if ch.Tone.Mode != "" && ch.Tone.Mode != "none" {
@@ -830,6 +830,14 @@ func buildChannelDetector(ch Channel, sampleHz float64, log *slog.Logger) toneDe
 		// any carrier (issue #1261: an analog FM test tone on the channel
 		// opened a "ysf" call that recorded nothing).
 		if d := NewYSFCallDetector(sampleHz); d != nil {
+			return d
+		}
+		return nil
+	}
+	if ch.Mode == ModeDPMR {
+		// A dpmr channel opens only when the dPMR framer locks onto a
+		// transmission, not on any carrier (issue #1374).
+		if d := NewDPMRCallDetector(sampleHz); d != nil {
 			return d
 		}
 		return nil

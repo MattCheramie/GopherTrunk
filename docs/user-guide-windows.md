@@ -1286,6 +1286,17 @@ scanner:
   real radios send (it could not decode a real transmission before) and is
   checked against the reference firmware D-STAR hotspots run, but it has
   not yet been confirmed on a real D-STAR recording.
+- **dPMR channels open only on a dPMR transmission.** A `dpmr` channel
+  (6.25 kHz dPMR, such as a licence-free dPMR446 handheld on
+  446.1–446.2 MHz) opens once the dPMR framer locks onto a transmission:
+  a sync word followed by a valid control channel. An analog FM signal, an
+  NXDN48 radio (the same modulation, different frames) or noise on the
+  frequency is skipped. It may stay on a `dpmr` channel whose carrier is up
+  for up to a second while it checks. The call closes on the radio's end
+  frame, so the hangtime starts when the transmitter releases.
+- **dPMR is experimental.** The dPMR voice decoder follows ETSI TS 102 658
+  and two decoders that receive dPMR on the air, but it has not yet decoded
+  a real dPMR transmission.
 - **Not available:** `tone`, `decoders`, `nac` and
   `p25_phase1_demod_mode` are rejected on these channels.
 

@@ -892,12 +892,12 @@ func validateConvChannelAt(path string, ch ConvChannelConfig) error {
 		return fmt.Errorf("%s: frequency_hz required", path)
 	}
 	switch ch.Mode {
-	case "", "fm", "nfm", "am", "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf":
+	case "", "fm", "nfm", "am", "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf", "dpmr":
 	default:
-		return fmt.Errorf("%s: mode must be fm|nfm|am|p25|dmr|nxdn|nxdn48|dstar|ysf", path)
+		return fmt.Errorf("%s: mode must be fm|nfm|am|p25|dmr|nxdn|nxdn48|dstar|ysf|dpmr", path)
 	}
 	switch ch.Mode {
-	case "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf":
+	case "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf", "dpmr":
 		// A digital channel carries digital voice: a sub-audible tone gate
 		// and the analog FFSK/MSK data decoders have nothing to listen to.
 		if ch.Tone.Mode != "" && ch.Tone.Mode != "none" {
@@ -1399,7 +1399,7 @@ func convSpecificNAC(s string) (uint64, bool) {
 // voice.
 func isDigitalConvMode(m string) bool {
 	switch m {
-	case "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf":
+	case "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf", "dpmr":
 		return true
 	}
 	return false

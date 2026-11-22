@@ -630,7 +630,7 @@ sdr:
     # squelch_dbfs, noise_squelch, hangtime_ms, tone, talkgroup_id,
     # audio_gain_db, decoders, nac, ...) and every scan-list mode: fm, nfm, am (an am
     # channel squelches on squelch_cn_db, default 12, not squelch_dbfs),
-    # p25 (nac, p25_phase1_demod_mode), dmr, nxdn, nxdn48, dstar, ysf.
+    # p25 (nac, p25_phase1_demod_mode), dmr, nxdn, nxdn48, dstar, ysf, dpmr.
     # gain and device do not apply (every tap shares this dongle's gain
     # and centre). P25 channels may share a frequency when each has its
     # own nac (not F7E/F7F); the other digital modes cannot. Each
@@ -1662,11 +1662,12 @@ scanner:
   #   # the same power squelch, decoded by that protocol's voice chain. A
   #   # DMR repeater's two timeslots: the slot that carries voice first is
   #   # recorded. ysf decodes V/D mode 2 (DN) only. nxdn is the 12.5 kHz
-  #   # NXDN96 mode, nxdn48 the 6.25 kHz NXDN48 mode. D-STAR and YSF voice
-  #   # decode is experimental (unverified on air).
+  #   # NXDN96 mode, nxdn48 the 6.25 kHz NXDN48 mode. dpmr (#1374) is dPMR on
+  #   # a 6.25 kHz channel, e.g. a dPMR446 handheld (446.1-446.2 MHz). D-STAR,
+  #   # YSF and dPMR voice decode is experimental (unverified on air).
   #   - label: "DMR Rptr"
   #     frequency_hz: 442387500
-  #     mode: dmr                   # dmr | nxdn | nxdn48 | dstar | ysf
+  #     mode: dmr                   # dmr | nxdn | nxdn48 | dstar | ysf | dpmr
   #     squelch_dbfs: -50
   #   # An NXDN channel whose radios use the built-in 15-bit scrambler
   #   # (Kenwood / Icom "scrambler" privacy, #1261): list the keys and the

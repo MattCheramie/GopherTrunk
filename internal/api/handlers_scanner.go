@@ -340,9 +340,9 @@ func (s *Server) handleScannerManualTune(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	switch req.Mode {
-	case "", "fm", "nfm", "am", "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf":
+	case "", "fm", "nfm", "am", "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf", "dpmr":
 	default:
-		s.writeError(w, http.StatusBadRequest, "mode must be fm, nfm, am, p25, dmr, nxdn, nxdn48, dstar or ysf")
+		s.writeError(w, http.StatusBadRequest, "mode must be fm, nfm, am, p25, dmr, nxdn, nxdn48, dstar, ysf or dpmr")
 		return
 	}
 	if req.SquelchOpenMs < 0 || req.SquelchOpenMs > 1000 {
