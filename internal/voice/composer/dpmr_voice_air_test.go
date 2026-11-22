@@ -225,3 +225,67 @@ func TestDPMRVoiceChainIgnoresOtherCarriers(t *testing.T) {
 		}
 	}
 }
+
+// dpmrChainFrames runs IQ through the voice chain's front end, receiver and
+// framer the way runDPMRVoiceChain does, chunk by chunk, re-arming the timing
+// acquisition between chunks unless rearm is false, and counts the vocoder
+// frames sent that came out bit-exact.
+func dpmrChainFrames(iq []complex64, sent [][]byte, rearm bool) int {
+	want := map[string]int{}
+	for _, s := range sent {
+		want[string(s)]++
+	}
+	exact := 0
+	tc := dpmr.NewTrafficChannel(func(frames []dpmr.TCHFrame) {
+		for _, f := range frames {
+			if want[string(f.Payload)] > 0 {
+				want[string(f.Payload)]--
+				exact++
+			}
+		}
+	})
+	fe := newDPMRVoiceFrontEnd(48_000, 12_500)
+	rx := newDPMRVoiceReceiver(fe.OutRateHz(), func(d []uint8, base int) { tc.Process(d, base) })
+	if rearm {
+		rx.ArmTimingAcquisition()
+	}
+	for i := 0; i < len(iq); i += 4096 {
+		rx.Process(fe.Process(nil, iq[i:min(i+4096, len(iq))]))
+		if rearm {
+			rearmDPMRTiming(rx, tc)
+		}
+	}
+	return exact
+}
+
+// TestDPMRVoiceChainDecodesAtEveryTimingPhase (issue #1374): the chain starts
+// at a grant on a carrier that is already up, at an arbitrary point in its
+// symbol timing, and a re-key within hangtime comes up at a new one after
+// dead air. Two overs, the second shifted by a fraction of a symbol against
+// the first, must both decode from every start phase. Without the timing
+// acquisition the chain decoded nothing of a call from about one start
+// phase in four.
+func TestDPMRVoiceChainDecodesAtEveryTimingPhase(t *testing.T) {
+	r := rand.New(rand.NewSource(25))
+	first, sentA := dpmrAirTransmission(r, 5, false)
+	second, sentB := dpmrAirTransmission(r, 5, false)
+	a := dpmrAir(r, first, 300, false, 30)
+	b := dpmrAir(r, second, 300, false, 30)
+	sent := append(append([][]byte(nil), sentA...), sentB...)
+	worstOld := len(sent)
+	for delay := 0; delay < 20; delay++ { // 20 samples = one symbol at 48 kHz
+		iq := append(make([]complex64, delay), a...)
+		iq = append(iq, make([]complex64, 48_000+(delay*7)%20)...) // 1 s of dead air, then a new phase
+		iq = append(iq, b...)
+		got := dpmrChainFrames(iq, sent, true)
+		// Each over may lose its first superframe to the receiver settling.
+		if got < len(sent)-32 {
+			t.Errorf("start %d samples later: %d of %d vocoder frames", delay, got, len(sent))
+		}
+		worstOld = min(worstOld, dpmrChainFrames(iq, sent, false))
+	}
+	if worstOld > len(sent)/2 {
+		t.Errorf("without the timing acquisition the worst start phase still decoded %d of %d frames; the test no longer shows the defect", worstOld, len(sent))
+	}
+	t.Logf("worst start phase without the timing acquisition: %d of %d frames", worstOld, len(sent))
+}
