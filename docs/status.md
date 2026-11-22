@@ -148,9 +148,17 @@ The inner FEC layers still pending real-air validation:
   capture. The same pass fixed the shared Gardner timing loop (it settled on
   the zero crossing, closing the eye a few seconds into every Phase 2 call)
   and the Network Status Broadcast parser (it installed a wrong descramble
-  seed). Synthetic- and reference-verified only; `mac_bursts` / `mac_pdus` in
-  the composer's per-call census and the `p25p2 alias ciphertext` log line are
-  the instruments for the next on-air run (#915).
+  seed). That framing is now confirmed on real air: an idle Phase 2 channel in
+  `samples/mmr` and a first reporter's live calls both decode. The layer above
+  it, which says what each decoded message is, was still the older model's and
+  was corrected against SDRTrunk and OP25 (#1364): the opcode table, the
+  grant, grant-update, unit-to-unit, affiliation, registration and Motorola
+  regroup layouts, and the talker of private and patched calls. A call's
+  encryption algorithm and key are also read from the voice bursts (the ESS),
+  not only from the key-up burst. **Not yet confirmed on air:** a talker alias
+  from a live Phase 2 call, the ESS, and yield on a weak signal. `mac_bursts`
+  / `mac_pdus` in the composer's per-call census and the `p25p2 alias
+  ciphertext` log line are the instruments for the next on-air run.
 - **DMR 2-slot interleaved voice — now the Tier II conventional &
   Tier III default (issue #644).** A DMR carrier is 2-slot TDMA, so a real
   outbound stream interleaves both timeslots' bursts. The single-slot

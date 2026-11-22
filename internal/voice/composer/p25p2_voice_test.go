@@ -536,9 +536,9 @@ func TestComposerP25Phase2DropsOutOfSetEncryptionSync(t *testing.T) {
 	c := &Composer{bus: bus, log: discardLogger()}
 
 	// Out-of-set algid (bit-error smear) — must be dropped.
-	c.publishP25Phase2CallEncryption("VOICE-1", p25p2.EncryptionSync{AlgorithmID: 0x37, KeyID: 0xABCD})
+	c.publishP25Phase2CallEncryption("VOICE-1", p25p2.EncryptionSync{AlgorithmID: 0x37, KeyID: 0xABCD}, nil)
 	// Valid AES-256 — must publish.
-	c.publishP25Phase2CallEncryption("VOICE-1", p25p2.EncryptionSync{AlgorithmID: 0x84, KeyID: 0x1234})
+	c.publishP25Phase2CallEncryption("VOICE-1", p25p2.EncryptionSync{AlgorithmID: 0x84, KeyID: 0x1234}, nil)
 
 	var got []trunking.CallEncryption
 	deadline := time.After(500 * time.Millisecond)
@@ -640,6 +640,14 @@ func TestComposerP25Phase2CallCensusAlwaysFires(t *testing.T) {
 	if !strings.Contains(out, "air_bursts=0") {
 		t.Fatalf("census must report air_bursts=0 for a zero-IQ call, got:\n%s", out)
 	}
+	// A call that framed nothing must say what reached the chain at all
+	// (issue #1364: one tap logged air_bursts=0 on a carrier another tap
+	// framed, and the line could not tell a starved chain from a deaf one).
+	for _, want := range []string{"first_burst_ms=-1", "iq_seconds=", "dibits="} {
+		if !strings.Contains(out, want) {
+			t.Errorf("census is missing %q, got:\n%s", want, out)
+		}
+	}
 }
 
 // TestComposerP25Phase2CallCensusCountsMAC confirms the census counters
@@ -688,6 +696,12 @@ func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 	}
 	if strings.Contains(out, "mac_pdus=0") {
 		t.Fatalf("census reported mac_pdus=0 despite MAC signalling in the stream, got:\n%s", out)
+	}
+	// Where the voice FEC corrections fell, and the ESS count.
+	for _, want := range []string{"voice_errs_by_frame=0/0/0/0", "voice_errs_by_timeslot=0/0/0/0/0", "ess_syncs="} {
+		if !strings.Contains(out, want) {
+			t.Errorf("census is missing %q, got:\n%s", want, out)
+		}
 	}
 	if !strings.Contains(out, "duid_"+p25p2.DUIDFACCHScrambled.String()+"=") {
 		t.Fatalf("census missing duid_%s bucket, got:\n%s", p25p2.DUIDFACCHScrambled, out)

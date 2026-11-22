@@ -69,20 +69,21 @@ func TestStrictValidationKeepsKnownOpcode(t *testing.T) {
 
 func TestOpcodeIsKnownCoversDocumentedConstants(t *testing.T) {
 	known := []Opcode{
-		OpGroupVoiceChannelUserAbbreviated, OpMACEnd, OpMACIdle, OpMACHangtime, OpMACActive,
+		OpGroupVoiceChannelUserAbbreviated, OpUnitToUnitVoiceChannelUserAbbreviated,
 		OpGroupVoiceChannelGrant, OpGroupVoiceChannelGrantUpdate,
-		OpUnitToUnitGrantUpdateAbbreviated, OpUnitToUnitVoiceChannelGrant,
+		OpGroupVoiceChannelGrantExplicit, OpUnitToUnitVoiceChannelGrant,
+		OpUnitToUnitVoiceChannelGrantUpdate, OpSynchronizationBroadcast,
 		OpNetworkStatusBroadcastUpdate, OpRFSSStatusBroadcastUpdate,
+		// A manufacturer-specific opcode cannot be judged without its MFID.
+		0x80, 0x91,
 	}
 	for _, o := range known {
 		if !o.IsKnown() {
 			t.Errorf("Opcode %#x should be known", uint8(o))
 		}
 	}
-	if OpUnknown.IsKnown() {
-		t.Errorf("OpUnknown should NOT be known")
-	}
-	for _, o := range []Opcode{0x10, 0x7E, 0x80, 0xC0} {
+	// Opcodes neither reference defines.
+	for _, o := range []Opcode{0x04, 0x06, 0x4D, 0x7E, 0xC1, 0xFF} {
 		if o.IsKnown() {
 			t.Errorf("Opcode %#x should NOT be known", uint8(o))
 		}

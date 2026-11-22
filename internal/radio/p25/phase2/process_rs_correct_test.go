@@ -195,7 +195,7 @@ func TestRSCorrectRejectsBeyondRadius(t *testing.T) {
 // PDU that injects a bogus source RID (issue #915 / #924). The same corrupted
 // codeword with a known opcode is accepted.
 func TestRSCorrectKnownOpcodeGate(t *testing.T) {
-	const unknownOpcode = 0x5A // not in Opcode.IsKnown()
+	const unknownOpcode = 0x5B // not in Opcode.IsKnown()
 	if Opcode(unknownOpcode).IsKnown() {
 		t.Fatalf("test precondition: opcode 0x%02X unexpectedly recognised", unknownOpcode)
 	}

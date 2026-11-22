@@ -37,12 +37,17 @@ func TestMACPDUParseEmpty(t *testing.T) {
 }
 
 func TestMACPDUIsIdle(t *testing.T) {
+	// Fill is idle. 0x02 / 0x03 / 0x05 are real messages (the older opcode
+	// table took them for MAC_END / MAC_IDLE / MAC_HANGTIME, which are PDU
+	// types, and a control channel went quiet on them).
 	cases := map[Opcode]bool{
-		OpMACIdle:                          true,
-		OpMACHangtime:                      true,
-		OpMACEnd:                           true,
-		OpGroupVoiceChannelUserAbbreviated: false,
-		OpGroupVoiceChannelGrant:           false,
+		OpNullInformation:                       true,
+		OpNullAvoidZeroBias:                     true,
+		OpUnitToUnitVoiceChannelUserAbbreviated: false,
+		OpTelephoneInterconnectVoiceChannelUser: false,
+		OpGroupVoiceChannelGrantUpdateMultiple:  false,
+		OpGroupVoiceChannelUserAbbreviated:      false,
+		OpGroupVoiceChannelGrant:                false,
 	}
 	for op, want := range cases {
 		got := MACPDU{Opcode: op}.IsIdle()
@@ -268,8 +273,8 @@ func TestControlChannelSilentOnIdle(t *testing.T) {
 	defer sub.Close()
 
 	cc := New(Options{Bus: bus, FrequencyHz: 851_000_000})
-	cc.Ingest(MACPDU{Opcode: OpMACIdle})
-	cc.Ingest(MACPDU{Opcode: OpMACHangtime})
+	cc.Ingest(MACPDU{Opcode: OpNullInformation})
+	cc.Ingest(MACPDU{Opcode: OpNullAvoidZeroBias})
 
 	select {
 	case ev := <-sub.C:

@@ -12,7 +12,6 @@ import (
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/p25"
 	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
@@ -47,10 +46,6 @@ type ControlChannel struct {
 	proc *processState
 	air  *airState
 
-	// aliasAsm reassembles multi-fragment talker-alias MAC PDUs into
-	// a radio's display name. Self-synchronised (its own mutex).
-	aliasAsm *TalkerAliasAssembler
-
 	mu               sync.Mutex
 	locked           bool
 	strictValidation bool
@@ -80,12 +75,6 @@ type ControlChannel struct {
 	// can resolve a voice grant's (ChannelID, ChannelNumber) into a
 	// downlink frequency. Guarded by mu.
 	bandPlan BandPlan
-	// lastEncSync holds the most recently ingested Encryption Sync
-	// (Algorithm ID + Key ID); publishGrant attaches it to an
-	// encrypted grant so encrypted calls surface which algorithm/key
-	// they use. Guarded by mu.
-	lastEncSync EncryptionSync
-	hasEncSync  bool
 	// Camped-site identity accumulated from the control channel's
 	// status broadcasts: siteRFSS / siteSite come from the RFSS Status
 	// Broadcast (opcode 0xFA), netWACN / netSysID / nac from the
@@ -93,7 +82,7 @@ type ControlChannel struct {
 	// per spec). Stamped onto grant / affiliation / registration events
 	// so consumers can label them by serving site (issue #698). The
 	// Phase 2 MAC has no NetworkModel — a simple last-seen cache (like
-	// bandPlan / lastEncSync above) is sufficient. Guarded by mu.
+	// bandPlan above) is sufficient. Guarded by mu.
 	siteRFSS uint8
 	siteSite uint8
 	netWACN  uint32
@@ -639,7 +628,6 @@ func New(opts Options) *ControlChannel {
 		systemName: opts.SystemName,
 		freqHz:     opts.FrequencyHz,
 		now:        now,
-		aliasAsm:   NewTalkerAliasAssembler(now),
 	}
 }
 
@@ -697,27 +685,12 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 			"base_hz", u.BaseHz, "spacing_hz", u.SpacingHz,
 			"tdma", u.AccessTDMA, "slots_per_carrier", u.SlotsPerCarrier)
 	}
-	if es, ok := p.AsEncryptionSync(); ok && p25.AlgorithmKnown(es.AlgorithmID) {
-		// Validity gate (#924): a bit-errored MAC Encryption Sync decodes to an
-		// Algorithm ID outside the TIA-102 registry (the field-observed smear
-		// across 0x00-0xFF, one Key ID per call). Refusing to store an out-of-set
-		// sync keeps a single mis-decode from poisoning lastEncSync and being
-		// attached to every subsequent encrypted grant in publishGrant — the
-		// same gate the voice composer applies before publishing CallEncryption.
-		c.mu.Lock()
-		c.lastEncSync = es
-		c.hasEncSync = true
-		c.mu.Unlock()
-	}
 	if pg, ok := p.AsMotorolaPatchGroup(); ok {
 		members := make([]uint32, len(pg.Patched))
 		for i, m := range pg.Patched {
 			members[i] = uint32(m)
 		}
 		c.publishPatch(uint32(pg.SuperGroup), members, "motorola", true)
-	}
-	if hr, ok := p.AsHarrisRegroup(); ok {
-		c.publishPatch(uint32(hr.RegroupGroup), nil, "harris", true)
 	}
 	if super, ok := p.AsMotorolaPatchDelete(); ok {
 		c.publishPatch(super, nil, "motorola", false)
@@ -727,11 +700,6 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 	}
 	if u, ok := p.AsUnitRegistrationResponse(); ok {
 		c.publishUnitRegistration(u)
-	}
-	if f, ok := p.AsTalkerAliasFragment(); ok {
-		if alias, src, complete := c.aliasAsm.Add(f); complete {
-			c.publishTalkerAlias(src, alias)
-		}
 	}
 	if p.IsIdle() {
 		return
@@ -754,15 +722,23 @@ func (c *ControlChannel) Ingest(p MACPDU) {
 	if g, ok := p.AsGroupVoiceChannelGrant(); ok {
 		c.publishGrant(g, p.Opcode, uint32(g.GroupAddress))
 	}
+	// A grant update repeats the site's calls in progress: the way a
+	// receiver that missed a grant (or tuned in after it) still finds the
+	// call. Published like the Phase 1 GRP_V_CH_GRANT_UPDT, as a grant with
+	// no source radio.
+	if updates, ok := p.AsGroupVoiceChannelGrantUpdates(); ok {
+		for _, g := range updates {
+			c.publishGrant(g, p.Opcode, uint32(g.GroupAddress))
+		}
+	}
 	if u, ok := p.AsUnitToUnitVoiceChannelGrant(); ok {
 		// A unit-to-unit (private) call is still a voice grant the
 		// engine must tune; map the 24-bit target unit into GroupID so
 		// the recorder files it under the destination.
 		c.publishGrant(GroupVoiceChannelGrant{
-			ServiceOptions: u.ServiceOptions,
-			ChannelID:      u.ChannelID,
-			ChannelNumber:  u.ChannelNumber,
-			SourceID:       u.SourceID,
+			ChannelID:     u.ChannelID,
+			ChannelNumber: u.ChannelNumber,
+			SourceID:      u.SourceID,
 		}, p.Opcode, u.TargetID)
 	}
 }
@@ -914,20 +890,10 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 	ts := c.bandPlan.Timeslot(g.ChannelID, g.ChannelNumber)
 	c.mu.Unlock()
 	// Decode the SVC_OPTIONS byte for the emergency + protected
-	// (encryption) indicators. When the call is protected and an
-	// Encryption Sync has been seen, attach its Algorithm ID / Key ID
-	// so the recorder + API can surface which crypto the call uses.
+	// (encryption) indicators. A grant does not say which algorithm or key
+	// a protected call uses: those ride the traffic channel (MAC_PTT and
+	// the voice bursts' ESS), where the voice chain reads them.
 	so := ServiceOptions(g.ServiceOptions)
-	var algID uint8
-	var keyID uint16
-	if so.Encrypted() {
-		c.mu.Lock()
-		if c.hasEncSync {
-			algID = c.lastEncSync.AlgorithmID
-			keyID = c.lastEncSync.KeyID
-		}
-		c.mu.Unlock()
-	}
 	// Snapshot the per-channel FEC config so the voice composer can run
 	// the same MAC dispatch on MAC subframes that interleave with voice
 	// on the traffic channel — that path is how talker-alias fragments
@@ -963,8 +929,6 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 			Encrypted:       so.Encrypted(),
 			Emergency:       so.Emergency(),
 			Priority:        so.Priority(),
-			AlgorithmID:     algID,
-			KeyID:           keyID,
 			P25Phase2Decode: dec,
 			At:              c.now(),
 		},
@@ -975,9 +939,6 @@ func (c *ControlChannel) publishGrant(g GroupVoiceChannelGrant, op Opcode, group
 		"src", g.SourceID,
 		"channel_id", g.ChannelID, "channel_num", g.ChannelNumber,
 		"freq_hz", freq, "ts", ts, "enc", so.Encrypted(), "emer", so.Emergency(),
-	}
-	if so.Encrypted() && (algID != 0 || keyID != 0) {
-		args = append(args, "alg", p25.FormatAlgorithm(algID), "key", keyID)
 	}
 	c.log.Debug("p25/phase2 grant", args...)
 }
@@ -1053,26 +1014,6 @@ func (c *ControlChannel) publishUnitRegistration(u UnitRegistrationResponse) {
 			At:       c.now(),
 		},
 	})
-}
-
-// publishTalkerAlias publishes an events.KindTalkerAlias once a radio's
-// display name has been fully reassembled from its fragment MAC PDUs.
-func (c *ControlChannel) publishTalkerAlias(sourceID uint32, alias string) {
-	if c.bus == nil {
-		return
-	}
-	c.bus.Publish(events.Event{
-		Kind: events.KindTalkerAlias,
-		Payload: trunking.TalkerAlias{
-			System:   c.systemName,
-			Protocol: "p25-phase2",
-			SourceID: sourceID,
-			Alias:    alias,
-			At:       c.now(),
-		},
-	})
-	c.log.Debug("p25/phase2 talker alias",
-		"system", c.systemName, "src", sourceID, "alias", alias)
 }
 
 // resolveFreq looks the (channelID, channelNumber) pair up in the band

@@ -18,6 +18,7 @@ package sigfollow
 
 import (
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -42,7 +43,9 @@ import (
 // System is already set), so they cannot be published identically by a
 // follower that has no bound call. Callers handle those via the
 // OnCallSource / OnCallEncryption hooks: the voice composer wires them to
-// its engine-backfill publishers; the follower leaves them nil.
+// its engine-backfill publishers; the follower leaves them nil. The
+// encryption sync comes from MAC_PTT here; the copy that rides the voice
+// bursts (p25p2.ESSTracker) is the voice chain's to read.
 type MACDispatcher struct {
 	bus       *events.Bus
 	log       *slog.Logger
@@ -53,8 +56,9 @@ type MACDispatcher struct {
 	motorolaAliasAsm *p25p2.MotorolaAliasAssembler
 	macSeen          map[uint32]struct{}
 
-	onCallSource     func(p25p2.GroupVoiceChannelUser)
-	onCallEncryption func(p25p2.EncryptionSync)
+	onCallSource      func(p25p2.GroupVoiceChannelUser)
+	onCallEncryption  func(p25p2.EncryptionSync)
+	onTransmissionEnd func()
 }
 
 // MACDispatcherOptions configures a MACDispatcher.
@@ -79,6 +83,10 @@ type MACDispatcherOptions struct {
 	// PDUs. Optional; nil skips them (the follower's case).
 	OnCallSource     func(p25p2.GroupVoiceChannelUser)
 	OnCallEncryption func(p25p2.EncryptionSync)
+	// OnTransmissionEnd is called for each MAC_END_PTT: the radio released
+	// its PTT. Optional. A transmission ends with several copies; the
+	// handler must tolerate repeats.
+	OnTransmissionEnd func()
 }
 
 // NewMACDispatcher returns a ready dispatcher.
@@ -92,15 +100,16 @@ func NewMACDispatcher(opts MACDispatcherOptions) *MACDispatcher {
 		prefix = "sigfollow"
 	}
 	return &MACDispatcher{
-		bus:              opts.Bus,
-		log:              log,
-		logPrefix:        prefix,
-		system:           opts.System,
-		serial:           opts.Serial,
-		motorolaAliasAsm: p25p2.NewMotorolaAliasAssembler(nil),
-		macSeen:          make(map[uint32]struct{}),
-		onCallSource:     opts.OnCallSource,
-		onCallEncryption: opts.OnCallEncryption,
+		bus:               opts.Bus,
+		log:               log,
+		logPrefix:         prefix,
+		system:            opts.System,
+		serial:            opts.Serial,
+		motorolaAliasAsm:  p25p2.NewMotorolaAliasAssembler(nil),
+		macSeen:           make(map[uint32]struct{}),
+		onCallSource:      opts.OnCallSource,
+		onCallEncryption:  opts.OnCallEncryption,
+		onTransmissionEnd: opts.OnTransmissionEnd,
 	}
 }
 
@@ -109,7 +118,8 @@ func NewMACDispatcher(opts MACDispatcherOptions) *MACDispatcher {
 // LCCH bursts go through p25p2.DecodeAirMAC (RS(63,35) + CRC, descrambled
 // with masks for the scrambled DUIDs; nil masks decode the clear ones only),
 // voice and other bursts are skipped. A MAC_PTT's fixed fields are the
-// call's encryption sync; every other PDU's messages are dispatched. It
+// call's encryption sync and source, a MAC_END_PTT ends the transmission,
+// and every other PDU's messages are dispatched. It
 // returns how many signalling bursts it saw and how many of those decoded
 // CRC-valid — the framing-health pair the per-call census reports (#915).
 func (d *MACDispatcher) DispatchAir(bursts []p25p2.AirBurst, masks *p25p2.AirMasks) (signalling, decoded int) {
@@ -123,8 +133,15 @@ func (d *MACDispatcher) DispatchAir(bursts []p25p2.AirBurst, masks *p25p2.AirMas
 			continue
 		}
 		decoded++
+		if _, ok := m.EndPTT(); ok {
+			d.noteFirst(m, p25p2.MACPDU{}, "MAC_END_PTT", hex.EncodeToString(m.Bytes))
+			if d.onTransmissionEnd != nil {
+				d.onTransmissionEnd()
+			}
+			continue
+		}
 		if p, ok := m.PTT(); ok {
-			d.noteFirst(m, p25p2.MACPDU{}, hex.EncodeToString(m.Bytes))
+			d.noteFirst(m, p25p2.MACPDU{}, "MAC_PTT", hex.EncodeToString(m.Bytes))
 			if d.onCallEncryption != nil {
 				d.onCallEncryption(p.Encryption)
 			}
@@ -141,7 +158,7 @@ func (d *MACDispatcher) DispatchAir(bursts []p25p2.AirBurst, masks *p25p2.AirMas
 			continue
 		}
 		for _, pdu := range m.Messages() {
-			d.noteFirst(m, pdu, hex.EncodeToString(pdu.Payload))
+			d.noteFirst(m, pdu, pdu.Name(), hex.EncodeToString(pdu.Payload))
 			d.dispatchMessage(pdu)
 		}
 	}
@@ -151,8 +168,9 @@ func (d *MACDispatcher) DispatchAir(bursts []p25p2.AirBurst, masks *p25p2.AirMas
 // noteFirst logs the first message seen per (channel, PDU type, opcode,
 // MFID) on this traffic channel with its bytes: the instrument that tells
 // the next field tester exactly what was on the air (issues #376, #813,
-// #915).
-func (d *MACDispatcher) noteFirst(m p25p2.AirMAC, pdu p25p2.MACPDU, payloadHex string) {
+// #915). name is the message's name under its MFID (MACPDU.Name), or the PDU
+// type for the two PDUs that carry fixed fields and no message.
+func (d *MACDispatcher) noteFirst(m p25p2.AirMAC, pdu p25p2.MACPDU, name, payloadHex string) {
 	key := uint32(m.Channel)<<24 | uint32(m.Type)<<16 | uint32(pdu.Opcode)<<8 | uint32(pdu.MFID)
 	if _, seen := d.macSeen[key]; seen {
 		return
@@ -160,7 +178,8 @@ func (d *MACDispatcher) noteFirst(m p25p2.AirMAC, pdu p25p2.MACPDU, payloadHex s
 	d.macSeen[key] = struct{}{}
 	d.log.Info(d.logPrefix+": p25p2 mac pdu",
 		"system", d.system, "serial", d.serial,
-		"channel", m.Channel, "pdu_type", m.Type, "opcode", pdu.Opcode, "mfid", pdu.MFID,
+		"channel", m.Channel, "pdu_type", m.Type, "opcode", name,
+		"opcode_hex", fmt.Sprintf("%02X", uint8(pdu.Opcode)), "mfid", pdu.MFID,
 		"rs_corrected", m.Corrected, "payload_hex", payloadHex)
 }
 
@@ -174,9 +193,21 @@ func (d *MACDispatcher) dispatchMessage(pdu p25p2.MACPDU) {
 		}
 		return
 	}
-	if es, ok := pdu.AsEncryptionSync(); ok {
-		if d.onCallEncryption != nil {
-			d.onCallEncryption(es)
+	// A unit-to-unit (private) call and a Motorola regroup (patch) call
+	// send their own in-call user message in place of
+	// GROUP_VOICE_CHANNEL_USER, so the talker of either was never read
+	// (issue #1364). The regroup form's service options are not trusted
+	// (see AsMotorolaRegroupVoiceChannelUser); the engine's backfill only
+	// ever adds flags, so leaving them clear loses nothing.
+	if u, ok := pdu.AsUnitToUnitVoiceChannelUser(); ok {
+		if d.onCallSource != nil {
+			d.onCallSource(p25p2.GroupVoiceChannelUser{ServiceOptions: u.ServiceOptions, SourceID: u.SourceID})
+		}
+		return
+	}
+	if u, ok := pdu.AsMotorolaRegroupVoiceChannelUser(); ok {
+		if d.onCallSource != nil {
+			d.onCallSource(p25p2.GroupVoiceChannelUser{GroupAddress: u.SuperGroup, SourceID: u.SourceID})
 		}
 		return
 	}

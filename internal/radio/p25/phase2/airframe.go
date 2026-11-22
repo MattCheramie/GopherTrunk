@@ -299,28 +299,42 @@ func (b AirBurst) Body() []uint8 { return b.Packet[AirISCHDibits:] }
 // 72-bit codeword layout is DMR's, which OP25's p25p2_vf extract_vcw
 // matches bit for bit). totalErrs sums the Golay corrections.
 func ExtractAirVoiceFrames(b AirBurst, masks *AirMasks) (frames [][]byte, totalErrs int) {
+	frames, errs := ExtractAirVoiceFramesDetail(b, masks)
+	for _, e := range errs {
+		totalErrs += e
+	}
+	return frames, totalErrs
+}
+
+// ExtractAirVoiceFramesDetail is ExtractAirVoiceFrames with the Golay
+// corrections of each frame apart: errs[i] belongs to the burst's i-th voice
+// frame. Corrections that pile up in one frame position or one timeslot
+// point at the layout or the descramble mask; corrections spread evenly are
+// the signal.
+func ExtractAirVoiceFramesDetail(b AirBurst, masks *AirMasks) (frames [][]byte, errs []int) {
 	n := b.DUID.VoiceFrames()
 	if n == 0 || masks == nil || len(b.Packet) != AirPacketDibits {
-		return nil, 0
+		return nil, nil
 	}
 	body := b.Body()
 	mask := masks.Slot(b.Slot)
 	frames = make([][]byte, n)
+	errs = make([]int, n)
 	cw := make([]uint8, airVoiceFrameDibits)
 	for i := 0; i < n; i++ {
 		off := airVoiceFrameBody[i]
 		for k := range cw {
 			cw[k] = body[off+k] ^ mask[off+k]
 		}
-		info, errs, err := dmrvoice.DecodeAMBEFrame(framing.DibitsToBits(cw))
-		totalErrs += errs
+		info, e, err := dmrvoice.DecodeAMBEFrame(framing.DibitsToBits(cw))
+		errs[i] = e
 		if err != nil {
 			frames[i] = make([]byte, VoiceFrameBytes)
 			continue
 		}
 		frames[i] = framing.PackBitsMSB(info)
 	}
-	return frames, totalErrs
+	return frames, errs
 }
 
 func packetDUID(packet []uint8) DUID {
