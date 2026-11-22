@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.4.3] — 2026-11-22
+
 ### Added
 - **The daemon warns about config keys that nothing reads.** A section
   indented one level too far, or a misspelled key, used to load without a word
