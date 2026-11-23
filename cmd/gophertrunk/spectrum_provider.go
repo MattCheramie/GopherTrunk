@@ -292,6 +292,16 @@ func (p *spectrumProvider) Tune(serial string, centerHz uint32) error {
 	if p == nil {
 		return errors.New("spectrum: provider not wired")
 	}
+	if _, ok := p.groupPlanFor(serial); ok {
+		return fmt.Errorf("spectrum: %s is an SDR group; its members are never retuned", serial)
+	}
+	for _, plan := range p.groups {
+		for _, m := range plan.Members {
+			if m.Serial == serial {
+				return fmt.Errorf("spectrum: %s is a member of SDR group %q and holds its planned centre; retuning it would leave that slice of the group's span unmonitored", serial, plan.Name)
+			}
+		}
+	}
 	br, ok := p.brokers[serial]
 	if !ok {
 		return fmt.Errorf("spectrum: serial %q is not a known SDR: %w", serial, api.ErrUnknownDevice)
@@ -310,6 +320,9 @@ func (p *spectrumProvider) Tune(serial string, centerHz uint32) error {
 func (p *spectrumProvider) OpenStream(ctx context.Context, serial string, fftSize int, fps float64) (<-chan api.SpectrumFrame, func(), error) {
 	if p == nil {
 		return nil, nil, errors.New("spectrum: provider not wired")
+	}
+	if plan, ok := p.groupPlanFor(serial); ok {
+		return p.openGroupStream(ctx, plan, fftSize, fps)
 	}
 	br, ok := p.brokers[serial]
 	if !ok {

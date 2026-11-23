@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../components/ui/PageHeader";
 import {
   fetchSpectrumDevices,
+  groupMemberAt,
   openSpectrumStream,
   tuneSpectrumDevice,
   type SpectrumDevice,
@@ -72,7 +73,7 @@ export function Spectrum() {
     let cancel = false;
     (async () => {
       try {
-        const list = await fetchSpectrumDevices(cfg);
+        const list = await fetchSpectrumDevices(cfg, { groups: true });
         if (cancel) return;
         setDevices(list);
         setError(null);
@@ -173,9 +174,14 @@ export function Spectrum() {
     return () => window.clearTimeout(t);
   }, [conn, latest, selected]);
 
+  const selectedDevice = devices.find((d) => d.serial === selected);
+  // An sdr.groups panorama: its members hold their planned centres, so
+  // nothing on this view retunes them.
+  const isGroup = selectedDevice?.group === true;
+
   const handleTuneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selected) return;
+    if (!selected || isGroup) return;
     const hz = parseTuneMHz(tuneText);
     if (hz == null) {
       setError(`"${tuneText}" is not a frequency — enter MHz, e.g. 162.550`);
@@ -189,7 +195,6 @@ export function Spectrum() {
     }
   };
 
-  const selectedDevice = devices.find((d) => d.serial === selected);
 
   // Convert a click on the canvas into a centre frequency and post
   // it to the tune endpoint. Maps the click X position back through
@@ -202,7 +207,7 @@ export function Spectrum() {
     // mapping, so click-to-tune works identically on either.
     const canvas = e.currentTarget;
     const frame = latestRef.current;
-    if (!canvas || !frame || !selected) return;
+    if (!canvas || !frame || !selected || isGroup) return;
     const xRatio = cursorXRatio(canvas, e.clientX);
     if (xRatio < 0 || xRatio > 1) return;
     const targetHz = Math.round(xRatioToHz(frame, xRatio));
@@ -263,7 +268,9 @@ export function Spectrum() {
             {devices.length === 0 && <option value="">No SDRs available</option>}
             {devices.map((d) => (
               <option key={d.serial} value={d.serial}>
-                {d.serial} · {d.role}
+                {d.group
+                  ? `${d.serial} · ${d.members?.length ?? 0} SDRs stitched`
+                  : `${d.serial} · ${d.role}`}
               </option>
             ))}
           </select>
@@ -275,12 +282,13 @@ export function Spectrum() {
               aria-label="Tune the SDR to a centre frequency in MHz"
               value={tuneText}
               onChange={(e) => setTuneText(e.target.value)}
-              disabled={!selected}
+              disabled={!selected || isGroup}
+              title={isGroup ? "An SDR group's members hold their planned centres and are never retuned" : undefined}
             />
             <button
               type="submit"
               className="border border-border rounded px-2 py-1 hover:bg-surface"
-              disabled={!selected || tuneText.trim() === ""}
+              disabled={!selected || isGroup || tuneText.trim() === ""}
             >
               Tune
             </button>
@@ -313,12 +321,34 @@ export function Spectrum() {
           {hover
             ? `${formatHz(hover.hz)}${
                 Number.isFinite(hover.db) ? ` · ${hover.db.toFixed(1)} dBFS` : ""
+              }${
+                selectedDevice && isGroup
+                  ? ` · ${groupMemberAt(selectedDevice, hover.hz) ?? ""}`
+                  : ""
               }`
             : ""}
         </span>
       </div>
 
-      <div className="rounded border border-border bg-black overflow-hidden">
+      <div className="relative rounded border border-border bg-black overflow-hidden">
+        {isGroup &&
+          latest &&
+          (selectedDevice?.seams_hz ?? []).map((hz) => {
+            const left =
+              ((hz - (latest.center_hz - latest.sample_rate_hz / 2)) /
+                latest.sample_rate_hz) *
+              100;
+            if (!(left > 0 && left < 100)) return null;
+            return (
+              <div
+                key={hz}
+                data-testid="group-seam"
+                className="pointer-events-none absolute top-0 bottom-0 border-l border-dashed border-white/20"
+                style={{ left: `${left}%` }}
+                title={`Seam between member SDRs at ${formatHz(hz)}`}
+              />
+            );
+          })}
         <canvas
           ref={analyzerRef}
           width={FFT_BINS}
@@ -348,7 +378,9 @@ export function Spectrum() {
         grid every 20 dB). Bottom: waterfall history — {DB_FLOOR} dBFS (cold)
         → {DB_CEIL} dBFS (hot); new frames render at the top and scroll down.
         Hover either view to read the frequency and signal level under the
-        cursor; click anywhere to retune the SDR to that frequency. Bookmark
+        cursor; {isGroup
+          ? "this is a group of SDRs stitched into one view (dashed lines are the seams between members, the hover readout names the member), so click-to-tune is off."
+          : "click anywhere to retune the SDR to that frequency."} Bookmark
         markers ({bookmarkList.length} visible) appear as cyan ticks along the
         top of the waterfall.
       </div>

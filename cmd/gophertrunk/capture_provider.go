@@ -37,7 +37,11 @@ func newCaptureProvider(pool *sdr.Pool, brokers map[string]*iqtap.Broker, log *s
 }
 
 // Devices reuses the spectrum provider's broker walk.
-func (p *captureProvider) Devices() []api.SpectrumDevice { return p.sp.Devices() }
+// The sdr.groups entries are listed too: a capture on a group resolves to
+// the member covering the requested slice (ResolveCaptureGroup).
+func (p *captureProvider) Devices() []api.SpectrumDevice {
+	return append(p.sp.Devices(), p.sp.Groups()...)
+}
 
 // CaptureStream records seconds worth of raw IQ from the named device's broker,
 // handing each chunk to sink as it arrives instead of buffering the whole grab.
