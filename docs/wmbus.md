@@ -175,6 +175,22 @@ the telegram timestamps. The two drift apart whenever IQ is dropped.
   optimisation. Every drop warning rings the terminal bell, which Termux
   turns into a vibration, so you notice it with the phone in a pocket.
 
+  If the drops continue with the screen off, look for the phone's
+  performance or power profile. On the issue #1256 reporter's Samsung S5
+  (LineageOS, Android 11), moving it from "balanced" to "more performance"
+  took three runs (23 Nov 2026, 18.5 minutes, screen switching off on its
+  own) to 0 dropped chunks, where earlier walks lost 20-30 % of the IQ.
+  The setting's name and place differ between Android builds.
+
+**Overlapping telegrams.** Where many meters are in range, one can key up
+while another is still sending. The stronger one then takes over the
+receiver. After v1.4.3 the decoder keeps looking for the start of a new
+telegram while it is still receiving one, so the stronger telegram is
+decoded; before, it was lost and only the weaker one's CRC failure was
+logged. The weaker telegram still fails from the point the other one began.
+On the 23 Nov 2026 run in issue #1256, 4 of 721 saved telegrams had a
+stronger meter hidden in them this way.
+
 **CPU.** A meter is on the air for a few milliseconds every few minutes, so
 nearly all of the IQ is noise. After v1.4.0 the decoder watches the
 channel's power and demodulates only the IQ around a burst that rises out

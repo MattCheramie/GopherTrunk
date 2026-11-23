@@ -40,6 +40,18 @@ for tagged releases.
   - `ess_syncs`: encryption syncs read from the voice bursts.
 
 ### Fixed
+- **wM-Bus: a telegram that starts while another is being received is no
+  longer lost** (#1256). The framer stopped looking for a new telegram once it
+  had found one, until that one's last byte. Where many meters are in range,
+  one keys up during another, the stronger signal takes over the receiver, and
+  the stronger telegram went unheard while only the weaker one's CRC failure
+  was logged. A frame that starts inside another is now framed too, and
+  delivered when its header passes its CRC (a chance match inside the other
+  frame's data does not). On the reporter's 23 Nov run (721 saved telegrams)
+  two hidden telegrams now decode CRC-valid and two more, cut off by the end of
+  their snippets, have a valid header; all four are meters the run also hears
+  on their own. CRC-valid frames when the snippets are replayed in sequence
+  go from 630 to 639, with no more garbled-header frames than before (31).
 - **The dPMR Mode 3 control channel could not decode a real beacon** (#1374).
   It was built on an invented model: 48-bit sync words that are not dPMR's, an
   80-bit "CSBK" dPMR does not have, and a channel-number band plan, all agreeing

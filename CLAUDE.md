@@ -1490,6 +1490,22 @@ confirmation before any close-as-completed.
   from config.example.yaml. One call ended at the tracker's ±3 kHz bound after decoding cleanly (406 frames):
   an unmodulated carrier passes the variance gate and pulls it there (shown synthetically, unconfirmed
   on air); `carrier_offset_at_voice_hz` / `iq_samples` in the chain-ended line are the instrument.
+- **wM-Bus (#1256, 23 Nov car run, v1.4.3): 0 dropped chunks once the phone's PERFORMANCE PROFILE was
+  raised (LineageOS "balanced" → "more performance"; the screen still switched off), and a collision
+  class found in the failures.** 721 snippets replay 620 cold / 629 live (phone 632). The 89 failures
+  split: ~40 weak (7.7–12 dB SNR, the EIE smoke detectors at the third site), ~25 at the central site
+  with other transmissions all round the telegram (8070 bursts for 155 frames in 9 min), and a handful
+  where the channel power STEPS UP 6–15 dB mid-frame and stays up: a stronger meter keyed up inside the
+  weaker telegram. The `Framer` did not hunt while busy, so that stronger telegram was never framed.
+  `framerBank` (`framerbank.go`) keeps one framer hunting at all times (≤3 frames in flight per
+  polarity); a frame synced while another was in flight is delivered only if its HEADER block passes
+  CRC (a chance 16-chip access-code match inside data is 1/65536 per chip). Measured: 2 snippets now
+  yield a hidden CRC-valid telegram, 2 more a valid header cut off by the snippet end, all four meters
+  heard elsewhere in the run; sequence CRC-valid 630 → 639, bad-header frames unchanged at 31, CPU
+  unchanged. Pinned failing-first by `TestReceiverRealAirTelegramInsideAnother` (two committed
+  snippets). Snippets end ~5 ms after the logged frame, so they UNDER-count this class: a live run
+  completes the stronger telegram. EIE smoke-detector payloads are AES-CBC, so diffing a failed EIE
+  telegram against a valid one of the same meter shows the ciphertext, not bit errors; diff QDS only.
 - **The single-channel decoders (APRS/AIS/DSC/POCSAG/FLEX/M17/MDC1200/FleetSync) ran their FM
   discriminator on the SDR's FULL-RATE IQ with no channel filter (#1316) — every APRS frame on
   the reporter's 144.39 MHz dongle was garbage with `fcs_ok=false`.** An FM discriminator's

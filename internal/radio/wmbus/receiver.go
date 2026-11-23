@@ -172,7 +172,7 @@ type Receiver struct {
 	toneM   [corrLen][2]float64
 	toneAge int
 
-	framers [2]*Framer // normal, inverted
+	framers [2]*framerBank // normal, inverted
 	stats   ReceiverStats
 	samples int64
 
@@ -218,7 +218,7 @@ func NewReceiver(o ReceiverOptions) (*Receiver, error) {
 	}
 	for i := range r.framers {
 		inv := i == 1
-		r.framers[i] = NewFramer(func(f Frame) {
+		r.framers[i] = newFramerBank(func(f Frame) {
 			off := r.carrierHz(inv)
 			if f.CRCOK && !inv {
 				r.afc(off)
@@ -304,14 +304,8 @@ func (r *Receiver) Stats() ReceiverStats {
 	s.Samples = r.samples
 	s.CarrierOffsetHz, s.CarrierLocked = r.afcHz, r.afcLocked
 	s.Gated = r.gate != nil
-	for _, f := range r.framers {
-		fs := f.Stats()
-		s.Framer.Syncs += fs.Syncs
-		s.Framer.Frames += fs.Frames
-		s.Framer.CRCOK += fs.CRCOK
-		s.Framer.CodingError += fs.CodingError
-		s.Framer.BadLength += fs.BadLength
-		s.Framer.Repaired += fs.Repaired
+	for _, b := range r.framers {
+		b.stats(&s.Framer)
 	}
 	return s
 }
@@ -414,7 +408,7 @@ func (r *Receiver) sample(x complex64) {
 		r.ringN++
 		return
 	}
-	busy := r.framers[0].Busy() || r.framers[1].Busy()
+	busy := r.busy()
 	if !busy || !r.frozen {
 		r.thr = r.rSum / thresholdWindow
 	}
@@ -574,8 +568,8 @@ func (r *Receiver) decide(limit float64) {
 		// |x| is how far the decision sat from the threshold: the
 		// reliability a C mode CRC repair ranks bits by.
 		rel := float32(math.Abs(x))
-		r.framers[0].PushSoft(chip, rel)
-		r.framers[1].PushSoft(chip^1, rel)
+		r.framers[0].push(chip, rel)
+		r.framers[1].push(chip^1, rel)
 		r.tSample += r.spc
 	}
 }

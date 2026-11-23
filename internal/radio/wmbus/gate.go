@@ -222,7 +222,7 @@ func (g *burstGate) flush(r *Receiver) {
 
 // busy reports that a framer is inside a frame.
 func (r *Receiver) busy() bool {
-	return r.framers[0].Busy() || r.framers[1].Busy()
+	return r.framers[0].busy() || r.framers[1].busy()
 }
 
 // skip accounts for input the demodulator did not see: the sample counter
