@@ -1209,6 +1209,17 @@ confirmation before any close-as-completed.
   import, so when this fires, look at what got slower on the decode side (the DMO colour brute
   force above was one such cause) — and check for the companion
   `ccdecoder: decode can't keep up with real time` WARN, which confirms CPU rather than network.
+- **`sdr.groups` (SDR ganging, Nov 2026) is a PLANNING layer, not a combiner.** Members are
+  `role: wideband` devices naming the group; `config.ExpandSDRGroups` turns each into a plain
+  wideband device (planned centre + its share of the channels) and `NewDaemonWithPath` builds from
+  that expanded copy, so engines, voice taps, same-carrier taps and reacquire run unchanged. `d.cfg`
+  keeps the operator's config as written (the API serves and writes it back) — never write the
+  expansion back. A channel-less member still needs an engine (`AllowNoChannels`) or nothing streams
+  its broker and its voice taps go deaf. Groups are OFF the default `/spectrum/devices` list
+  (`?groups=1`): eight panels open one receiver per device and would hit `group:<name>`. Member IQ is
+  never combined (independent RTL clocks); coherent stitching is design-only
+  (`docs/design/coherent-sdr-stitching.md`), gated on `TestSDRGroupSeamReplay` reporting a locked
+  seam on real shared-clock hardware. Not yet run on a real multi-stick rig (#764/#771).
 - **`sdr.input_sample_rate` is a systemwide pre-decimation stage at the Device boundary.** When
   set (and an exact integer multiple of `sdr.sample_rate`), the hardware runs at the higher NATIVE
   rate and `internal/sdr/decimate.Device` integer-decimates (polyphase anti-alias FIR,
