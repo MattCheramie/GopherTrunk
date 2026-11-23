@@ -1080,6 +1080,15 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 	gate, _ := det.(callGate)
 	started := s.opts.Now()
 	gateExtended := false
+	// gateSamples counts the samples the gate has processed, and
+	// gateSamplesAtExtend its count at the last extension. minDwell is how
+	// much AIR the gate needs; the window's timer is wall-clock, so on a CPU
+	// slower than real time (a Pi under load, -race on CI) the wall clock
+	// ran out before the gate had seen its signal and a real call was
+	// skipped. The window is extended to minDwell of signal time, again for
+	// as long as samples keep arriving to fill it.
+	var gateSamples int64
+	gateSamplesAtExtend := int64(-1)
 	for {
 		select {
 		case <-ctx.Done():
@@ -1090,10 +1099,17 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 				deadline.Reset(dataScanHoldStep)
 				continue
 			}
-			if gate != nil && gateExtended {
-				if rest := gate.minDwell() - s.opts.Now().Sub(started); rest > 0 {
+			if gate != nil && gateExtended && gateSamples > gateSamplesAtExtend {
+				rest := gate.minDwell() - s.opts.Now().Sub(started)
+				if s.opts.SampleRateHz > 0 {
+					heard := time.Duration(float64(gateSamples) / s.opts.SampleRateHz * float64(time.Second))
+					if r := gate.minDwell() - heard; r > rest {
+						rest = r
+					}
+				}
+				if rest > 0 {
+					gateSamplesAtExtend = gateSamples
 					deadline.Reset(rest)
-					gateExtended = false // one extension
 					continue
 				}
 			}
@@ -1143,6 +1159,7 @@ func (s *Scanner) scanWindow(ctx context.Context, idx int, ch Channel, stream <-
 			}
 			if gate != nil {
 				present := gate.Process(iq)
+				gateSamples += int64(len(iq))
 				if powerOK {
 					gateExtended = true
 				}

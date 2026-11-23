@@ -13,7 +13,6 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier2"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dpmr"
-	dpmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dpmr/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dstar"
 	dstarrx "github.com/MattCheramie/GopherTrunk/internal/radio/dstar/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
@@ -1118,12 +1117,18 @@ func (p *ysfPipeline) Process(iq []complex64) { p.rx.Process(iq) }
 func (p *ysfPipeline) Reset()                 { p.rx.Reset() }
 func (p *ysfPipeline) Close() error           { return nil }
 
-// newDPMRPipeline wires internal/radio/dpmr/receiver into
-// dpmr.ControlChannel.Process. The receiver's DibitSink forwards
-// dibits + baseIdx straight into the state machine's Process
-// method (sync detect → 80-bit CSBK slice → CSBKFromBits →
-// Ingest), which publishes events.KindCCLocked +
-// events.KindGrant on the bus.
+// newDPMRPipeline frames a dPMR Mode 3 beacon channel (#1374):
+// dpmr.ControlChannel locks on the beacon's System Identity Code and
+// publishes each Goto Channel for a voice call as a "dpmr" grant.
+//
+// The receiver is the NXDN one at dPMR's 2400 symbols a second, as the dPMR
+// voice chain runs it (composer.newDPMRVoiceReceiver): the two are one
+// physical layer, and dPMR's inner symbols sit only 350 Hz from the carrier,
+// so the carrier tracking a dongle's error needs is not optional. The plain
+// dPMR receiver this pipeline used had none. The feed-forward timing
+// acquisition is armed at start and again whenever the beacon framer is not
+// locked: from about one sub-symbol start phase in four the Mueller-Müller
+// loop never pulled a 2400-baud stream in (measured on the voice chain).
 func newDPMRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	cc := dpmr.New(dpmr.Options{
 		Bus:         opts.Bus,
@@ -1131,29 +1136,62 @@ func newDPMRPipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 		SystemName:  opts.SystemName,
 		FrequencyHz: opts.FrequencyHz,
 	})
-	rx := dpmrrx.New(dpmrrx.Options{
+	rx := nxdnrx.New(nxdnrx.Options{
 		SampleRateHz: opts.SampleRateHz,
-		// dPMR Mode 3 peak deviation — half of P25 / DMR / YSF,
-		// matching the 6.25 kHz channel spacing. Calibrates
-		// slicer thresholds against the FM-discriminator output
-		// level so live captures slice correctly.
-		DeviationHz: 900.0,
+		SymbolRateHz: nxdnrx.SymbolRateNXDN48,
+		// ETSI TS 102 658 clause 14.2.2.1: the outer symbols are +-1050 Hz.
+		DeviationHz:           dpmrDeviationHz,
+		EnableAFC:             true,
+		EnableCarrierTracking: true,
+		EnableChannelFilter:   true,
 		DibitSink: func(dibits []uint8, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
 			cc.Process(dibits, baseIdx)
 		},
 	})
-	return &dpmrPipeline{rx: rx, cc: cc}, nil
+	rx.ArmTimingAcquisition()
+	return &dpmrPipeline{
+		rx: rx, cc: cc, log: opts.Log, system: opts.SystemName,
+		guard: resyncGuard{rateHz: opts.SampleRateHz, window: dpmrResyncWindow},
+	}, nil
 }
+
+// dpmrDeviationHz is the deviation of dPMR's outer symbols.
+const dpmrDeviationHz = 1050.0
 
 type dpmrPipeline struct {
-	rx *dpmrrx.Receiver
-	cc *dpmr.ControlChannel
+	rx     *nxdnrx.Receiver
+	cc     *dpmr.ControlChannel
+	log    *slog.Logger
+	system string
+	guard  resyncGuard
 }
 
-func (p *dpmrPipeline) Process(iq []complex64) { p.rx.Process(iq) }
-func (p *dpmrPipeline) Reset()                 { p.rx.Reset() }
-func (p *dpmrPipeline) Close() error           { return nil }
+func (p *dpmrPipeline) Process(iq []complex64) {
+	p.rx.Process(iq)
+	if !p.cc.Framer().Locked() && !p.rx.TimingAcquisitionPending() {
+		p.rx.ArmTimingAcquisition()
+	}
+	// A beacon transmits continuously, so a window of signal with nothing
+	// decoded means the receiver lost the eye (see resyncGuard).
+	if p.guard.check(len(iq), p.cc.LastActivityNano()) {
+		p.rx.Reset()
+		p.cc.ResyncReset()
+		p.rx.ArmTimingAcquisition()
+		if p.log != nil {
+			p.log.Debug("dpmr: dsp resync (signal-time decode drought)", "system", p.system)
+		}
+	}
+}
+
+func (p *dpmrPipeline) Reset() {
+	p.rx.Reset()
+	p.cc.ResyncReset()
+	p.guard.reset()
+	p.rx.ArmTimingAcquisition()
+}
+
+func (p *dpmrPipeline) Close() error { return nil }
 
 // newDMRTier3Pipeline wires internal/radio/dmr/receiver into
 // dmr/tier3.ControlChannel.Process. The receiver's DibitSink

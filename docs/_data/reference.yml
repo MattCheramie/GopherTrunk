@@ -525,7 +525,7 @@ domains:
           - { slug: dmr-slot-type, title: DMR slot type, type: term }
           - { slug: dmr-vendor-fid, title: DMR vendor FID, type: term }
           - { slug: dmr-voice-superframe, title: DMR voice superframe, type: term }
-          - { slug: dpmr-csbk, title: dPMR CSBK, type: term }
+          - { slug: dpmr-csbk, title: dPMR Beacon Messages, type: term }
           - { slug: edacs-control-channel-word, title: EDACS Control Channel Word, type: term }
           - { slug: ltr-word-format, title: LTR word format, type: term }
           - { slug: motorola-osw, title: Motorola OSW, type: term }

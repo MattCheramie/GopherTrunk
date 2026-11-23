@@ -89,4 +89,7 @@ const (
 	// NXDN: the RCCH carries a CAC in every 80 ms frame; 2 s ≈ 25 missed
 	// frames.
 	nxdnResyncWindow = 2 * time.Second
+	// dPMR Mode 3: a beacon sends a frameset every 110 ms without pause,
+	// each with a message and three SYScasts.
+	dpmrResyncWindow = 1 * time.Second
 )

@@ -5,8 +5,6 @@ import (
 	"math/rand"
 	"testing"
 	"time"
-
-	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 )
 
 // DMR, NXDN and D-STAR scan-list channels (issue #1261) open on in-channel
@@ -29,14 +27,15 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 		t.Run(tc.mode, func(t *testing.T) {
 			const freq = 442_387_500
 			r := rand.New(rand.NewSource(11))
-			dibits := make([]uint8, 720)
-			for i := range dibits {
-				dibits[i] = uint8(r.Intn(4))
+			// Every mode below builds its own signal. These draws used to
+			// feed a default P25 C4FM carrier at 2.4 MS/s that every case
+			// overwrote: ~54 s per subtest under -race, the package's
+			// slowest work, for nothing. The draws stay so each mode's
+			// signal is the same as before.
+			for range 720 {
+				r.Intn(4)
 			}
-			sig := demod.ModulateP25C4FM(dibits, amTestRate, 1800)
-			for i := range sig {
-				sig[i] *= 0.1
-			}
+			var sig []complex64
 			switch tc.mode {
 			case ModeDMR:
 				// A DMR channel opens only on a call (issue #1261), so it
@@ -70,6 +69,8 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 				for i := range sig {
 					sig[i] *= 0.2
 				}
+			default:
+				t.Fatalf("no test signal for mode %q", tc.mode)
 			}
 			idle := make([]complex64, amTestRate/2)
 			for i := range idle {

@@ -1,5 +1,8 @@
-// Package receiver wires the IQ → C4FM dibit chain that feeds the
-// dPMR Mode 3 control-channel state machine.
+// Package receiver is a plain IQ → C4FM dibit chain for dPMR. It has no
+// carrier correction, so neither production path uses it any more: the
+// voice chain and the Mode 3 beacon pipeline run the NXDN receiver at
+// dPMR's 2400 symbols a second (see internal/voice/composer/dpmr_voice.go).
+// It stays as the reference the voice chain's tests compare against.
 //
 //	IQ samples
 //	  → FM discriminator (internal/dsp/demod.FM)
@@ -10,8 +13,7 @@
 //
 // dPMR Mode 3 runs 4-level C4FM at 2400 sym/s — half the symbol
 // rate of P25 Phase 1 / DMR / YSF — with α = 0.20 RRC pulse
-// shaping. The downstream framing (FS1 / FS2 / FS3 24-dibit sync,
-// 80-bit CSBK signalling) lives in the parent dpmr package.
+// shaping. The framing lives in the parent dpmr package.
 //
 // The receiver is stateful and not safe for concurrent Process
 // calls. Instantiate one per tuned frequency / per call chain.

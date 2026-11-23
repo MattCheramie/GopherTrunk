@@ -325,8 +325,8 @@ log, per-talkgroup policy) all ship.
   copyrighted and not committed). NXDN voice is checked on real
   captures. dPMR and D-STAR voice follow their air formats as
   reference decoders have them but have not decoded a real
-  transmission yet, and for dPMR nothing on the air can start a call
-  yet (see [docs/status.md](docs/status.md)).
+  transmission yet. A dPMR call starts from a `dpmr` scan-list channel
+  or a Mode 3 beacon's Goto Channel (see [docs/status.md](docs/status.md)).
   TETRA DMO records audio through the same ACELP vocoder but is
   experimental: call source / destination identity is not decoded
   (recordings file under group 0) and the chain still awaits its

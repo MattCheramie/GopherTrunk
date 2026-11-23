@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"math/rand"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,39 +15,32 @@ import (
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/demod"
 	"github.com/MattCheramie/GopherTrunk/internal/events"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dpmr"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
+	"github.com/MattCheramie/GopherTrunk/internal/trunking"
 )
 
-// TestDaemonCCDecodesDPMR is the per-protocol sibling of the
-// P25 P1 / NXDN / DMR Tier III integration-cc tests. Boots the
-// daemon with a mock SDR replaying a fully-synthesized dPMR
-// Mode 3 control-channel stream (24-dibit FS3 sync + 40-dibit /
-// 80-bit StandingServiceStatus CSBK), and asserts the production
-// newDPMRPipeline + supervisor + API + metrics chain recovers
-// the lock.
+// TestDaemonCCDecodesDPMR boots the daemon with a mock SDR replaying a dPMR
+// Mode 3 beacon channel in the air format (ETSI TS 102 658 clause 4.2.3.7:
+// FS1, then framesets of a message and three SYScasts), and asserts the
+// production newDPMRPipeline + supervisor + API + metrics chain locks on the
+// beacon's System Identity Code and turns its Goto Channel into a "dpmr"
+// grant (#1374).
 //
-// dPMR Mode 3 runs 4-level C4FM at 2400 sym/s — half the symbol
-// rate of P25 P1 / DMR — with 900 Hz peak deviation and α = 0.20
-// RRC. The C4FM modulator from PR #148 handles it; per-protocol
-// differences from the P25 P1 test are the symbol rate (2400
-// instead of 4800), the deviation (900 instead of 1800), and the
-// framing (FS3 sync + 80-bit CSBK vs FSW + NID + TSBK).
+// dPMR is 4-level FSK at 2400 symbols a second, +-1050 Hz at the outer
+// symbols, root raised cosine 0.2.
 func TestDaemonCCDecodesDPMR(t *testing.T) {
 	const (
 		controlFreqHz = 446_018_750
 		sampleRateHz  = 48_000
-		// At 2400 sym/s with 48 kHz sample rate, sps = 20 — twice
-		// the P25 P1 / DMR / NXDN value because dPMR is half-rate.
-		sps         = 20
-		span        = 8
-		alpha       = 0.20
-		deviationHz = 900.0
-		systemID    = uint32(0x123456)
-		csbkRepeats = 30
+		sps           = 20 // 2400 symbols a second at 48 kHz
+		span          = 8
+		alpha         = 0.20
+		deviationHz   = 1050.0
+		systemID      = uint32(0x0C55)
+		framesets     = 40
 	)
 
-	dibits := buildDPMRSiteBroadcastDibits(csbkRepeats, systemID)
+	dibits := buildDPMRBeaconDibits(framesets, uint16(systemID))
 	iq := demod.ModulateC4FM(dibits, sps, span, alpha, sampleRateHz, deviationHz)
 
 	dir := t.TempDir()
@@ -132,6 +126,28 @@ WaitLoop:
 		}
 	}
 
+	// The beacon's Goto Channel becomes a dpmr grant for the right call.
+	grantDeadline := time.After(30 * time.Second)
+GrantLoop:
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind != events.KindGrant {
+				continue
+			}
+			g, ok := ev.Payload.(trunking.Grant)
+			if !ok || g.Protocol != "dpmr" {
+				continue
+			}
+			if g.GroupID != 0x02C00A || g.SourceID != 0x1B91FD || g.FrequencyHz != 446_006_250 {
+				t.Errorf("grant %+v, want talkgroup 02C00A from 1B91FD on 446.00625 MHz", g)
+			}
+			break GrantLoop
+		case <-grantDeadline:
+			t.Fatalf("no dpmr grant arrived within 30s")
+		}
+	}
+
 	waitForScannerLock(t, base, "DPMRSite", 2*time.Second)
 
 	// Poll rather than scrape once. The metrics collector consumes the events
@@ -145,42 +161,34 @@ WaitLoop:
 	waitForMetric(t, base, `gophertrunk_events_total{kind="cc.locked"} 1`, 2*time.Second)
 }
 
-// buildDPMRSiteBroadcastDibits assembles a dPMR Mode 3 dibit
-// stream for the C4FM modulator + receiver chain:
-//
-//   - 400-dibit warmup cycling 0..3 so the Mueller-Müller clock
-//     recovery sees every symbol level (dPMR's half-rate
-//     symbol stream means each warmup dibit covers twice the
-//     wall-time of a P25 P1 / DMR dibit; the longer count
-//     keeps the convergence time comparable in absolute terms)
-//   - `repeats` × (24-dibit FS3 sync + 40-dibit CSBK + 16 idle
-//     dibits)
-//   - 100-dibit trailer for clean flush
-//
-// Each frame's CSBK is a StandingServiceStatus carrying the
-// requested SystemID — the dPMR control state machine's
-// canonical "lock me" message.
-func buildDPMRSiteBroadcastDibits(repeats int, systemID uint32) []uint8 {
-	csbk := dpmr.CSBK{Type: dpmr.MsgStandingServiceStatus, DestID: systemID, Extra: 0x42}
-	csbkBits := dpmr.CSBKBits(csbk)
-	csbkDibits := framing.BitsToDibits(csbkBits)
-
-	frame := make([]uint8, 0, 24+len(csbkDibits))
-	frame = append(frame, dpmr.FS3Dibits()...)
-	frame = append(frame, csbkDibits...)
-
-	out := make([]uint8, 0, 400+repeats*(len(frame)+16)+100)
+// buildDPMRBeaconDibits assembles a beacon downlink: random dibits for the
+// receiver's loops to settle on, FS1, then framesets of an Aloha carrying
+// the System Identity Code and, every fourth, a Goto Channel sending
+// talkgroup 012345* to 446.00625 MHz with the calling party 1234567 in its
+// SYScasts.
+func buildDPMRBeaconDibits(framesets int, sys uint16) []uint8 {
+	r := rand.New(rand.NewSource(1))
+	var out []uint8
 	for i := 0; i < 400; i++ {
-		out = append(out, uint8(i&3))
+		out = append(out, uint8(r.Intn(4)))
 	}
-	for r := 0; r < repeats; r++ {
-		out = append(out, frame...)
-		for i := 0; i < 16; i++ {
-			out = append(out, uint8(i&3))
+	out = append(out, dpmr.AirFS1Dibits()...)
+	sy1 := dpmr.EncodeSYScast1(dpmr.SYScast1{SystemCode: sys})
+	band, sep, field, _ := dpmr.FrequencyFields(446_006_250)
+	for i := 0; i < framesets; i++ {
+		if i%4 == 3 {
+			g := dpmr.EncodeGotoChannel(dpmr.GotoChannel{Called: 0x02C00A, RxField: field, TxField: field,
+				Band: band, Sep5k: sep, Mode: dpmr.AirModeVoice})
+			a, b := dpmr.EncodeCallingParty(0x1B91FD)
+			out = append(out, dpmr.EncodeBeaconFrameset(g, dpmr.BeaconChannelCode0, [3]uint32{sy1, a, b})...)
+			continue
 		}
+		cfc := dpmr.EncodeSYScast2(dpmr.SYTypeFrameCounter, uint16(i))
+		out = append(out, dpmr.EncodeBeaconFrameset(dpmr.EncodeAloha(dpmr.Aloha{MSID: 0xFFFFFF, SystemCode: sys}),
+			dpmr.BeaconChannelCode0, [3]uint32{sy1, cfc, cfc})...)
 	}
 	for i := 0; i < 100; i++ {
-		out = append(out, uint8(i&3))
+		out = append(out, uint8(r.Intn(4)))
 	}
 	return out
 }

@@ -63,8 +63,11 @@ func TestNXDNCallDetectorOpensOnRealAirVoice(t *testing.T) {
 	} {
 		base := readCS16Fixture(t, tc.file)
 		for off := 0; off < 5; off++ {
-			iq := dmrAt2400k(base[off*960:]) // start 20 ms further in each time
+			// Start 20 ms further in each time; only the scan window
+			// (+100 ms) is upsampled and fed, since a later open fails anyway.
 			d := NewNXDNCallDetector(2_400_000, tc.symRate)
+			n := int((d.minDwell() + 100*time.Millisecond).Seconds() * dmrGateTestRate)
+			iq := dmrAt2400k(base[off*960 : min(off*960+n, len(base))])
 			first, _ := nxdnGateFirstOpen(d, iq, 2_400_000)
 			if first < 0 || first > d.minDwell() {
 				t.Errorf("%s offset %d ms: gate opened after %v, want within the %v scan window (%d frames)",

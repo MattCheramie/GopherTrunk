@@ -1333,6 +1333,14 @@ trunking:
   #     #                               # (off by default: NXDN's unwhitened
   #     #                               # CAC runs drift the coarse tracker)
   #     # nxdn_deviation_hz: 2400       # override 1800 Hz spec default
+  #
+  #   - name: "dPMR-Mode3"
+  #     protocol: dpmr                  # a dPMR Mode 3 beacon channel (#1374):
+  #     control_channels: [446_100_000] # locks on its System Identity Code;
+  #     # each Goto Channel names its traffic channel's frequency itself,
+  #     # so no band plan is needed (the standard's "custom" band excepted).
+  #     # Untrunked dPMR (dPMR446 handhelds) is a `mode: dpmr` scan-list
+  #     # channel under scanner.conventional instead.
   #                                     # for non-spec transmitters (see
   #                                     # samples/nxdn/README.md sweep recipe)
   #     # nxdn_band_plan:               # REQUIRED to follow NXDN voice: a

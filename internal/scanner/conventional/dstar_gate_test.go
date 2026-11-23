@@ -72,7 +72,13 @@ func TestDStarCallDetectorOpensMidTransmission(t *testing.T) {
 		base := modulateDStar(r, bits, inv)
 		worst := time.Duration(0)
 		for off := 0; off < 20; off++ {
-			iq := dmrAt2400k(base[off*1013:]) // ~21 ms further in each time, at a new sub-symbol phase
+			// ~21 ms further in each time, at a new sub-symbol phase. Only
+			// the scan window (+100 ms) is upsampled and fed: an open after
+			// it fails the test anyway, and the 4 s transmission at 2.4 MS/s
+			// through both receiver lanes, 40 times, was the package's
+			// slowest test under -race.
+			start := off * 1013
+			iq := dmrAt2400k(base[start:min(start+int((dstarGateMinDwell+100*time.Millisecond).Seconds()*dmrGateTestRate), len(base))])
 			d := NewDStarCallDetector(2_400_000)
 			first, _ := dstarGateFirstOpen(d, iq, 2_400_000)
 			if first < 0 || first > d.minDwell() {

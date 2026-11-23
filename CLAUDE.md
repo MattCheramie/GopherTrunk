@@ -2736,21 +2736,31 @@ confirmation before any close-as-completed.
   Hamming corrections (a noise CCH passes CRC7 0.22 % of the time), or a clean channel code plus
   the next sync word; after a small slip most of the channel-code field still overlaps the real
   one, so "outer symbols" is not enough and the field must carry the lock's known code; lost
-  dibits bring the next sync word EARLY, so a re-hunt looks 48 dibits back. **Still fabricated:
-  the whole Mode 3 control channel** (`sync.go`, `csbk.go`, `process.go`): dPMR has no "CSBK", a
-  beacon sends SYScast and message frames (clause 4.2.2.5), and FS3 is the end frame. The scan list
-  now has `mode: dpmr` (#1374, `conventional/dpmr_gate.go`): the gate runs the voice chain's
-  receiver + `dpmr.TrafficChannel` and is open while the framer accepts frames, shut at once on an
-  end frame (FS3); NXDN48 (same PHY) and analog never open it. Building it exposed a defect in the
-  shared `nxdnrx` receiver at 2400 sym/s: from 5 of 20 sub-symbol start phases the Mueller-Müller
-  loop sat at its unstable point for a WHOLE call (0 frames), 5 more lost part of it.
-  `nxdnrx.Receiver.ArmTimingAcquisition` (the YSF feed-forward seed, opt-in, unarmed =
-  byte-identical) fixes it, and the dPMR chain and gate RE-ARM it whenever the framer is unlocked
-  (`rearmDPMRTiming`): it gives up after ~160 ms of noise, and a re-key comes up at a new phase.
-  The NXDN voice chain does NOT arm it yet, and it needs to: on the reporter's REAL NXDN48 call
-  (`nxdn48_rdch_voice_447100_16oct_48k.cs16`) ten start phases gave 56 56 56 56 36 20 12 8 36 56 of
-  56 frames unarmed, 52-56 armed; NXDN96's worst phase 20 → 36 of 40. Separate PR. Trunked dPMR still needs the Mode 3 control channel. siglab's dPMR sync patterns are the
-  invented ones too. Synthetic-verified only (#764/#771).
+  dibits bring the next sync word EARLY, so a re-hunt looks 48 dibits back. **The Mode 3 control channel is rebuilt on the beacon
+  format (#1374, 23 Nov)**: the old `sync.go` / `csbk.go` / `process.go` / `opcodes.go` /
+  `bandplan.go` (48-bit invented syncs, an 80-bit "CSBK", a channel-number band plan) are deleted.
+  A beacon is continuous framesets of 264 dibits (110 ms): FS1 | MI0 | CC | MI1 | SYC1 | SYC2 | SYC3,
+  the next FS1 closing the SYScast slot (an appended-data frame may take that slot, with no FS1).
+  MI = 72 bits + CRC8 (x^8+x^2+x+1, preset 0) -> 10 Hamming (12,8) -> 12 x 10 interleave (on-air
+  bit k = bit k/10 of block k%10) -> scrambler, MI1 a copy of MI0; SYScast = 3 x (17 bits + CRC7 ->
+  3 Hamming blocks sent twice -> 12 x 6), the 216 bits scrambled as ONE run (`beacon_air.go`, pinned
+  by `testdata/beacon_dsdcc_vectors.txt`, decoded by dsdcc's own Hamming/CRC/interleave/LFSR
+  compiled outside the repo). CRC8 preset: dsdcc 0, DSD-FME's `CRC8BitdPMR` 0xFF but DSD-FME never
+  calls it; follow dsdcc. Messages (`beacon_msg.go`): MT 4 bits; Broadcast (1011) MI_TYPE at bits
+  61..63 in EVERY broadcast (Aloha's RSVD is 9 bits, not the 10 its length column prints: the table
+  only sums to 72 that way); Goto Channel = the grant (called 24 | FT 15 | FR1 9 | M 3 | FR2 6 |
+  MI_TYPE 3 | SEP | BAND 4 | EF | BRCST | RSVD), f = BAND lower edge + (3.125 or 5 kHz) x field,
+  follow FR (MS receive = downlink); calling party = SYScast2 (type 011, 10 MSBs) + SYScast3
+  (type 100, 14 LSBs) of the SAME frameset. Addresses: B2 (annex A), `*` in K4..K7 = talkgroup;
+  table A.2 examples pinned. `ControlChannel` locks on an Aloha or the same SYScast1 code twice
+  (one SYScast1 is not enough: the framer can frame a traffic header, which also opens with FS1),
+  suppresses the beacon's repeats of a Goto (2 s), skips data-mode and custom-band Gotos. The CC
+  pipeline runs `nxdnrx` at 2400 sym/s / 1050 Hz with carrier tracking + timing acquisition
+  (re-armed while unlocked): measured lock 120 ms at all 20 start phases, 0.56-3.2 s or never
+  without the seed. siglab's dPMR detail correlates FS1/FS4 only: the 12-symbol FS2/FS3 at its
+  tolerance 4 scored a DMR leakage carrier as dPMR on the wideband survey. No reference decoder
+  decodes a Mode 3 beacon, so message semantics rest on the standard alone, pinned by tests that
+  lay fields out from the table rows. Synthetic-verified only (#764/#771).
 - **A DMR scan-list channel's squelch is now a CALL gate, not a power gate (#1261 follow-up).** A
   keyed-but-idle repeater (Idle bursts / CSBK beacons) held the conventional scanner on its channel.
   `conventional.DMRCallDetector` (`dmr_gate.go`, the NAC-gate shape) runs the production DMR receiver on

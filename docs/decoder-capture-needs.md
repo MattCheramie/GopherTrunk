@@ -280,8 +280,11 @@ false-positive coverage but **not blocking**.
   *voice*-level calibration above is a separate gap — it needs raw IMBE
   frames + a DSD-FME reference WAV, which a control-channel IQ capture
   does not provide.)
-- **EDACS, LTR, Motorola Type II, dPMR control** — control chains ship;
+- **EDACS, LTR, Motorola Type II control** — control chains ship;
   FEC is on by default with no outstanding capture.
+- **dPMR Mode 3 beacon** (≥ 10 s IQ, 48 kHz, ideally with a call set up
+  on it) — the beacon decoder follows ETSI TS 102 658 and its coding is
+  pinned to dsdcc's routines, but no real beacon has been decoded.
 
 ### Separate from captures: digital-voice composer chains
 YSF and EDACS ProVoice voice are followed and logged but **not yet
@@ -292,8 +295,7 @@ ETSI EN 300 395-2 reference, NXDN on real captures. dPMR and D-STAR
 voice follow their air formats as two reference decoders each have
 them — dPMR per ETSI TS 102 658, with the AMBE+2 frame layout DMR and
 NXDN use — but neither has decoded a real transmission yet: a voice
-capture is the #764/#771 gate. For dPMR nothing on the air can start a
-call either; see [the status page](status.md).)
+capture is the #764/#771 gate.)
 
 ---
 
