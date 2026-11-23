@@ -28,16 +28,6 @@ for tagged releases.
   - `iq_seconds`, `dibits` and `first_burst_ms`: whether a call that framed
     nothing (`air_bursts=0`) was fed any signal at all.
   - `ess_syncs`: encryption syncs read from the voice bursts.
-- **The daemon warns about config keys that nothing reads.** A section
-  indented one level too far, or a misspelled key, used to load without a word
-  and leave its feature at the default. At start-up (and on a config reload)
-  each such key is now logged and pinned with the other start-up warnings, for
-  example `config line 38: "log" under trunking.systems[] is not a setting and
-  is ignored: "log" is a top-level section, so it is indented too far here;
-  move it to the left margin`. The file still loads, as before. This is what
-  hid a support request's diagnostics: `log:`, `recordings:` and `baseband:`
-  were pasted under the trunking system, so the debug log and the voice IQ
-  capture never switched on.
 
 ### Fixed
 - **A dPMR call could decode nothing at all, depending on when the voice chain
@@ -102,6 +92,22 @@ for tagged releases.
   every re-sync. On a real Phase 2 carrier, from the eight possible start
   points: before, one of them decoded nothing in the 1.09 s capture; now all
   eight decode 10 to 14 messages.
+
+## [v1.4.3] — 2026-11-21
+
+### Added
+- **The daemon warns about config keys that nothing reads.** A section
+  indented one level too far, or a misspelled key, used to load without a word
+  and leave its feature at the default. At start-up (and on a config reload)
+  each such key is now logged and pinned with the other start-up warnings, for
+  example `config line 38: "log" under trunking.systems[] is not a setting and
+  is ignored: "log" is a top-level section, so it is indented too far here;
+  move it to the left margin`. The file still loads, as before. This is what
+  hid a support request's diagnostics: `log:`, `recordings:` and `baseband:`
+  were pasted under the trunking system, so the debug log and the voice IQ
+  capture never switched on.
+
+### Fixed
 - **dPMR voice could not decode a real transmission** (#1374). Three things
   were wrong, each of which alone left a call silent or garbled:
   - *The vocoder frame layout.* The 72 bits of each voice frame were split
