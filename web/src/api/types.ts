@@ -494,6 +494,8 @@ export interface SystemHuntStatusDTO {
   // "locked" while a control channel decodes, otherwise "listening" (or
   // "camped" for a conventional / direct-mode protocol).
   wideband_serial?: string;
+  // sdr.groups entry the wideband dongle belongs to, when it is a member.
+  wideband_group?: string;
 }
 
 export interface ConvScannerStatusDTO {

@@ -555,6 +555,7 @@ func widebandSystemRow(ch widebandt2.ChannelHealth) api.SystemHuntStatusDTO {
 		Name:           ch.System,
 		Protocol:       ch.Protocol,
 		WidebandSerial: ch.Serial,
+		WidebandGroup:  ch.Group,
 		SignalDbFS:     ch.SignalDbFS,
 		HasSignal:      ch.HasSignal,
 	}

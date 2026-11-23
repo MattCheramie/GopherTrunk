@@ -245,6 +245,8 @@ type SystemHuntStatusDTO struct {
 	// WidebandSerial is set on a system a role: wideband dongle decodes:
 	// it is never hunted, so the hold / retune keys skip it.
 	WidebandSerial string `json:"wideband_serial,omitempty"`
+	// WidebandGroup is the sdr.groups entry that dongle belongs to.
+	WidebandGroup string `json:"wideband_group,omitempty"`
 }
 
 // ConvScannerStatusDTO mirrors api.ConvScannerStatusDTO.

@@ -157,6 +157,9 @@ func preflight(cfg config.Config) ([]string, error) {
 				convChans = append(convChans, d.Conventional...)
 			}
 		}
+		for _, g := range cfg.SDR.Groups {
+			convChans = append(convChans, g.Conventional...)
+		}
 		convMDC, convFS, convACARS := convChannelDecoders(convChans)
 		if len(cfg.MDC1200.Channels) > 0 || convMDC {
 			needs = append(needs, "mdc1200")

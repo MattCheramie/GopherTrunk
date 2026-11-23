@@ -536,6 +536,12 @@ type Daemon struct {
 	// `device:`; they are withheld from the trunking voice pool.
 	convDedicated map[string]bool
 	widebandT2    []*widebandt2.Engine
+	// sdrGroups is the plan of every sdr.groups entry (sdrgroups.go): which
+	// member serial covers which slice of the group's span. The daemon builds
+	// from a config whose group members are already expanded into plain
+	// wideband devices; this is what the spectrum view, the capture routes
+	// and the member-loss WARN need to treat the members as one receiver.
+	sdrGroups []config.SDRGroupPlan
 	// dmrLearners holds one DMR LCN autoconfig learner per wideband DMR
 	// Tier III control channel whose system ships without a dmr_band_plan.
 	// Each watches grants + RF onsets to learn the LCN→frequency plan and
@@ -936,9 +942,19 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 	if log == nil {
 		return nil, errors.New("daemon: logger is required")
 	}
+	// sdr.groups: build from a copy whose group members are plain wideband
+	// devices (planned centre + their share of the channels), so every
+	// wideband consumer below runs on them unchanged. d.cfg keeps the
+	// operator's config as written (the API serves and writes it back).
+	origCfg := cfg
+	cfg, groupPlans, err := cfg.WithSDRGroupsExpanded()
+	if err != nil {
+		return nil, fmt.Errorf("daemon: %w", err)
+	}
 
 	d := &Daemon{
-		cfg:       cfg,
+		cfg:       origCfg,
+		sdrGroups: groupPlans,
 		cfgPath:   cfgPath,
 		log:       log,
 		bus:       events.NewBus(64),
@@ -951,6 +967,7 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 		scannerLOOffsets: make(map[string]float64),
 		autotune:         autotune.NewRegistry(cfg.SDR.Autotune, log),
 	}
+	d.logSDRGroupPlans()
 	if cfg.SDR.Autotune {
 		log.Info("autotune: enabled — tracking per-dongle carrier error and applying digital correction (P25 Phase 1 control + voice)")
 	}
@@ -1956,6 +1973,11 @@ func NewDaemonWithPath(cfg config.Config, cfgPath string, version string, log *s
 				Serial:        entry.Info.Serial,
 				Metrics:       wbIQObs,
 				Gain:          devCfg.Gain,
+				// A group member may carry no channel (it is there for
+				// voice-grant coverage / the stitched spectrum view); its
+				// engine still owns the stream its broker fans out.
+				AllowNoChannels: devCfg.Group != "",
+				Group:           devCfg.Group,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("daemon: widebandt2 %q: %w", devCfg.Serial, err)
@@ -4446,6 +4468,9 @@ func (d *Daemon) runWidebandWithRetry(ctx context.Context, eng *widebandt2.Engin
 		}
 		wait := ccDecoderRetryBackoffs[attempt]
 		attempt++
+		if attempt == 1 {
+			d.warnSDRGroupMemberLost(serial, err)
+		}
 		d.log.Warn("daemon: widebandt2: IQ stream died; retrying",
 			"serial", serial, "attempt", attempt, "max_attempts", len(ccDecoderRetryBackoffs),
 			"backoff", wait, "err", err)

@@ -48,6 +48,9 @@ type ChannelHealth struct {
 	FreqHz   uint32
 	// Serial is the wideband dongle the channel is tapped from.
 	Serial string
+	// Group is the sdr.groups entry that dongle is a member of ("" when it
+	// is a standalone wideband dongle).
+	Group string
 	// CampsWhenIdle marks a conventional / direct-mode protocol whose channel
 	// is legitimately silent between transmissions (trunking.Protocol).
 	CampsWhenIdle bool
@@ -100,7 +103,7 @@ type healthTracker struct {
 // staticHealth returns the fields of a channel's health record that never
 // change. ok is false for a conventional (tap-only analog) channel, which has
 // no decoder to report on.
-func staticHealth(ec *engineChannel, serial string) (ChannelHealth, bool) {
+func staticHealth(ec *engineChannel, serial, group string) (ChannelHealth, bool) {
 	if ec.conventional {
 		return ChannelHealth{}, false
 	}
@@ -109,6 +112,7 @@ func staticHealth(ec *engineChannel, serial string) (ChannelHealth, bool) {
 		Protocol:      ec.sysProto.String(),
 		FreqHz:        ec.freqHz,
 		Serial:        serial,
+		Group:         group,
 		CampsWhenIdle: ec.sysProto.CampsWhenIdle(),
 	}, true
 }
@@ -147,7 +151,7 @@ func bucketFrameErrors(ratePct float64) string {
 // lastDecodeAt before this window's decode delta was folded in, so a new
 // decoding stretch can be told from a continuing one. Pump goroutine only.
 func (e *Engine) updateHealth(i int, ec *engineChannel, now time.Time, dbfs float64, prevDecodeAt time.Time) {
-	static, ok := staticHealth(ec, e.serial)
+	static, ok := staticHealth(ec, e.serial, e.group)
 	if !ok {
 		return
 	}
@@ -196,7 +200,7 @@ func (e *Engine) ChannelHealth() []ChannelHealth {
 	defer e.health.mu.Unlock()
 	out := make([]ChannelHealth, 0, len(e.channels))
 	for i, ec := range e.channels {
-		h, ok := staticHealth(ec, e.serial)
+		h, ok := staticHealth(ec, e.serial, e.group)
 		if !ok {
 			continue
 		}
