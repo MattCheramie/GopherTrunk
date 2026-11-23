@@ -20,6 +20,7 @@ import type {
   IIOConfig,
   RTLTCPConfig,
   SDRConfig,
+  SDRGroupConfig,
   SidecarConfig,
   SoapyRemoteConfig,
 } from "../api/types";
@@ -99,6 +100,67 @@ export function SDRSection() {
           </div>
         ))}
       </div>
+
+      <Fieldset legend="SDR groups (gang wideband sticks)">
+        <ListEditor<SDRGroupConfig>
+          label="Groups"
+          items={cfg.Groups}
+          onChange={(x) => set({ ...cfg, Groups: x })}
+          makeNew={() => ({
+            Name: "",
+            LowHz: 0,
+            HighHz: 0,
+            OverlapHz: 0,
+            VoiceTaps: 0,
+            SignallingTaps: 0,
+            TunerStrategy: "",
+            Channels: null,
+            Conventional: null,
+          })}
+          itemTitle={(g) => {
+            const n = devices.filter((d) => (d.Group ?? "").trim() === g.Name && g.Name !== "").length;
+            return `${g.Name || "group"} · ${n} member${n === 1 ? "" : "s"}`;
+          }}
+          emptyHint="Several role: wideband sticks that tile a span wider than one of them, acting as one receiver. Set each member device's SDR group to the group's name."
+          renderItem={(g, setGroup) => (
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextField label="Name" value={g.Name} onChange={(v) => setGroup({ ...g, Name: v })} placeholder="south" />
+                <HzField label="Span low (blank = channel extent)" value={g.LowHz} onChange={(v) => setGroup({ ...g, LowHz: v })} />
+                <HzField label="Span high" value={g.HighHz} onChange={(v) => setGroup({ ...g, HighHz: v })} />
+                <HzField label="Overlap (blank = auto)" value={g.OverlapHz} onChange={(v) => setGroup({ ...g, OverlapHz: v })} />
+                <NumberField label="Voice taps per member" value={g.VoiceTaps} onChange={(v) => setGroup({ ...g, VoiceTaps: v })} />
+                <NumberField
+                  label="Signalling taps per member"
+                  value={g.SignallingTaps}
+                  onChange={(v) => setGroup({ ...g, SignallingTaps: v })}
+                />
+                <SelectField
+                  label="Tuner strategy"
+                  value={g.TunerStrategy}
+                  onChange={(v) => setGroup({ ...g, TunerStrategy: v })}
+                  options={[
+                    { value: "", label: "(auto)" },
+                    { value: "ddc", label: "ddc" },
+                    { value: "polyphase", label: "polyphase" },
+                  ]}
+                />
+              </div>
+              <WidebandChannelsList
+                items={g.Channels}
+                systemNames={systemNames}
+                onChange={(x) => setGroup({ ...g, Channels: x })}
+                emptyHint="Control channels / Tier II carriers anywhere in the group's span; each runs on the member that covers it."
+              />
+              <WidebandConventionalList
+                items={g.Conventional}
+                onChange={(x) => setGroup({ ...g, Conventional: x })}
+                emptyHint="Continuous analog / digital conventional channels anywhere in the group's span."
+              />
+            </div>
+          )}
+        />
+      </Fieldset>
 
       <Fieldset legend="Remote rtl_tcp sources">
         <ListEditor<RTLTCPConfig>
@@ -302,6 +364,8 @@ function DeviceEditor(props: {
 }) {
   const { d, systemNames, onChange } = props;
   const isWideband = d.Role === "wideband";
+  // A group member takes its channels, taps and strategy from its group.
+  const inGroup = (d.Group ?? "").trim() !== "";
   return (
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -310,6 +374,22 @@ function DeviceEditor(props: {
         <TextField label="Gain" value={d.Gain} onChange={(x) => onChange({ ...d, Gain: x })} placeholder="auto or tenths-dB e.g. 496" />
         <NumberField label="PPM correction" value={d.PPM} onChange={(x) => onChange({ ...d, PPM: x })} />
         {isWideband ? (
+          <TextField
+            label="SDR group"
+            value={d.Group ?? ""}
+            onChange={(x) => onChange({ ...d, Group: x })}
+            placeholder="(none)"
+            help="Name an SDR group below to make this stick one of its members: the group supplies the channels and plans the centre frequency."
+          />
+        ) : null}
+        {isWideband && inGroup ? (
+          <HzField
+            label="Center freq (pin; blank = planned)"
+            value={d.CenterFreqHz}
+            onChange={(x) => onChange({ ...d, CenterFreqHz: x })}
+          />
+        ) : null}
+        {isWideband && !inGroup ? (
           <>
             <HzField label="Center freq" value={d.CenterFreqHz} onChange={(x) => onChange({ ...d, CenterFreqHz: x })} />
             <SelectField
@@ -340,174 +420,16 @@ function DeviceEditor(props: {
         />
       ) : null}
 
-      {isWideband ? (
-        <Fieldset legend="Wideband channels" defaultOpen>
-          <ListEditor<DeviceChannelConfig>
-            label="Channels"
-            items={d.Channels}
-            onChange={(x) => onChange({ ...d, Channels: x })}
-            makeNew={() => ({ FrequencyHz: 0, System: systemNames[0] ?? "" })}
-            itemTitle={(c) => c.System || "channel"}
-            emptyHint="Per-repeater carriers inside this dongle's IQ band; each binds to a trunking system."
-            renderItem={(c, set) => (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <HzField label="Frequency" value={c.FrequencyHz} onChange={(v) => set({ ...c, FrequencyHz: v })} />
-                {systemNames.length > 0 ? (
-                  <SelectField
-                    label="System"
-                    value={c.System}
-                    onChange={(v) => set({ ...c, System: v })}
-                    options={systemNames.map((n) => ({ value: n, label: n }))}
-                  />
-                ) : (
-                  <TextField label="System" value={c.System} onChange={(v) => set({ ...c, System: v })} help="Must match a trunking system name." />
-                )}
-                <SelectField
-                  label="P25 Ph1 demod override"
-                  value={c.P25Phase1DemodMode ?? ""}
-                  onChange={(v) => set({ ...c, P25Phase1DemodMode: v })}
-                  options={[
-                    { value: "", label: "Inherit system default" },
-                    { value: "c4fm", label: "C4FM / FM" },
-                    { value: "cqpsk", label: "CQPSK / LSM (linear)" },
-                  ]}
-                  help="Override the system's demod path for this site only. Use when one P25 system genuinely mixes CQPSK/linear (LSM) sites and C4FM sites — decided empirically (a strong signal won't lock in C4FM), NOT just because a site is simulcast (most simulcast is C4FM). Issue #935. P25 Phase 1 only."
-                />
-              </div>
-            )}
-          />
-        </Fieldset>
+      {isWideband && !inGroup ? (
+        <WidebandChannelsList
+          items={d.Channels}
+          systemNames={systemNames}
+          onChange={(x) => onChange({ ...d, Channels: x })}
+        />
       ) : null}
 
-      {isWideband ? (
-        <Fieldset legend="Conventional FM / AM channels (continuous)">
-          <ListEditor<ConvChannelConfig>
-            label="Conventional"
-            items={d.Conventional}
-            onChange={(x) => onChange({ ...d, Conventional: x })}
-            makeNew={() => ({
-              Label: "",
-              FrequencyHz: 0,
-              Mode: "nfm",
-              SquelchDbFS: 0,
-              SquelchCNDb: 0,
-              HangtimeMs: 0,
-              ActivityDebounceMs: 0,
-              SquelchHysteresisDb: 0,
-              SquelchOpenMs: 0,
-              Priority: 0,
-              TalkgroupID: 0,
-              Gain: "",
-              AudioGainDB: 0,
-              Device: "",
-              Tone: { Mode: "", CTCSSHz: 0, DCSCode: "", DCSPolarity: "" },
-              Decoders: null,
-              NAC: "",
-              P25Phase1DemodMode: "",
-            })}
-            itemTitle={(c) => c.Label || "channel"}
-            emptyHint="Analog FM / AM channels inside this dongle's IQ band, each monitored all the time on its own tap: overlapping transmissions record as separate calls (no scanning)."
-            renderItem={(c, set) => (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <TextField label="Label" value={c.Label} onChange={(v) => set({ ...c, Label: v })} />
-                <HzField label="Frequency" value={c.FrequencyHz} onChange={(v) => set({ ...c, FrequencyHz: v })} />
-                <SelectField
-                  label="Mode"
-                  value={c.Mode}
-                  // The noise squelch is an fm / nfm setting: another mode must not carry it.
-                  onChange={(v) => set({ ...c, Mode: v, NoiseSquelch: isAnalogFM(v) ? c.NoiseSquelch : undefined })}
-                  options={[
-                    { value: "nfm", label: "nfm" },
-                    { value: "fm", label: "fm" },
-                    { value: "am", label: "am" },
-                  ]}
-                />
-                {c.Mode === "am" ? (
-                  <NumberField
-                    label="Squelch C/N (dB, 0 = 12)"
-                    step={0.5}
-                    value={c.SquelchCNDb ?? 0}
-                    onChange={(v) => set({ ...c, SquelchCNDb: v })}
-                  />
-                ) : (
-                  <NumberField label="Squelch (dBFS)" step={0.1} value={c.SquelchDbFS} onChange={(v) => set({ ...c, SquelchDbFS: v })} />
-                )}
-                <NumberField label="Hangtime (ms)" value={c.HangtimeMs} onChange={(v) => set({ ...c, HangtimeMs: v })} />
-                <NumberField label="Squelch open delay (ms)" value={c.SquelchOpenMs} onChange={(v) => set({ ...c, SquelchOpenMs: v })} />
-                {isAnalogFM(c.Mode) ? (
-                  <SelectField
-                    label="Noise squelch"
-                    value={noiseSquelchValue(c.NoiseSquelch)}
-                    onChange={(v) => set({ ...c, NoiseSquelch: parseNoiseSquelch(v) })}
-                    options={NOISE_SQUELCH_OPTIONS}
-                    help="On: the channel opens only on a carrier, never on noise above the squelch level."
-                  />
-                ) : null}
-                <NumberField label="Talkgroup ID (0 = positional)" value={c.TalkgroupID} onChange={(v) => set({ ...c, TalkgroupID: v })} />
-                <NumberField label="Audio gain (dB)" step={0.5} value={c.AudioGainDB ?? 0} onChange={(v) => set({ ...c, AudioGainDB: v })} />
-                <SelectField
-                  label="Tone mode"
-                  value={c.Tone?.Mode ?? ""}
-                  onChange={(v) => set({ ...c, Tone: { ...c.Tone, Mode: v } })}
-                  options={[
-                    { value: "", label: "none" },
-                    { value: "ctcss", label: "CTCSS" },
-                    { value: "dcs", label: "DCS" },
-                  ]}
-                />
-                {c.Tone?.Mode === "ctcss" ? (
-                  <NumberField
-                    label="CTCSS (Hz, 50–300)"
-                    step={0.1}
-                    value={c.Tone?.CTCSSHz ?? 0}
-                    onChange={(v) => set({ ...c, Tone: { ...c.Tone, CTCSSHz: v } })}
-                  />
-                ) : null}
-                {c.Tone?.Mode === "dcs" ? (
-                  <TextField
-                    label="DCS code (3 octal digits)"
-                    value={c.Tone?.DCSCode ?? ""}
-                    onChange={(v) => set({ ...c, Tone: { ...c.Tone, DCSCode: v } })}
-                    placeholder="023"
-                  />
-                ) : null}
-                <TextField
-                  label="Data decoders"
-                  value={formatCommaList(c.Decoders)}
-                  onChange={(v) => set({ ...c, Decoders: parseCommaList(v) })}
-                  placeholder="mdc1200, fleetsync"
-                />
-                <ListEditor<EncryptionKey>
-                  label="Decryption keys"
-                  items={c.EncryptionKeys ?? null}
-                  onChange={(x) => set({ ...c, EncryptionKeys: x })}
-                  makeNew={() => ({ KeyID: 0, Talkgroup: 0, Algorithm: "scrambler", Key: "" })}
-                  itemTitle={(e) => (e.Talkgroup ? `Key ID ${e.KeyID} · TG ${e.Talkgroup}` : `Key ID ${e.KeyID}`)}
-                  emptyHint="Digital channels only: an NXDN channel's scrambler keys (algorithm scrambler, the radio's decimal 15-bit key, key_id as the VCALL names it). The voice chain descrambles a call whose key ID matches."
-                  renderItem={(e, setKey) => (
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <NumberField label="Key ID" value={e.KeyID} onChange={(v) => setKey({ ...e, KeyID: v })} />
-                      <NumberField label="Talkgroup (0 = all)" value={e.Talkgroup ?? 0} onChange={(v) => setKey({ ...e, Talkgroup: v })} />
-                      <SelectField
-                        label="Algorithm"
-                        value={e.Algorithm}
-                        onChange={(v) => setKey({ ...e, Algorithm: v })}
-                        options={[
-                          { value: "scrambler", label: "scrambler (NXDN 15-bit scrambler, decimal key)" },
-                          { value: "rc4", label: "rc4 (DMR Enhanced Privacy / P25 ADP)" },
-                          { value: "des", label: "des (P25 DES-OFB)" },
-                          { value: "tdes", label: "tdes (P25 Triple-DES)" },
-                          { value: "aes", label: "aes (P25 AES-128 / AES-256)" },
-                        ]}
-                      />
-                      <TextField label="Key" type="password" value={e.Key} onChange={(v) => setKey({ ...e, Key: v })} />
-                    </div>
-                  )}
-                />
-              </div>
-            )}
-          />
-        </Fieldset>
+      {isWideband && !inGroup ? (
+        <WidebandConventionalList items={d.Conventional} onChange={(x) => onChange({ ...d, Conventional: x })} />
       ) : null}
 
       <AdvancedJSON<DeviceConfig>
@@ -518,5 +440,194 @@ function DeviceEditor(props: {
         help="RTL-SDR Blog V4 mode (blog_v4 / blog_v4_lite) and IQ correction/inversion flags."
       />
     </div>
+  );
+}
+
+// WidebandChannelsList edits a wideband channel plan: a standalone wideband
+// device's, or an SDR group's (sdr.groups[].channels).
+function WidebandChannelsList(props: {
+  items: DeviceChannelConfig[] | null | undefined;
+  systemNames: string[];
+  onChange: (next: DeviceChannelConfig[]) => void;
+  emptyHint?: string;
+}) {
+  const { items, systemNames, onChange } = props;
+  return (
+    <Fieldset legend="Wideband channels" defaultOpen>
+      <ListEditor<DeviceChannelConfig>
+        label="Channels"
+        items={items}
+        onChange={onChange}
+        makeNew={() => ({ FrequencyHz: 0, System: systemNames[0] ?? "" })}
+        itemTitle={(c) => c.System || "channel"}
+        emptyHint={props.emptyHint ?? "Per-repeater carriers inside this dongle's IQ band; each binds to a trunking system."}
+        renderItem={(c, set) => (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <HzField label="Frequency" value={c.FrequencyHz} onChange={(v) => set({ ...c, FrequencyHz: v })} />
+            {systemNames.length > 0 ? (
+              <SelectField
+                label="System"
+                value={c.System}
+                onChange={(v) => set({ ...c, System: v })}
+                options={systemNames.map((n) => ({ value: n, label: n }))}
+              />
+            ) : (
+              <TextField label="System" value={c.System} onChange={(v) => set({ ...c, System: v })} help="Must match a trunking system name." />
+            )}
+            <SelectField
+              label="P25 Ph1 demod override"
+              value={c.P25Phase1DemodMode ?? ""}
+              onChange={(v) => set({ ...c, P25Phase1DemodMode: v })}
+              options={[
+                { value: "", label: "Inherit system default" },
+                { value: "c4fm", label: "C4FM / FM" },
+                { value: "cqpsk", label: "CQPSK / LSM (linear)" },
+              ]}
+              help="Override the system's demod path for this site only. Use when one P25 system genuinely mixes CQPSK/linear (LSM) sites and C4FM sites — decided empirically (a strong signal won't lock in C4FM), NOT just because a site is simulcast (most simulcast is C4FM). Issue #935. P25 Phase 1 only."
+            />
+          </div>
+        )}
+      />
+    </Fieldset>
+  );
+}
+
+// WidebandConventionalList edits continuous conventional channels on a
+// wideband device or an SDR group.
+function WidebandConventionalList(props: {
+  items: ConvChannelConfig[] | null | undefined;
+  onChange: (next: ConvChannelConfig[]) => void;
+  emptyHint?: string;
+}) {
+  const { items, onChange } = props;
+  return (
+    <Fieldset legend="Conventional FM / AM channels (continuous)">
+      <ListEditor<ConvChannelConfig>
+        label="Conventional"
+        items={items}
+        onChange={onChange}
+        makeNew={() => ({
+          Label: "",
+          FrequencyHz: 0,
+          Mode: "nfm",
+          SquelchDbFS: 0,
+          SquelchCNDb: 0,
+          HangtimeMs: 0,
+          ActivityDebounceMs: 0,
+          SquelchHysteresisDb: 0,
+          SquelchOpenMs: 0,
+          Priority: 0,
+          TalkgroupID: 0,
+          Gain: "",
+          AudioGainDB: 0,
+          Device: "",
+          Tone: { Mode: "", CTCSSHz: 0, DCSCode: "", DCSPolarity: "" },
+          Decoders: null,
+          NAC: "",
+          P25Phase1DemodMode: "",
+        })}
+        itemTitle={(c) => c.Label || "channel"}
+        emptyHint={props.emptyHint ?? "Analog FM / AM channels inside this dongle's IQ band, each monitored all the time on its own tap: overlapping transmissions record as separate calls (no scanning)."}
+        renderItem={(c, set) => (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField label="Label" value={c.Label} onChange={(v) => set({ ...c, Label: v })} />
+            <HzField label="Frequency" value={c.FrequencyHz} onChange={(v) => set({ ...c, FrequencyHz: v })} />
+            <SelectField
+              label="Mode"
+              value={c.Mode}
+              // The noise squelch is an fm / nfm setting: another mode must not carry it.
+              onChange={(v) => set({ ...c, Mode: v, NoiseSquelch: isAnalogFM(v) ? c.NoiseSquelch : undefined })}
+              options={[
+                { value: "nfm", label: "nfm" },
+                { value: "fm", label: "fm" },
+                { value: "am", label: "am" },
+              ]}
+            />
+            {c.Mode === "am" ? (
+              <NumberField
+                label="Squelch C/N (dB, 0 = 12)"
+                step={0.5}
+                value={c.SquelchCNDb ?? 0}
+                onChange={(v) => set({ ...c, SquelchCNDb: v })}
+              />
+            ) : (
+              <NumberField label="Squelch (dBFS)" step={0.1} value={c.SquelchDbFS} onChange={(v) => set({ ...c, SquelchDbFS: v })} />
+            )}
+            <NumberField label="Hangtime (ms)" value={c.HangtimeMs} onChange={(v) => set({ ...c, HangtimeMs: v })} />
+            <NumberField label="Squelch open delay (ms)" value={c.SquelchOpenMs} onChange={(v) => set({ ...c, SquelchOpenMs: v })} />
+            {isAnalogFM(c.Mode) ? (
+              <SelectField
+                label="Noise squelch"
+                value={noiseSquelchValue(c.NoiseSquelch)}
+                onChange={(v) => set({ ...c, NoiseSquelch: parseNoiseSquelch(v) })}
+                options={NOISE_SQUELCH_OPTIONS}
+                help="On: the channel opens only on a carrier, never on noise above the squelch level."
+              />
+            ) : null}
+            <NumberField label="Talkgroup ID (0 = positional)" value={c.TalkgroupID} onChange={(v) => set({ ...c, TalkgroupID: v })} />
+            <NumberField label="Audio gain (dB)" step={0.5} value={c.AudioGainDB ?? 0} onChange={(v) => set({ ...c, AudioGainDB: v })} />
+            <SelectField
+              label="Tone mode"
+              value={c.Tone?.Mode ?? ""}
+              onChange={(v) => set({ ...c, Tone: { ...c.Tone, Mode: v } })}
+              options={[
+                { value: "", label: "none" },
+                { value: "ctcss", label: "CTCSS" },
+                { value: "dcs", label: "DCS" },
+              ]}
+            />
+            {c.Tone?.Mode === "ctcss" ? (
+              <NumberField
+                label="CTCSS (Hz, 50–300)"
+                step={0.1}
+                value={c.Tone?.CTCSSHz ?? 0}
+                onChange={(v) => set({ ...c, Tone: { ...c.Tone, CTCSSHz: v } })}
+              />
+            ) : null}
+            {c.Tone?.Mode === "dcs" ? (
+              <TextField
+                label="DCS code (3 octal digits)"
+                value={c.Tone?.DCSCode ?? ""}
+                onChange={(v) => set({ ...c, Tone: { ...c.Tone, DCSCode: v } })}
+                placeholder="023"
+              />
+            ) : null}
+            <TextField
+              label="Data decoders"
+              value={formatCommaList(c.Decoders)}
+              onChange={(v) => set({ ...c, Decoders: parseCommaList(v) })}
+              placeholder="mdc1200, fleetsync"
+            />
+            <ListEditor<EncryptionKey>
+              label="Decryption keys"
+              items={c.EncryptionKeys ?? null}
+              onChange={(x) => set({ ...c, EncryptionKeys: x })}
+              makeNew={() => ({ KeyID: 0, Talkgroup: 0, Algorithm: "scrambler", Key: "" })}
+              itemTitle={(e) => (e.Talkgroup ? `Key ID ${e.KeyID} · TG ${e.Talkgroup}` : `Key ID ${e.KeyID}`)}
+              emptyHint="Digital channels only: an NXDN channel's scrambler keys (algorithm scrambler, the radio's decimal 15-bit key, key_id as the VCALL names it). The voice chain descrambles a call whose key ID matches."
+              renderItem={(e, setKey) => (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <NumberField label="Key ID" value={e.KeyID} onChange={(v) => setKey({ ...e, KeyID: v })} />
+                  <NumberField label="Talkgroup (0 = all)" value={e.Talkgroup ?? 0} onChange={(v) => setKey({ ...e, Talkgroup: v })} />
+                  <SelectField
+                    label="Algorithm"
+                    value={e.Algorithm}
+                    onChange={(v) => setKey({ ...e, Algorithm: v })}
+                    options={[
+                      { value: "scrambler", label: "scrambler (NXDN 15-bit scrambler, decimal key)" },
+                      { value: "rc4", label: "rc4 (DMR Enhanced Privacy / P25 ADP)" },
+                      { value: "des", label: "des (P25 DES-OFB)" },
+                      { value: "tdes", label: "tdes (P25 Triple-DES)" },
+                      { value: "aes", label: "aes (P25 AES-128 / AES-256)" },
+                    ]}
+                  />
+                  <TextField label="Key" type="password" value={e.Key} onChange={(v) => setKey({ ...e, Key: v })} />
+                </div>
+              )}
+            />
+          </div>
+        )}
+      />
+    </Fieldset>
   );
 }

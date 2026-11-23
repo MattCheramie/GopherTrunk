@@ -700,6 +700,42 @@ sdr:
     #     - frequency_hz: 467_875_000
     #       system: "250_208"
 
+  # SDR groups: gang several role: wideband sticks into ONE logical
+  # receiver covering more spectrum than one of them can (three 2.4 MS/s
+  # RTL-SDRs cover ~6.3 MHz). Each member is an ordinary sdr.devices entry
+  # with `role: wideband` and `group: <name>`; it keeps its own gain, ppm
+  # and bias_tee, and may pin center_freq_hz (otherwise the planner picks
+  # it). The group carries the channel plan: the planner tiles the span
+  # with the members' windows (overlapping by the widest channel tap +
+  # 25 kHz, so a carrier near a seam sits wholly inside one member), moves
+  # auto centres off any channel's DC spur, and gives every channel to the
+  # member that covers it. The members' IQ is never combined, so ordinary
+  # dongles with independent clocks work. The daemon logs the plan at
+  # start-up ("sdr group member" lines), the web Spectrum panel shows the
+  # group as one stitched panorama (group:<name>), and a baseband.record
+  # entry may name the group to record every member. Set low_hz / high_hz
+  # to the system's whole voice band so trunked voice grants anywhere in
+  # it are followed on a member's voice taps. See docs/sdr-groups.md.
+  #
+  # devices:
+  #   - { serial: "00000011", role: wideband, group: south, gain: "auto" }
+  #   - { serial: "00000012", role: wideband, group: south, gain: "auto" }
+  #   - { serial: "00000013", role: wideband, group: south, gain: "auto" }
+  # groups:
+  #   - name: south
+  #     low_hz: 851_000_000        # optional span; 0/0 = the channel extent
+  #     high_hz: 857_000_000
+  #     overlap_hz: 0              # 0 = auto
+  #     voice_taps: 2              # allocated on EVERY member
+  #     signalling_taps: 0         # P25 Phase 2 alias harvesters, per member
+  #     tuner_strategy: auto
+  #     channels:                  # same entries as a wideband device's
+  #       - frequency_hz: 851_012_500
+  #         system: "Metro P25"
+  #       - frequency_hz: 856_987_500
+  #         system: "Metro P25"
+  #     conventional: []           # same entries as a wideband device's
+
   # rtl_tcp remote SDRs. Each entry mounts a host:port rtl_tcp server
   # as a virtual tuner alongside any local USB dongles. Use when the
   # SDR hardware lives on a different host from the daemon (e.g. a
