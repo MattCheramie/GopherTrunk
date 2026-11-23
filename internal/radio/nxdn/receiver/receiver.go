@@ -212,11 +212,24 @@ type Receiver struct {
 	eyeSPS     int
 	eyeBuf     []float32
 
-	disc    []float32
-	matched []float32
-	symbols []float32
-	sliced  []int8
-	dibits  []uint8
+	disc     []float32
+	matched  []float32
+	symbols  []float32
+	symbols2 []float32
+	sliced   []int8
+	dibits   []uint8
+
+	// Feed-forward symbol-timing acquisition (ArmTimingAcquisition).
+	sps         float64
+	sampleBase  int // matched-filter samples processed since New / Reset
+	acqPending  bool
+	acqSkip     int
+	acqBuf      []float32
+	acqStart    int
+	acqHaveCand bool
+	acqCandInst float64
+	acqWindows  int
+	timingSeeds int
 }
 
 // New constructs a Receiver. Panics if SampleRateHz or DibitSink are
@@ -340,7 +353,123 @@ func New(opts Options) *Receiver {
 		// The inner/outer decision boundary demod.C4FM.Slice uses; the
 		// sign axis boundary is 0. Anchors the per-bit LLR derivation.
 		llrThreshold: float32(2 * slicerScale / 3),
+		sps:          sps,
 	}
+}
+
+// Feed-forward symbol-timing acquisition, the YSF and DMR receivers'
+// (issues #836, #1261). The Mueller-Müller loop pulls a bad start phase in
+// at gain·error per symbol, and from near half a symbol (its unstable
+// equilibrium) it can take longer than a whole transmission: a dPMR call at
+// 2400 symbols a second, started at twenty sub-symbol phases of a 48 kHz
+// stream, decoded nothing from five of them and lost part of the call from
+// five more (issue #1374). A caller that starts the receiver on a carrier
+// that may already be up (a scan-list call gate, a voice chain at a grant)
+// arms an acquisition: the next timingAcqSkipSymbols symbols are skipped
+// (the filters' transient), then windows of timingAcqSymbols symbols of
+// matched-filter output are measured with sync.EstimateSymbolPhase, and the
+// loop is seeded (MuellerMuller.SetPhase) once two consecutive windows agree
+// within timingAcqAgreeSamples. After timingAcqMaxWindows disagreeing
+// windows it gives up and the loop pulls in on its own, as before. Off
+// unless armed, so every existing stream is byte-identical.
+const (
+	timingAcqSkipSymbols  = 10
+	timingAcqSymbols      = 96
+	timingAcqAgreeSamples = 1.0
+	timingAcqMaxWindows   = 4
+)
+
+// ArmTimingAcquisition schedules a feed-forward symbol-timing acquisition on
+// the samples that follow. Call after New and after each Reset when the
+// stream may already carry a transmission.
+func (r *Receiver) ArmTimingAcquisition() {
+	r.acqPending = true
+	r.acqSkip = int(timingAcqSkipSymbols * r.sps)
+	r.acqBuf = r.acqBuf[:0]
+	r.acqHaveCand = false
+	r.acqWindows = 0
+}
+
+// TimingSeeds is the number of feed-forward timing seeds applied so far.
+func (r *Receiver) TimingSeeds() int { return r.timingSeeds }
+
+// TimingAcquisitionPending reports whether an armed acquisition is still
+// measuring: it ends with a seed, or after timingAcqMaxWindows windows that
+// gave no agreeing estimate (on noise, for one). A caller that wants to catch
+// a transmission which starts later re-arms it then.
+func (r *Receiver) TimingAcquisitionPending() bool { return r.acqPending }
+
+// observeTimingAcq fills the armed acquisition window from this block's
+// matched-filter output. When a window completes and its estimate is
+// confirmed by the previous window's, it returns the block index k at which
+// the clock must be seeded (samples [0,k) are timed as before, [k,…) after
+// the seed) and the seed value mu: the loop's next symbol instant, in
+// samples past block sample k−1. The YSF receiver's logic, unchanged.
+func (r *Receiver) observeTimingAcq() (k int, mu float64, seed bool) {
+	if !r.acqPending {
+		return 0, 0, false
+	}
+	window := int(timingAcqSymbols * r.sps)
+	for i := range r.matched {
+		if r.acqSkip > 0 {
+			r.acqSkip--
+			continue
+		}
+		if len(r.acqBuf) == 0 {
+			r.acqStart = r.sampleBase + i
+		}
+		r.acqBuf = append(r.acqBuf, r.matched[i])
+		if len(r.acqBuf) < window {
+			continue
+		}
+		tau, ok := sync.EstimateSymbolPhase(r.acqBuf, r.sps)
+		start := r.acqStart
+		r.acqBuf = r.acqBuf[:0]
+		r.acqWindows++
+		if !ok {
+			if r.acqWindows >= timingAcqMaxWindows {
+				r.acqPending = false
+				r.acqHaveCand = false
+				return 0, 0, false
+			}
+			continue
+		}
+		inst := float64(start) + tau
+		if !r.acqHaveCand {
+			r.acqHaveCand = true
+			r.acqCandInst = inst
+			continue
+		}
+		d := math.Mod(inst-r.acqCandInst, r.sps)
+		if d > r.sps/2 {
+			d -= r.sps
+		} else if d < -r.sps/2 {
+			d += r.sps
+		}
+		if math.Abs(d) > timingAcqAgreeSamples {
+			r.acqCandInst = inst
+			if r.acqWindows >= timingAcqMaxWindows {
+				r.acqPending = false
+				r.acqHaveCand = false
+				return 0, 0, false
+			}
+			continue
+		}
+		r.acqPending = false
+		r.acqHaveCand = false
+		// The loop's next instant must be the first of those past the last
+		// sample it will have processed before the seed, block sample i.
+		last := float64(r.sampleBase + i)
+		if inst <= last {
+			inst += math.Ceil((last-inst)/r.sps) * r.sps
+			if inst <= last {
+				inst += r.sps
+			}
+		}
+		r.timingSeeds++
+		return i + 1, inst - last, true
+	}
+	return 0, 0, false
 }
 
 // Process pushes one chunk of complex64 IQ samples through the chain.
@@ -378,7 +507,17 @@ func (r *Receiver) process(iq []complex64) {
 		r.track.update(r.disc)
 	}
 	r.matched = r.mf.MatchedFilter(r.matched, r.disc)
-	r.symbols = r.clock.Process(r.symbols, r.matched)
+	if k, mu, seed := r.observeTimingAcq(); seed {
+		// Seed the clock between the two halves of this block so every
+		// symbol after the acquisition window is timed from the estimate.
+		r.symbols = r.clock.Process(r.symbols, r.matched[:k])
+		r.clock.SetPhase(mu)
+		r.symbols2 = r.clock.Process(r.symbols2, r.matched[k:])
+		r.symbols = append(r.symbols, r.symbols2...)
+	} else {
+		r.symbols = r.clock.Process(r.symbols, r.matched)
+	}
+	r.sampleBase += len(r.matched)
 	if len(r.symbols) == 0 {
 		return
 	}
@@ -468,6 +607,10 @@ func (r *Receiver) process(iq []complex64) {
 // Reset returns the receiver to its initial state.
 func (r *Receiver) Reset() {
 	r.dibitBase = 0
+	r.sampleBase = 0
+	r.acqPending = false
+	r.acqBuf = r.acqBuf[:0]
+	r.acqHaveCand = false
 	r.agc.Reset()
 	if r.afc != nil {
 		r.afc.Reset()

@@ -207,12 +207,16 @@ const (
 	ModeDStar  = "dstar"
 	// ModeYSF is System Fusion; its voice chain decodes V/D mode 2 ("DN").
 	ModeYSF = "ysf"
+	// ModeDPMR is dPMR on a 6.25 kHz channel (issue #1374): a dPMR446
+	// handheld or any other untrunked dPMR transmission, decoded by the
+	// composer's dPMR voice chain.
+	ModeDPMR = "dpmr"
 )
 
 // ValidMode reports whether mode is a Channel.Mode the scanner knows.
 func ValidMode(mode string) bool {
 	switch mode {
-	case "fm", "nfm", ModeAM, ModeP25, ModeDMR, ModeNXDN, ModeNXDN48, ModeDStar, ModeYSF:
+	case "fm", "nfm", ModeAM, ModeP25, ModeDMR, ModeNXDN, ModeNXDN48, ModeDStar, ModeYSF, ModeDPMR:
 		return true
 	}
 	return false
@@ -222,7 +226,7 @@ func ValidMode(mode string) bool {
 // sub-audible tone and no analog data bursts to decode.
 func IsDigitalMode(mode string) bool {
 	switch mode {
-	case ModeP25, ModeDMR, ModeNXDN, ModeNXDN48, ModeDStar, ModeYSF:
+	case ModeP25, ModeDMR, ModeNXDN, ModeNXDN48, ModeDStar, ModeYSF, ModeDPMR:
 		return true
 	}
 	return false
@@ -249,6 +253,8 @@ func conventionalProtocol(ch Channel) string {
 		return "dstar"
 	case ModeYSF:
 		return "ysf"
+	case ModeDPMR:
+		return "dpmr"
 	}
 	return "fm-conv"
 }

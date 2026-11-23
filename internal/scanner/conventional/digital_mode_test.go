@@ -24,6 +24,7 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 		{ModeNXDN48, "nxdn48", false},
 		{ModeDStar, "dstar", false},
 		{ModeYSF, "ysf", false},
+		{ModeDPMR, "dpmr", false},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			const freq = 442_387_500
@@ -58,6 +59,10 @@ func TestDigitalModeChannelsGrantTheirProtocol(t *testing.T) {
 				sig = dmrAt2400k(readCS16Fixture(t, nxdn96VoiceFixture))
 			case ModeNXDN48:
 				sig = dmrAt2400k(readCS16Fixture(t, nxdn48VoiceFixture))
+			case ModeDPMR:
+				// A dpmr channel opens only once the dPMR framer locks
+				// (issue #1374).
+				sig = dmrAt2400k(dpmrCallIQ(13, 6, 0))
 			case ModeDStar:
 				// A dstar channel opens only on a D-STAR header or
 				// slow-data sync pair (issue #1261).

@@ -25,6 +25,7 @@ func TestValidateWidebandConventional(t *testing.T) {
 		{Label: "NXDN48", FrequencyHz: 460_450_000, Mode: "nxdn48"},
 		{Label: "D-STAR", FrequencyHz: 460_550_000, Mode: "dstar"},
 		{Label: "YSF", FrequencyHz: 460_650_000, Mode: "ysf"},
+		{Label: "dPMR", FrequencyHz: 460_675_000, Mode: "dpmr"},
 	}
 	if err := validateWidebandDevice(0, dev(ok...), 2_400_000, nil); err != nil {
 		t.Fatalf("valid conventional-only wideband device rejected: %v", err)

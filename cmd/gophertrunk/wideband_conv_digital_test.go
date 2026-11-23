@@ -218,6 +218,7 @@ func TestWidebandConvDigitalModesDaemonWiring(t *testing.T) {
 	}{
 		{"p25", 460_100_000}, {"dmr", 460_200_000}, {"nxdn", 460_300_000},
 		{"nxdn48", 460_400_000}, {"dstar", 460_600_000}, {"ysf", 460_700_000},
+		{"dpmr", 460_800_000},
 	}
 	var chans []config.ConvChannelConfig
 	for _, m := range modes {

@@ -23,7 +23,7 @@ describe("noise squelch setting", () => {
     expect(isAnalogFM(undefined)).toBe(true);
     expect(isAnalogFM("fm")).toBe(true);
     expect(isAnalogFM("nfm")).toBe(true);
-    for (const m of ["am", "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf"]) {
+    for (const m of ["am", "p25", "dmr", "nxdn", "nxdn48", "dstar", "ysf", "dpmr"]) {
       expect(isAnalogFM(m)).toBe(false);
     }
   });

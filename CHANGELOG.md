@@ -8,6 +8,18 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **dPMR channels in the scan list** (#1374): `mode: dpmr` on a
+  `scanner.conventional` entry, or on a wideband dongle's `conventional:` list,
+  decodes 6.25 kHz dPMR, such as the licence-free dPMR446 handhelds on
+  446.1–446.2 MHz, through the dPMR voice chain. Until now nothing on the air
+  could start a dPMR call: the voice chain ran only on a grant from the dPMR
+  Mode 3 control channel, which is still not decoded. The channel opens only once
+  the dPMR framer locks onto a transmission: a sync word followed by a valid
+  control channel. Analog FM, NXDN48 (the same modulation, different frames)
+  and noise are skipped. It closes on the radio's end frame, so the hangtime
+  starts when the transmitter releases. The scanner may stay on a `dpmr` channel
+  whose carrier is up for up to a second while it checks. Experimental: checked
+  against the standard and two decoders, not yet on a real dPMR radio.
 - **More in the Phase 2 end-of-call log line** (`composer: p25p2 call
   census`), for two things the first on-air Phase 2 log could not explain:
   - `voice_errs_by_frame` and `voice_errs_by_timeslot`: where the voice
@@ -16,18 +28,16 @@ for tagged releases.
   - `iq_seconds`, `dibits` and `first_burst_ms`: whether a call that framed
     nothing (`air_bursts=0`) was fed any signal at all.
   - `ess_syncs`: encryption syncs read from the voice bursts.
-- **The daemon warns about config keys that nothing reads.** A section
-  indented one level too far, or a misspelled key, used to load without a word
-  and leave its feature at the default. At start-up (and on a config reload)
-  each such key is now logged and pinned with the other start-up warnings, for
-  example `config line 38: "log" under trunking.systems[] is not a setting and
-  is ignored: "log" is a top-level section, so it is indented too far here;
-  move it to the left margin`. The file still loads, as before. This is what
-  hid a support request's diagnostics: `log:`, `recordings:` and `baseband:`
-  were pasted under the trunking system, so the debug log and the voice IQ
-  capture never switched on.
 
 ### Fixed
+- **A dPMR call could decode nothing at all, depending on when the voice chain
+  started** (#1374). The chain's timing loop starts at an arbitrary point in the
+  signal's symbol timing and could sit at a wrong point for a whole call.
+  Started at twenty points within one symbol, a call decoded nothing from five
+  of them and only part of the call from five more. The receiver now measures
+  the symbol timing at the start of a transmission and starts the loop there,
+  so the call decodes from every start point, including a radio that re-keys
+  within the hangtime. The call's end log line now reports `timing_seeds`.
 - **P25 Phase 2 signalling messages were read from a table that did not match
   the air** (#1364). #1290 rebuilt how a Phase 2 signalling burst is framed
   and error-corrected, and that part is confirmed on real air. The table that
@@ -82,6 +92,22 @@ for tagged releases.
   every re-sync. On a real Phase 2 carrier, from the eight possible start
   points: before, one of them decoded nothing in the 1.09 s capture; now all
   eight decode 10 to 14 messages.
+
+## [v1.4.3] — 2026-11-21
+
+### Added
+- **The daemon warns about config keys that nothing reads.** A section
+  indented one level too far, or a misspelled key, used to load without a word
+  and leave its feature at the default. At start-up (and on a config reload)
+  each such key is now logged and pinned with the other start-up warnings, for
+  example `config line 38: "log" under trunking.systems[] is not a setting and
+  is ignored: "log" is a top-level section, so it is indented too far here;
+  move it to the left margin`. The file still loads, as before. This is what
+  hid a support request's diagnostics: `log:`, `recordings:` and `baseband:`
+  were pasted under the trunking system, so the debug log and the voice IQ
+  capture never switched on.
+
+### Fixed
 - **dPMR voice could not decode a real transmission** (#1374). Three things
   were wrong, each of which alone left a call silent or garbled:
   - *The vocoder frame layout.* The 72 bits of each voice frame were split

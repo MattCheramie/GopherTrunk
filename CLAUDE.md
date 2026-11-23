@@ -2738,10 +2738,19 @@ confirmation before any close-as-completed.
   one, so "outer symbols" is not enough and the field must carry the lock's known code; lost
   dibits bring the next sync word EARLY, so a re-hunt looks 48 dibits back. **Still fabricated:
   the whole Mode 3 control channel** (`sync.go`, `csbk.go`, `process.go`): dPMR has no "CSBK", a
-  beacon sends SYScast and message frames (clause 4.2.2.5), and FS3 is the end frame. Only that
-  control channel issues a `dpmr` grant and the scan list has no dPMR mode, so the rebuilt voice
-  chain is unreachable from real air until one of the two exists; a `dpmr` scan-list mode for
-  dPMR446 handhelds is the short road. siglab's dPMR sync patterns are the invented ones too.
+  beacon sends SYScast and message frames (clause 4.2.2.5), and FS3 is the end frame. The scan list
+  now has `mode: dpmr` (#1374, `conventional/dpmr_gate.go`): the gate runs the voice chain's
+  receiver + `dpmr.TrafficChannel` and is open while the framer accepts frames, shut at once on an
+  end frame (FS3); NXDN48 (same PHY) and analog never open it. Building it exposed a defect in the
+  shared `nxdnrx` receiver at 2400 sym/s: from 5 of 20 sub-symbol start phases the Mueller-Müller
+  loop sat at its unstable point for a WHOLE call (0 frames), 5 more lost part of it.
+  `nxdnrx.Receiver.ArmTimingAcquisition` (the YSF feed-forward seed, opt-in, unarmed =
+  byte-identical) fixes it, and the dPMR chain and gate RE-ARM it whenever the framer is unlocked
+  (`rearmDPMRTiming`): it gives up after ~160 ms of noise, and a re-key comes up at a new phase.
+  The NXDN voice chain does NOT arm it yet, and it needs to: on the reporter's REAL NXDN48 call
+  (`nxdn48_rdch_voice_447100_16oct_48k.cs16`) ten start phases gave 56 56 56 56 36 20 12 8 36 56 of
+  56 frames unarmed, 52-56 armed; NXDN96's worst phase 20 → 36 of 40. Separate PR. Trunked dPMR still needs the Mode 3 control channel. siglab's dPMR sync patterns are the
+  invented ones too. Synthetic-verified only (#764/#771).
 - **A DMR scan-list channel's squelch is now a CALL gate, not a power gate (#1261 follow-up).** A
   keyed-but-idle repeater (Idle bursts / CSBK beacons) held the conventional scanner on its channel.
   `conventional.DMRCallDetector` (`dmr_gate.go`, the NAC-gate shape) runs the production DMR receiver on

@@ -69,6 +69,22 @@ func newDPMRVoiceReceiver(sampleHz float64, sink nxdn.DibitSink) *nxdnrx.Receive
 	})
 }
 
+// rearmDPMRTiming keeps the receiver's feed-forward timing acquisition armed
+// while the framer is not following a transmission (issue #1374). Started at
+// an arbitrary point in a carrier's symbol timing, the Mueller-Müller loop
+// can sit near its unstable half-symbol point for longer than a whole call:
+// a synthetic call started at twenty sub-symbol phases of a 48 kHz stream
+// decoded nothing from five of them. The acquisition measures the timing
+// over ~40 ms and seeds the loop; it gives up after a few windows of noise,
+// so it is re-armed whenever it has finished and the framer is unlocked: the
+// chain starts at the grant, but a re-key within hangtime comes up at a new
+// phase after dead air. While locked the loop is left alone.
+func rearmDPMRTiming(rx *nxdnrx.Receiver, tc *dpmr.TrafficChannel) {
+	if !tc.Locked() && !rx.TimingAcquisitionPending() {
+		rx.ArmTimingAcquisition()
+	}
+}
+
 // runDPMRVoiceChain consumes IQ for one dPMR voice call: it decimates the
 // wideband IQ to a 4-FSK-friendly rate, recovers the dibit stream, and
 // routes the dibits through a dpmr.TrafficChannel, which frames them in
@@ -144,6 +160,7 @@ func (c *Composer) runDPMRVoiceChain(ctx context.Context, serial, system string,
 	tc.OnEnd = bt.onTransmissionEnd
 
 	rx = newDPMRVoiceReceiver(symbolHz, func(dibits []uint8, baseIdx int) { tc.Process(dibits, baseIdx) })
+	rx.ArmTimingAcquisition()
 
 	touchTicker := time.NewTicker(c.touchEvery)
 	defer touchTicker.Stop()
@@ -160,7 +177,7 @@ func (c *Composer) runDPMRVoiceChain(ctx context.Context, serial, system string,
 			"channel_code", dpmrHex(st.ChannelCode, st.HaveChannelCode),
 			"called_id", dpmrHex(st.CalledID, st.HaveCalled), "calling_id", dpmrHex(st.CallingID, st.HaveCalling),
 			"carrier_offset_hz", int(rx.CarrierOffsetHz()), "carrier_offset_at_voice_hz", int(voiceOffHz),
-			"iq_samples", iqSamples)
+			"timing_seeds", rx.TimingSeeds(), "iq_samples", iqSamples)
 		if st.Locks == 0 && iqSamples > 0 {
 			c.log.Warn("composer: dpmr call carried no dPMR superframe — no frame sync (FS2) was followed by a valid control channel, so the carrier was not dPMR voice (analog FM, another digital mode, noise) or was too far off frequency or too weak to slice",
 				"serial", serial, "carrier_offset_hz", int(rx.CarrierOffsetHz()), "iq_samples", iqSamples)
@@ -182,6 +199,7 @@ func (c *Composer) runDPMRVoiceChain(ctx context.Context, serial, system string,
 			iqSamples += len(iq)
 			bt.observe(iq)
 			rx.Process(fe.Process(nil, iq))
+			rearmDPMRTiming(rx, tc)
 		}
 	}
 }
