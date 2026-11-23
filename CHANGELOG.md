@@ -8,12 +8,22 @@ for tagged releases.
 ## [Unreleased]
 
 ### Added
+- **dPMR Mode 3 trunking** (#1374): a `protocol: dpmr` system now decodes
+  a real Mode 3 beacon channel and follows its calls. It locks on the beacon's
+  System Identity Code (from the Aloha or SYScast1) and turns each Goto Channel
+  for a voice call into a grant: the called party or talkgroup, the calling
+  party from the SYScasts that follow it, the emergency flag, and the traffic
+  channel's frequency, which the message carries itself, so no band plan is
+  needed (the standard's "custom" band excepted). The beacon format is decoded
+  per ETSI TS 102 658, with the message field's coding checked against dsdcc's
+  own routines. Not yet run on a real dPMR beacon.
 - **dPMR channels in the scan list** (#1374): `mode: dpmr` on a
   `scanner.conventional` entry, or on a wideband dongle's `conventional:` list,
   decodes 6.25 kHz dPMR, such as the licence-free dPMR446 handhelds on
   446.1–446.2 MHz, through the dPMR voice chain. Until now nothing on the air
   could start a dPMR call: the voice chain ran only on a grant from the dPMR
-  Mode 3 control channel, which is still not decoded. The channel opens only once
+  Mode 3 control channel, which could not decode a real beacon until the entry
+  above. The channel opens only once
   the dPMR framer locks onto a transmission: a sync word followed by a valid
   control channel. Analog FM, NXDN48 (the same modulation, different frames)
   and noise are skipped. It closes on the radio's end frame, so the hangtime
@@ -30,6 +40,14 @@ for tagged releases.
   - `ess_syncs`: encryption syncs read from the voice bursts.
 
 ### Fixed
+- **The dPMR Mode 3 control channel could not decode a real beacon** (#1374).
+  It was built on an invented model: 48-bit sync words that are not dPMR's, an
+  80-bit "CSBK" dPMR does not have, and a channel-number band plan, all agreeing
+  only with its own test fixtures. It is replaced by the beacon format above,
+  and the pipeline now runs the receiver the voice chain uses (carrier tracking,
+  and the timing seed without which a lock took up to 3 s or never came). The
+  reference pages on dPMR frame sync, "CSBK" and channel coding, which described
+  the invented model, are rewritten from the standard.
 - **A dPMR call could decode nothing at all, depending on when the voice chain
   started** (#1374). The chain's timing loop starts at an arbitrary point in the
   signal's symbol timing and could sit at a wrong point for a whole call.

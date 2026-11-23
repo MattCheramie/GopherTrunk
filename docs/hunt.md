@@ -257,11 +257,13 @@ to force it off even when a key is configured.
   | Motorola Type II | SystemID | yes (adjacent-site OSW) | configured plan |
   | NXDN | SystemID/Site/Location | — | configured plan |
   | TETRA | MCC/MNC/LA/colour code | — | configured plan |
-  | MPT1327 / dPMR | SystemID | — | configured plan |
+  | MPT1327 | SystemID | — | configured plan |
+  | dPMR Mode 3 | System Identity Code | — | none needed (a Goto Channel carries its own frequency) |
   | LTR / YSF / D-STAR | — (no system identity broadcast) | — | — |
 
   Band-plan-from-air is P25-only; the others resolve channels via the
-  configured band plan. Neighbor accumulation beyond the protocols above (e.g.
+  configured band plan, except dPMR, whose grants name their frequency
+  directly (only the standard's "custom" band cannot be resolved). Neighbor accumulation beyond the protocols above (e.g.
   TETRA neighbour cells) lands incrementally.
 - **Talkgroup names.** A blind discovery can only record talkgroup *numbers*
   and activity; names/descriptions are filled in during RadioReference

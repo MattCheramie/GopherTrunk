@@ -368,13 +368,14 @@ func TestTrafficChannelRidesThroughBitErrors(t *testing.T) {
 }
 
 // TestTrafficChannelIgnoresTheLegacyModel: the frames the old traffic
-// adapter was built around (a 48-bit sync word from sync.go, a 48-bit
-// control field, the payload) are not dPMR and must not decode.
+// adapter was built around (the 48-bit "FS1" 57FF5F75F575 of the deleted
+// sync.go, a 48-bit control field, the payload) are not dPMR and must not
+// decode.
 func TestTrafficChannelIgnoresTheLegacyModel(t *testing.T) {
 	tx := newAirTx(t, 10)
 	var d []uint8
 	for i := 0; i < 20; i++ {
-		d = append(d, FS1Dibits()...)
+		d = append(d, wordToDibits(0x57FF5F75F575, 24)...)
 		d = append(d, make([]uint8, 24)...)
 		tx.dibits = tx.dibits[:0]
 		for j := 0; j < 4; j++ {

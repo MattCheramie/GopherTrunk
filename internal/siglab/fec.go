@@ -2,6 +2,7 @@ package siglab
 
 import (
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr"
+	"github.com/MattCheramie/GopherTrunk/internal/radio/dpmr"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dstar"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
@@ -317,4 +318,55 @@ func p25p2FEC(stream []uint8, _ *SyncLandscape, sys trunking.System) []FECStat {
 		tallyErrs(&mac, errs)
 	}
 	return []FECStat{isch, mac}
+}
+
+// dpmrFEC tallies the Mode 3 beacon frameset behind each FS1 hit: the
+// message field (Hamming (12,8) + CRC8, either copy) and the three SYScast
+// fields (Hamming + CRC7). A traffic channel's FS1 opens a header frame,
+// which decodes as a message too; its SYScast stage then fails, which is how
+// the tally tells a beacon from a traffic channel. Both polarities are tried.
+func dpmrFEC(stream []uint8, land *SyncLandscape, _ trunking.System) []FECStat {
+	msg := FECStat{Stage: "beacon message Hamming(12,8)+CRC8"}
+	sy := FECStat{Stage: "beacon SYScast Hamming(12,8)+CRC7"}
+	if land.SyncLen != dpmr.BeaconFS1Dibits {
+		return nil
+	}
+	frame := make([]uint8, dpmr.BeaconFramesetDibits)
+	for _, pos := range land.positions {
+		start := pos + land.SyncLen
+		if start+len(frame) > len(stream) {
+			continue
+		}
+		best, bestSY := -1, 0
+		for _, inverted := range []bool{false, true} {
+			copy(frame, stream[start:start+len(frame)])
+			if inverted {
+				for i := range frame {
+					frame[i] ^= 2
+				}
+			}
+			errs := -1
+			if _, c, ok := dpmr.DecodeBeaconMI(frame[:dpmr.BeaconMIDibits]); ok {
+				errs = c
+			} else if _, c, ok := dpmr.DecodeBeaconMI(frame[dpmr.BeaconMIDibits+dpmr.AirSyncDibits : dpmr.BeaconSlotDibits]); ok {
+				errs = c
+			}
+			n := 0
+			for _, f := range dpmr.DecodeBeaconSYScast(frame[dpmr.BeaconSlotDibits : dpmr.BeaconSlotDibits+dpmr.BeaconSYScastDibits]) {
+				if f.OK {
+					n++
+				}
+			}
+			// Keep the polarity that decodes more: a valid message first,
+			// then more SYScast fields.
+			if (errs >= 0) != (best >= 0) && errs >= 0 || (errs >= 0) == (best >= 0) && n > bestSY {
+				best, bestSY = errs, n
+			}
+		}
+		tallyErrs(&msg, best)
+		sy.Frames += 3
+		sy.CRCPass += bestSY
+		sy.CRCFail += 3 - bestSY
+	}
+	return []FECStat{msg, sy}
 }

@@ -97,12 +97,18 @@ var detailSpecs = map[trunking.Protocol]detailSpec{
 		cardinality: 4, tolerance: 4,
 		syncFn: func() []SyncVariant {
 			return []SyncVariant{
-				{Name: "fs1", Pattern: dpmr.FS1Dibits()},
-				{Name: "fs2", Pattern: dpmr.FS2Dibits()},
-				{Name: "fs3", Pattern: dpmr.FS3Dibits()},
+				// The air format's 48-bit sync words (ETSI TS 102 658
+				// clause 6.1): FS1 opens every Mode 3 beacon message and
+				// every traffic header, FS4 a packet-data header. FS2 and
+				// FS3 are only 12 symbols; at this tolerance they match
+				// any 4FSK data (a DMR carrier's leakage scored as dPMR on
+				// the wideband survey), so they are not correlated.
+				{Name: "fs1", Pattern: dpmr.AirFS1Dibits()},
+				{Name: "fs4", Pattern: dpmr.AirFS4Dibits()},
 			}
 		},
-		notes: "dPMR CSBKs carry no inner FEC; sync landscape only.",
+		fec:   dpmrFEC,
+		notes: "FS1 hits are decoded as a Mode 3 beacon frameset: the message field (CRC8) and the SYScast block (CRC7 per field).",
 	},
 	trunking.ProtocolYSF: {
 		cardinality: 4, tolerance: 3,

@@ -109,12 +109,14 @@ var fixtures = map[trunking.Protocol]fixture{
 		},
 	},
 	trunking.ProtocolDPMR: {
-		build:      func() []uint8 { return buildDPMRSiteBroadcastDibits(30, 0x123456) },
-		modulate:   func(d []uint8, sr float64) []complex64 { return demod.ModulateC4FM(d, 20, 8, 0.20, sr, 900.0) },
+		build: func() []uint8 { return buildDPMRBeaconDibits(30, 0x0C55) },
+		// clause 14.2.2.1: +-1050 Hz at the outer symbols, 2400 symbols/s.
+		modulate:   func(d []uint8, sr float64) []complex64 { return demod.ModulateC4FM(d, 20, 8, 0.20, sr, 1050.0) },
 		sampleRate: 48_000,
 		expected: Acceptance{
 			Lock:       boolPtr(true),
-			LockFields: map[string]any{"system_id": "0x123456"},
+			LockFields: map[string]any{"system_id": "0xC55"},
+			MinGrants:  1,
 		},
 	},
 	trunking.ProtocolYSF: {
@@ -359,31 +361,37 @@ func buildNXDNAirControlDibits(repeats int, loc nxdn.LocationID) []uint8 {
 	return append(out, noise(100)...)
 }
 
-// buildDPMRSiteBroadcastDibits builds a dPMR control-channel stream (FS3 +
-// CSBK standing-service-status). Lifted from integration_cc_dpmr_test.go.
-func buildDPMRSiteBroadcastDibits(repeats int, systemID uint32) []uint8 {
-	csbk := dpmr.CSBK{Type: dpmr.MsgStandingServiceStatus, DestID: systemID, Extra: 0x42}
-	csbkBits := dpmr.CSBKBits(csbk)
-	csbkDibits := framing.BitsToDibits(csbkBits)
-
-	frame := make([]uint8, 0, 24+len(csbkDibits))
-	frame = append(frame, dpmr.FS3Dibits()...)
-	frame = append(frame, csbkDibits...)
-
-	out := make([]uint8, 0, 400+repeats*(len(frame)+16)+100)
-	for i := 0; i < 400; i++ {
-		out = append(out, uint8(i&3))
-	}
-	for r := 0; r < repeats; r++ {
-		out = append(out, frame...)
-		for i := 0; i < 16; i++ {
-			out = append(out, uint8(i&3))
+// buildDPMRBeaconDibits builds a dPMR Mode 3 beacon downlink in the air
+// format (ETSI TS 102 658 clause 4.2.3.7): framesets of an Aloha with the
+// System Identity Code, and every fourth a Goto Channel sending talkgroup
+// 012345* to 446.00625 MHz with its calling party in the SYScasts.
+func buildDPMRBeaconDibits(framesets int, sys uint16) []uint8 {
+	rng := uint32(7)
+	noise := func(n int) []uint8 {
+		out := make([]uint8, n)
+		for i := range out {
+			rng = rng*1664525 + 1013904223
+			out[i] = uint8(rng >> 30)
 		}
+		return out
 	}
-	for i := 0; i < 100; i++ {
-		out = append(out, uint8(i&3))
+	out := noise(400)
+	out = append(out, dpmr.AirFS1Dibits()...)
+	sy1 := dpmr.EncodeSYScast1(dpmr.SYScast1{SystemCode: sys})
+	band, sep, field, _ := dpmr.FrequencyFields(446_006_250)
+	for i := 0; i < framesets; i++ {
+		if i%4 == 3 {
+			g := dpmr.EncodeGotoChannel(dpmr.GotoChannel{Called: 0x02C00A, RxField: field, TxField: field,
+				Band: band, Sep5k: sep, Mode: dpmr.AirModeVoice})
+			a, b := dpmr.EncodeCallingParty(0x1B91FD)
+			out = append(out, dpmr.EncodeBeaconFrameset(g, dpmr.BeaconChannelCode0, [3]uint32{sy1, a, b})...)
+			continue
+		}
+		cfc := dpmr.EncodeSYScast2(dpmr.SYTypeFrameCounter, uint16(i))
+		out = append(out, dpmr.EncodeBeaconFrameset(dpmr.EncodeAloha(dpmr.Aloha{MSID: 0xFFFFFF, SystemCode: sys}),
+			dpmr.BeaconChannelCode0, [3]uint32{sy1, cfc, cfc})...)
 	}
-	return out
+	return append(out, noise(100)...)
 }
 
 // buildYSFFSWStream builds a YSF stream of FSW-bearing frames. Lifted from

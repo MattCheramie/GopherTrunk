@@ -72,10 +72,6 @@ func TestAirSyncWordsAreTheStandards(t *testing.T) {
 	if AirFS4 != AirFS1^0xAAAAAAAAAAAA {
 		t.Errorf("FS4 is not the complement of FS1")
 	}
-	// The old model's words (sync.go) are not the air format.
-	if uint64(AirFS2) == FS2Hex || AirFS1 == FS1Hex {
-		t.Errorf("air sync words equal the legacy model's")
-	}
 	if airFS2Sign != 0b001111010110 || airFS3Sign != 0b011010111100 {
 		t.Errorf("sign words FS2 %012b FS3 %012b", airFS2Sign, airFS3Sign)
 	}

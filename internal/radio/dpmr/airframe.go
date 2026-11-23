@@ -69,6 +69,9 @@ func AirFS3Dibits() []uint8 { return wordToDibits(uint64(AirFS3), AirSyncDibits)
 // AirFS1Dibits returns the 24 dibits of FS1.
 func AirFS1Dibits() []uint8 { return wordToDibits(AirFS1, 2*AirSyncDibits) }
 
+// AirFS4Dibits returns the 24 dibits of FS4.
+func AirFS4Dibits() []uint8 { return wordToDibits(AirFS4, 2*AirSyncDibits) }
+
 func wordToDibits(w uint64, n int) []uint8 {
 	out := make([]uint8, n)
 	for i := range out {
@@ -116,13 +119,14 @@ func airSyncDistance(d []uint8, word uint32) int {
 
 // airScramble is the scrambling sequence of clause 7.3: x^9 + x^5 + 1 with
 // the register preset to all ones, restarted for every scrambled field.
-// 72 bits cover a CCH; a header field takes 120.
-var airScramble = func() [120]uint8 {
+// 72 bits cover a CCH; a message field takes 120 and a beacon's three
+// SYScasts, scrambled as one block, 216 (clause 11.7).
+var airScramble = func() [3 * 72]uint8 {
 	var s [9]uint8
 	for i := range s {
 		s[i] = 1
 	}
-	var out [120]uint8
+	var out [3 * 72]uint8
 	for i := range out {
 		out[i] = s[0]
 		fb := s[4] ^ s[0]

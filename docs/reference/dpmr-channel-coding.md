@@ -3,96 +3,54 @@ slug: dpmr-channel-coding
 title: dPMR Channel Coding
 entry_type: term
 category: error-correction
-description: "dPMR protects its CSBK and traffic payloads with a short-block cyclic code under a rate-3/4 convolutional outer code plus interleaving. GopherTrunk parses dPMR at the post-FEC layer today, with the error-correction stage documented as an honest follow-up."
-keywords: dPMR channel coding, dPMR FEC, cyclic code, rate 3/4 convolutional, interleaving, CSBK coding, ETSI TS 102 658, deferred FEC
+description: "dPMR protects its signalling with a CRC (CRC7 or CRC8), a shortened Hamming (12,8) code on every byte, a block interleaver (12 x 6 or 12 x 10) and the x^9 + x^5 + 1 scrambler. Voice frames carry the AMBE+2 vocoder's own Golay coding. There is no convolutional code."
+keywords: dPMR channel coding, dPMR FEC, Hamming 12 8, CRC7, CRC8, interleaving, scrambler x9 x5 1, ETSI TS 102 658
 aka: ["dPMR FEC", "dPMR channel coding"]
 autolink: true
 infobox:
-  - { label: Outer code, value: rate-3/4 convolutional }
-  - { label: Inner, value: short-block cyclic code }
-  - { label: Plus, value: interleaving over the burst }
-  - { label: Spec, value: ETSI TS 102 658 §6 }
-see_also: [forward-error-correction, convolutional-code, dpmr, dpmr-csbk, dpmr-frame-sync, puncturing, interleaving, cyclic-redundancy-check]
+  - { label: Code, value: "shortened Hamming (12,8) per byte" }
+  - { label: Check, value: "CRC7 (x^7+x^3+1) or CRC8 (x^8+x^2+x+1)" }
+  - { label: Interleave, value: "12 x 6 or 12 x 10 block" }
+  - { label: Scrambler, value: "x^9 + x^5 + 1, preset all ones" }
+  - { label: Spec, value: ETSI TS 102 658 clause 7 }
+see_also: [forward-error-correction, dpmr, dpmr-csbk, dpmr-frame-sync, interleaving, cyclic-redundancy-check]
 cite_urls:
-  - https://en.wikipedia.org/wiki/DPMR
-  - https://en.wikipedia.org/wiki/Convolutional_code
+  - https://www.etsi.org/deliver/etsi_ts/102600_102699/102658/02.06.01_60/ts_102658v020601p.pdf
+  - https://en.wikipedia.org/wiki/Hamming_code
 ---
 
-**dPMR channel coding** is the [forward-error-correction](/reference/forward-error-correction/)
-that protects a [dPMR](/reference/dpmr/) [CSBK](/reference/dpmr-csbk/) or traffic payload as it
-crosses a noisy 4FSK channel.[^wiki] Per ETSI TS 102 658 §6, dPMR wraps its payload bits in a
-short-block cyclic code under a rate-¾ [convolutional](/reference/convolutional-code/) outer
-code, then [interleaves](/reference/interleaving/) the result across the burst so a fade turns
-into scattered single errors the decoder can repair.[^conv] GopherTrunk currently parses dPMR at
-the layer *above* this stage — an honest, documented deferral covered below.
+[dPMR](/reference/dpmr/) codes every signalling field the same way, in four steps (ETSI
+TS 102 658 clause 7):[^etsi]
 
-<figure class="figure" markdown="0">
-<svg viewBox="0 0 480 150" role="img" aria-label="The dPMR coding stack drawn as a pipeline from payload bits through a short-block cyclic code, a rate-three-quarters convolutional code, and an interleaver to the on-air burst; a dashed boundary marks that GopherTrunk implements the structured payload parsing at the top of the stack while the cyclic, convolutional, and interleave stages are a documented follow-up." xmlns="http://www.w3.org/2000/svg">
-  <g font-size="7.5" fill="currentColor">
-    <rect x="12" y="46" width="70" height="30" fill="currentColor" fill-opacity="0.24" stroke="currentColor" stroke-width="1"/>
-    <text x="47" y="60" text-anchor="middle">payload bits</text>
-    <text x="47" y="70" text-anchor="middle" font-size="6.5">(CSBK / traffic)</text>
-    <path d="M82 61 L100 61" stroke="currentColor" stroke-width="1" marker-end="url(#d)"/>
-    <rect x="100" y="46" width="74" height="30" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2"/>
-    <text x="137" y="60" text-anchor="middle">cyclic</text>
-    <text x="137" y="70" text-anchor="middle" font-size="6.5">short block</text>
-    <path d="M174 61 L192 61" stroke="currentColor" stroke-width="1" marker-end="url(#d)"/>
-    <rect x="192" y="46" width="74" height="30" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2"/>
-    <text x="229" y="60" text-anchor="middle">conv R=3/4</text>
-    <text x="229" y="70" text-anchor="middle" font-size="6.5">outer code</text>
-    <path d="M266 61 L284 61" stroke="currentColor" stroke-width="1" marker-end="url(#d)"/>
-    <rect x="284" y="46" width="74" height="30" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2"/>
-    <text x="321" y="60" text-anchor="middle">interleave</text>
-    <path d="M358 61 L376 61" stroke="currentColor" stroke-width="1" marker-end="url(#d)"/>
-    <rect x="376" y="46" width="90" height="30" fill="currentColor" fill-opacity="0.22" stroke="currentColor" stroke-width="1"/>
-    <text x="421" y="64" text-anchor="middle">on-air burst</text>
-  </g>
-  <text x="100" y="98" font-size="7.5" fill="currentColor">dashed = documented follow-up (GopherTrunk parses above this stage)</text>
-  <defs><marker id="d" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="currentColor"/></marker></defs>
-</svg>
-<figcaption>dPMR's coding stack runs payload bits through a short-block cyclic code, a rate-3/4 convolutional outer code, and an interleaver before the burst goes on air. GopherTrunk implements the structured payload layer at the top; the cyclic, convolutional, and interleave stages (dashed) are a named deferral.</figcaption>
-</figure>
+1. **CRC.** A 7-bit CRC (x^7 + x^3 + 1) or an 8-bit one (x^8 + x^2 + x + 1), register preset to
+   zero, appended to the information bits.
+2. **Hamming (12,8).** The result is cut into bytes and each byte gets four parity bits from a
+   shortened Hamming code (generator x^4 + x + 1), which corrects one error per 12-bit block.
+3. **Interleave.** The blocks are written down the columns of a 12-row matrix and read out row by
+   row, so a burst of errors on the air lands in different blocks.
+4. **Scramble.** The interleaved bits are XORed with x^9 + x^5 + 1 started from all ones.
 
-## What the coding does
+| Field | Information | CRC | Blocks | Interleave | Where |
+|-------|-------------|-----|--------|------------|-------|
+| Control channel (CCH) | 41 bits | CRC7 | 6 | 12 x 6 | every payload frame |
+| Message / header (MI, HI) | 72 bits | CRC8 | 10 | 12 x 10 | headers; Mode 3 beacon messages, sent twice |
+| End data | 17 bits | CRC7 | 3, sent twice | none | the end frame |
+| SYScast | 17 bits each | CRC7 | 3, sent twice | 12 x 6 | Mode 3 beacon; the three are scrambled as one 216-bit block |
+| Appended data | 72 bits | CRC8 | 10 | 12 x 10 | in place of a SYScast, or after a header |
 
-The three stages each answer a different failure mode. The short-block cyclic code adds a small
-number of parity bits so the receiver can detect — and for the shortest blocks, correct — a
-handful of bit errors, and it doubles as an integrity check like a
-[CRC](/reference/cyclic-redundancy-check/). The rate-¾ convolutional outer code spreads each
-input bit's influence across several output bits, so a Viterbi-style decoder can reconstruct the
-original stream even where individual bits were lost; the ¾ rate keeps the overhead modest,
-appropriate for dPMR's narrow 6.25 kHz channel where bandwidth is scarce. The interleaver then
-reorders the coded bits so that a *burst* error on the channel — a fade lasting several symbols —
-is spread out into isolated single-bit errors once de-interleaved, which is exactly the error
-pattern the cyclic and convolutional decoders handle best. Together they let a marginal dPMR
-signal deliver a correct CSBK where an uncoded block would be discarded.
+The voice payload is not scrambled and is not coded by any of this: each 72-bit TCH block is an
+AMBE+2 vocoder frame with the vocoder's own Golay protection, laid out exactly as DMR's.
 
-## The implementation gap
+## In GopherTrunk
 
-GopherTrunk is deliberate about what it has and has not built. Its dPMR package ships a clean
-structured surface — [frame sync](/reference/dpmr-frame-sync/) detection, CSBK parsing, the
-opcode enum, the band-plan resolver, and the trunking state machine — so the engine can consume
-grants end-to-end against fixtures. The CSBK parser, though, **assumes the upstream caller has
-already corrected errors**: it maps 80 clean bits into fields, and the FEC that would produce
-those 80 clean bits from an on-air burst is listed among the package's honest deferrals. The
-source names the missing pieces explicitly: the interleaver plus the short-block-cyclic /
-rate-¾-convolutional FEC over the CSBK bits, the 4FSK demodulator and symbol-clock recovery for
-the 2400 sym/sec air interface, and voice-frame extraction into the AMBE+2 vocoder. Flagging
-these as named follow-ups — rather than silently shipping a half-built decoder — is a deliberate
-choice: the structured layer is testable now against pre-corrected fixtures, and the FEC slots
-in beneath it without changing the surface above.
-
-## Relevance to SDR
-
-`internal/radio/dpmr/dpmr.go` documents this boundary in the package doc comment, and the
-parsing in `csbk.go` operates on the post-FEC bit layer. For a live off-air dPMR control channel
-the chain would be: 4FSK demod → FS3 sync → de-interleave → convolutional + cyclic decode →
-80-bit CSBK → parse. Today GopherTrunk implements the sync-and-parse ends of that chain and
-defers the demod-and-FEC middle, which is the correct order for a decoder built against captured
-and replayed fixtures: the structured trunking logic is proven first, and the error-correction
-that feeds it is added as a self-contained stage once conformance vectors are in hand.
+`internal/radio/dpmr/airframe.go` codes the control channel and `beacon_air.go` the message and
+SYScast fields. Both are pinned by vectors that the reference decoders' own routines decode
+(DSD-FME for the control channel, dsdcc for the message field), compiled outside the repository.
+The two references disagree on one point: DSD-FME's CRC8 routine presets its register to all ones,
+but DSD-FME never calls it; dsdcc's, which decodes received headers, presets it to zero, and so
+does GopherTrunk. This page used to describe a "rate-3/4 convolutional code"; dPMR has none, and
+that description came from an earlier model removed in issue #1374.
 
 ## Sources
 
-[^wiki]: [dPMR](https://en.wikipedia.org/wiki/DPMR) — Wikipedia, on the ETSI dPMR standard and its physical layer.
-[^conv]: [Convolutional code](https://en.wikipedia.org/wiki/Convolutional_code) — Wikipedia, on the outer code family dPMR's channel coding uses.
+[^etsi]: [ETSI TS 102 658 V2.6.1](https://www.etsi.org/deliver/etsi_ts/102600_102699/102658/02.06.01_60/ts_102658v020601p.pdf) — clause 7 (CRC, Hamming, scrambling, interleaving and the per-field coding) and clause 11 (worked construction of each frame).
