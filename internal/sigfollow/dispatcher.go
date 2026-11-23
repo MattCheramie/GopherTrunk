@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/MattCheramie/GopherTrunk/internal/events"
@@ -47,6 +48,11 @@ import (
 // encryption sync comes from MAC_PTT here; the copy that rides the voice
 // bursts (p25p2.ESSTracker) is the voice chain's to read.
 type MACDispatcher struct {
+	// softDecoded counts bursts that decoded only through the soft retry
+	// (p25p2.AirMAC.Erased > 0): the weak-signal gain the call census
+	// reports (issue #1364).
+	softDecoded atomic.Uint64
+
 	bus       *events.Bus
 	log       *slog.Logger
 	logPrefix string
@@ -133,6 +139,9 @@ func (d *MACDispatcher) DispatchAir(bursts []p25p2.AirBurst, masks *p25p2.AirMas
 			continue
 		}
 		decoded++
+		if m.Erased > 0 {
+			d.softDecoded.Add(1)
+		}
 		if _, ok := m.EndPTT(); ok {
 			d.noteFirst(m, p25p2.MACPDU{}, "MAC_END_PTT", hex.EncodeToString(m.Bytes))
 			if d.onTransmissionEnd != nil {
@@ -164,6 +173,11 @@ func (d *MACDispatcher) DispatchAir(bursts []p25p2.AirBurst, masks *p25p2.AirMas
 	}
 	return signalling, decoded
 }
+
+// SoftDecoded returns how many signalling bursts decoded only through the
+// soft retry: their hard Reed-Solomon decode failed, and erasing their least
+// reliable symbols let them through (issue #1364).
+func (d *MACDispatcher) SoftDecoded() uint64 { return d.softDecoded.Load() }
 
 // noteFirst logs the first message seen per (channel, PDU type, opcode,
 // MFID) on this traffic channel with its bytes: the instrument that tells

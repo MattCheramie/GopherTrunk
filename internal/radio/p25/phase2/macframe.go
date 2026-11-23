@@ -2,6 +2,7 @@ package phase2
 
 import (
 	"encoding/binary"
+	"sort"
 
 	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 )
@@ -91,6 +92,10 @@ type AirMAC struct {
 	Bytes []byte
 	// Corrected counts the RS symbols the decode changed.
 	Corrected int
+	// Erased is how many of the burst's least reliable received symbols
+	// the soft retry erased to decode it (decodeAirMACErasing); 0 for a
+	// hard decode.
+	Erased int
 }
 
 // airMACLayout is one signalling channel's burst geometry.
@@ -157,6 +162,8 @@ func DecodeAirMAC(b AirBurst, masks *AirMasks) (AirMAC, bool) {
 		mask = masks.Slot(b.Slot)
 	}
 	var dib []uint8
+	var drel []float32
+	soft := len(b.Rel) == AirPacketDibits
 	for _, sp := range lay.spans {
 		for i := sp[0]; i < sp[1]; i++ {
 			d := body[i]
@@ -164,6 +171,9 @@ func DecodeAirMAC(b AirBurst, masks *AirMasks) (AirMAC, bool) {
 				d ^= mask[i]
 			}
 			dib = append(dib, d)
+			if soft {
+				drel = append(drel, b.Rel[AirISCHDibits+i])
+			}
 		}
 	}
 	bits := framing.DibitsToBits(dib)
@@ -189,7 +199,55 @@ func DecodeAirMAC(b AirBurst, masks *AirMasks) (AirMAC, bool) {
 	for i := 0; i < lay.first; i++ {
 		both = append(both, i)
 	}
-	return decodeAirMACWord(rx, both, lay, ch)
+	if m, ok := decodeAirMACWord(rx, both, lay, ch); ok {
+		return m, true
+	}
+	if soft {
+		return decodeAirMACErasing(rx, drel, punct, lay, ch)
+	}
+	return AirMAC{}, false
+}
+
+// airMACSoftErasureMargin is the RS redundancy the soft retry always leaves
+// for errors: it never erases so many symbols that fewer than this many
+// parity symbols remain. Every retry is a fresh chance for the decoder to
+// land on a wrong codeword the CRC then has to catch, and the fewer parity
+// symbols remain, the likelier that is (measured in
+// TestAirMACSoftRetryFalseAcceptRate).
+const airMACSoftErasureMargin = 6
+
+// decodeAirMACErasing retries a signalling burst the hard decode could not
+// correct, erasing its least reliable received hexbits: 2, then 4, and so on,
+// as far as airMACSoftErasureMargin allows. An erased symbol costs the
+// Reed-Solomon code one parity symbol where an error costs two, so a burst
+// whose errors sit among its least reliable symbols (the usual case on a weak
+// signal) decodes with more of them than the hard decode corrects (issue
+// #1364). A hexbit is as reliable as its least reliable dibit.
+func decodeAirMACErasing(rx []byte, drel []float32, punct []int, lay airMACLayout, ch AirMACChannel) (AirMAC, bool) {
+	type sym struct {
+		idx int
+		rel float32
+	}
+	syms := make([]sym, lay.present)
+	for k := range syms {
+		r := drel[3*k]
+		r = min(r, drel[3*k+1], drel[3*k+2])
+		syms[k] = sym{idx: lay.first + k, rel: r}
+	}
+	sort.SliceStable(syms, func(i, j int) bool { return syms[i].rel < syms[j].rel })
+	maxErase := framing.RS6335N - framing.RS6335K - len(punct) - airMACSoftErasureMargin
+	erasures := append(make([]int, 0, len(punct)+maxErase), punct...)
+	for e := 2; e <= maxErase; e += 2 {
+		erasures = erasures[:len(punct)]
+		for _, s := range syms[:e] {
+			erasures = append(erasures, s.idx)
+		}
+		if m, ok := decodeAirMACWord(rx, erasures, lay, ch); ok {
+			m.Erased = e
+			return m, true
+		}
+	}
+	return AirMAC{}, false
 }
 
 func decodeAirMACWord(rx []byte, erasures []int, lay airMACLayout, ch AirMACChannel) (AirMAC, bool) {

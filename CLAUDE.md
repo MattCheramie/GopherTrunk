@@ -221,9 +221,18 @@ confirmation before any close-as-completed.
   It names the NEXT superframe's MI. MAC_END_PTT now rolls the recording (`onTransmissionEnd`), and the
   chain dispatches signalling bursts in stream order, not after the chunk's voice. The CC pipelines
   (ccdecoder + widebandt2) now `ArmTimingAcquisition` at start and after each resync: on the real MMR
-  carrier one of eight start phases decoded 0 MAC messages in 1.09 s, now 10-14 at all eight. Known and
-  NOT fixed: both CC factories build the descramble seed from `System.Site` (8 bits) as the 12-bit
-  colour code; a real TDMA CC installs it from its clear NSB. Census instruments for the two open
+  carrier one of eight start phases decoded 0 MAC messages in 1.09 s, now 10-14 at all eight. FIXED
+  23 Nov: both CC factories built the descramble seed from `System.Site` (8 bits, and the config never
+  sets WACN / System ID / Site at all) and Phase 1 hybrid grants built it from zeros + NAC before the
+  first NSB, so a call granted in that window got a WRONG NON-ZERO seed (the chain's "no seed" WARN
+  never fired) and decoded nothing. Now no seed until the NSB; `SiteUpdate.NAC` + `p25p2.SiteSeeds`
+  let the voice chain (holds ≤ 10 s of bursts, replays in order) and sigfollow adopt it late. And
+  every Phase 2 receiver now runs the soft path (hard dibits verified identical on the MMR carrier) so
+  `DecodeAirMAC` retries a failed burst erasing its least reliable hexbits (`AirBurst.Rel`,
+  `decodeAirMACErasing`): MMR + noise at -1 dB wideband 50 → 76 bursts, 0 dB 125 → 137, every extra
+  decode equal to the clean capture's bytes, 0/200 000 random bursts accepted. Hexbit reliability = MIN
+  of its dibits' min(|Re|,|Im|) (sum lost 8 at -1 dB); erasure margin/step barely matter. Census
+  instruments for the two open
   on-air questions: `voice_errs_by_frame` / `voice_errs_by_timeslot` (the call with ~2 corrections per
   voice frame beside clean MAC) and `iq_seconds` / `dibits` / `first_burst_ms` (the tap with
   `air_bursts=0`). All of this is reference-pinned; a live Phase 2 call is still the gate (#764/#771).

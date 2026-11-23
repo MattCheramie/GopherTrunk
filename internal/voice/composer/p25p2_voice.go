@@ -113,7 +113,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// frames nor the scrambled SACCH/FACCH can be descrambled.
 	seedLate := false
 	if macCfg.Seed == 0 {
-		if s := c.p25IDs.seed(system, grantNAC); s != 0 {
+		if s := c.p25IDs.Seed(system, grantNAC); s != 0 {
 			macCfg.Seed, seedLate = s, true
 			c.log.Info("composer: p25p2 grant carried no scrambler seed; using the site identity the control channel has published since",
 				"serial", serial, "system", system, "seed", s)
@@ -282,7 +282,7 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// adoptSeed installs a seed the site's identity named after the chain
 	// started and decodes what was held, in order.
 	adoptSeed := func() {
-		s := c.p25IDs.seed(system, grantNAC)
+		s := c.p25IDs.Seed(system, grantNAC)
 		if s == 0 {
 			return
 		}
@@ -348,28 +348,26 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			decodeVoice(b)
 		}
 	}
-	// Build the receiver on the hard slicer by default; when the grant
-	// carries the soft-decision flag (issue #915) wire the soft sink. The
-	// air framer slices hard dibits either way; the soft path keeps the
-	// receiver's soft-decision demod.
+	// The receiver always runs its soft path: it slices the same hard
+	// dibits as the hard path (identical on the real MMR carrier) and adds
+	// each dibit's reliability, which lets a signalling burst the hard
+	// Reed-Solomon decode cannot correct retry with its least reliable
+	// symbols erased (p25p2.DecodeAirMAC; issue #1364). The grant's
+	// soft-decision flag selected that path for the older working-model
+	// trellis and no longer changes anything here.
+	var rel []float32
 	rxOpts := p25p2rx.Options{
 		SampleRateHz:  symbolHz,
 		ClockMode:     p25p2rx.ClockGardner,
 		GardnerGain:   p25p2VoiceGardnerGain,
 		Equalizer:     macCfg.Equalizer,
 		EnableDCBlock: macCfg.DCBlock,
-	}
-	if macCfg.SoftDecision {
-		rxOpts.SoftDecision = true
-		rxOpts.SoftSink = func(dibits []uint8, soft []complex64, baseIdx int) {
+		SoftDecision:  true,
+		SoftSink: func(dibits []uint8, soft []complex64, baseIdx int) {
 			dibitsSeen.Add(uint64(len(dibits)))
-			drainAirBursts(airFramer.Process(dibits, baseIdx))
-		}
-	} else {
-		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
-			dibitsSeen.Add(uint64(len(dibits)))
-			drainAirBursts(airFramer.Process(dibits, baseIdx))
-		}
+			rel = p25p2.SoftReliability(soft, rel)
+			drainAirBursts(airFramer.ProcessSoft(dibits, rel, baseIdx))
+		},
 	}
 	rx := p25p2rx.New(rxOpts)
 	// The chain starts at the grant, at an arbitrary sub-symbol phase of a
@@ -419,9 +417,12 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			"descramble_seed_known", airMasks != nil,
 			"descramble_seed_late", seedLate,
 			"seed_wait_replayed_bursts", heldReplayed.Load(),
-			"seed_wait_dropped_bursts", heldDropped.Load()+uint64(len(held)),
+			"seed_wait_dropped_bursts", heldDropped.Load() + uint64(len(held)),
 			"mac_bursts", macBursts.Load(),
 			"mac_pdus", macPDUsDecoded.Load(),
+			// Of those, the bursts only the soft retry decoded: their
+			// least reliable symbols erased (issue #1364).
+			"mac_pdus_soft", dispatcher.SoftDecoded(),
 			"ess_syncs", essSyncs.Load(),
 			"voice_errs_by_frame", p25p2CensusCounts(errsByFrame[:]),
 			"voice_errs_by_timeslot", p25p2CensusCounts(errsBySlot[:]),

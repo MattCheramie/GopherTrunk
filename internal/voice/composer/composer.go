@@ -362,7 +362,7 @@ type Composer struct {
 	// p25IDs is the latest P25 site identity per system, from
 	// KindSiteUpdate: a Phase 2 voice chain granted before its site's
 	// identity was known takes its descramble seed from it (issue #1364).
-	p25IDs p25Identities
+	p25IDs p25p2.SiteSeeds
 
 	bus    *events.Bus
 	dev    Devices
@@ -575,7 +575,7 @@ func (c *Composer) Run(ctx context.Context) error {
 				}
 			case events.KindSiteUpdate:
 				if su, ok := ev.Payload.(trunking.SiteUpdate); ok {
-					c.p25IDs.note(su)
+					c.p25IDs.Note(su)
 				}
 			}
 		}

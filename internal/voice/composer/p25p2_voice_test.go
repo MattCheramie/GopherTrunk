@@ -698,7 +698,7 @@ func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 		t.Fatalf("census reported mac_pdus=0 despite MAC signalling in the stream, got:\n%s", out)
 	}
 	// Where the voice FEC corrections fell, and the ESS count.
-	for _, want := range []string{"voice_errs_by_frame=0/0/0/0", "voice_errs_by_timeslot=0/0/0/0/0", "ess_syncs="} {
+	for _, want := range []string{"voice_errs_by_frame=0/0/0/0", "voice_errs_by_timeslot=0/0/0/0/0", "ess_syncs=", "mac_pdus_soft=0", "descramble_seed_late=false"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("census is missing %q, got:\n%s", want, out)
 		}

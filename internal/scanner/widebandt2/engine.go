@@ -979,11 +979,19 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			log.Warn("widebandt2: unrecognised p25_phase2_clock_mode; falling back to gardner",
 				"system", sys.Name, "value", sys.P25Phase2ClockMode)
 		}
+		// Soft path: the same hard dibits plus their reliabilities, which
+		// the signalling decode uses to retry a burst it cannot correct
+		// with its least reliable symbols erased (issue #1364).
+		var rel []float32
 		rx := p25phase2rx.New(p25phase2rx.Options{
 			SampleRateHz: outRateHz,
-			DibitSink:    p25phase2.DibitSink(func(d []uint8, b int) { cc.ProcessAir(d, b) }),
-			ClockMode:    clockMode,
-			GardnerGain:  p25Phase2GardnerGain,
+			SoftDecision: true,
+			SoftSink: p25phase2.SoftDibitSink(func(d []uint8, soft []complex64, b int) {
+				rel = p25phase2.SoftReliability(soft, rel)
+				cc.ProcessAirSoft(d, rel, b)
+			}),
+			ClockMode:   clockMode,
+			GardnerGain: p25Phase2GardnerGain,
 		})
 		// Seed the symbol timing feed-forward at every start, as the
 		// ccdecoder p25Phase2Pipeline does (issue #1364): the engine starts on

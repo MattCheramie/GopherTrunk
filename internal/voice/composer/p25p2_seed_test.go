@@ -110,7 +110,7 @@ func TestComposerP25Phase2LearnsSeedFromSiteIdentityAfterGrant(t *testing.T) {
 	// The grant names the NAC it was heard on; the site update that
 	// follows names the network. Neither alone is a seed.
 	runP25P2ChainSplit(t, c, 0, p25p2TestNAC, iq, func() {
-		c.p25IDs.note(trunking.SiteUpdate{System: "MMR", WACN: p25p2TestWACN, SystemID: p25p2TestSysID})
+		c.p25IDs.Note(trunking.SiteUpdate{System: "MMR", WACN: p25p2TestWACN, SystemID: p25p2TestSysID})
 	})
 
 	if got := len(sink.raw["VOICE-1"]); got != wantFrames {
@@ -160,32 +160,6 @@ func TestComposerP25Phase2CensusCountsBurstsHeldWithoutSeed(t *testing.T) {
 	}
 }
 
-// A site update that names no network (an RFSS Status Broadcast before the
-// Network Status Broadcast) is no seed; a later one that carries no NAC keeps
-// the NAC learned before; and with no NAC anywhere there is no seed.
-func TestP25IdentitiesSeed(t *testing.T) {
-	var p p25Identities
-	p.note(trunking.SiteUpdate{System: "MMR", SystemID: p25p2TestSysID, RFSSID: 1, SiteID: 2})
-	if s := p.seed("MMR", p25p2TestNAC); s != 0 {
-		t.Fatalf("seed %#x from an update with no WACN", s)
-	}
-	p.note(trunking.SiteUpdate{System: "MMR", WACN: p25p2TestWACN, SystemID: p25p2TestSysID})
-	if s := p.seed("MMR", 0); s != 0 {
-		t.Fatalf("seed %#x with no NAC from the update or the grant", s)
-	}
-	if s := p.seed("MMR", p25p2TestNAC); s != p25p2TestSeed {
-		t.Fatalf("seed %#x from the grant's NAC, want %#x", s, p25p2TestSeed)
-	}
-	p.note(trunking.SiteUpdate{System: "MMR", WACN: p25p2TestWACN, SystemID: p25p2TestSysID, NAC: p25p2TestNAC})
-	p.note(trunking.SiteUpdate{System: "MMR", WACN: p25p2TestWACN, SystemID: p25p2TestSysID})
-	if s := p.seed("MMR", 0); s != p25p2TestSeed {
-		t.Fatalf("seed %#x after an update without a NAC, want %#x", s, p25p2TestSeed)
-	}
-	if s := p.seed("other", p25p2TestNAC); s != 0 {
-		t.Fatalf("seed %#x for a system never heard", s)
-	}
-}
-
 // The composer learns site identities from the bus: a chain started after a
 // site update takes its seed at once.
 func TestComposerNotesSiteIdentityFromBus(t *testing.T) {
@@ -199,5 +173,5 @@ func TestComposerNotesSiteIdentityFromBus(t *testing.T) {
 	bus.Publish(events.Event{Kind: events.KindSiteUpdate, Payload: trunking.SiteUpdate{
 		System: "MMR", WACN: p25p2TestWACN, SystemID: p25p2TestSysID, NAC: p25p2TestNAC,
 	}})
-	waitFor(t, 2*time.Second, func() bool { return c.p25IDs.seed("MMR", 0) == p25p2TestSeed })
+	waitFor(t, 2*time.Second, func() bool { return c.p25IDs.Seed("MMR", 0) == p25p2TestSeed })
 }

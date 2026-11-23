@@ -121,10 +121,15 @@ Broadcast supply them.
 If a followed Phase 2 call shows neither line, the MAC PDUs are not decoding
 on that channel — check the per-call census in the call-end log line
 (`composer: p25p2 call census`): `mac_bursts` counts the signalling bursts
-the call carried and `mac_pdus` how many of them decoded. `mac_pdus=0` with
-`mac_bursts` above zero is a weak-signal or wrong-identity condition, not an
-alias defect, and the knobs above are the lever; `air_bursts=0` means the
-channel was never framed at all. If you see ciphertext lines with `reliable=false` on a strong,
+the call carried and `mac_pdus` how many of them decoded (`mac_pdus_soft`
+of those decoded only because the decoder erased their least reliable
+symbols, a sign of a weak channel). `mac_pdus=0` with `mac_bursts` above zero
+is a weak-signal or wrong-identity condition, not an alias defect, and the
+knobs above are the lever; `air_bursts=0` means the channel was never framed
+at all. `descramble_seed_known=false` means the site's identity never
+reached the call: a call granted before the control channel had decoded the
+site's Network Status Broadcast waits for it (up to 10 s of the call is held
+and decoded once it arrives, `descramble_seed_late=true`). If you see ciphertext lines with `reliable=false` on a strong,
 clean channel, that *would* be an alias-decode defect — please open an issue
 with the `encoded_hex` and the radio's known name.
 

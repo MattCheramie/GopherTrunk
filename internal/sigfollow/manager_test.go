@@ -72,6 +72,20 @@ func aliasDibits(t *testing.T, warmup, n int) (dibits []uint8, src uint32, alias
 // Modulated H-DQPSK IQ flows through a real wideband broker → VirtualTuner
 // DDC → the follower's receiver, end to end.
 func TestManagerHarvestsAliasWithoutVoiceTuner(t *testing.T) {
+	harvestAlias(t, false)
+}
+
+// A grant made before its control channel had decoded the site's Network
+// Status Broadcast carries no descramble seed, and the follow used to decode
+// nothing scrambled for its whole length. It now takes the seed from the
+// site update the control channel publishes once it has the identity, and the
+// alias on the scrambled FACCH decodes (issue #1364).
+func TestManagerLearnsSeedFromSiteUpdate(t *testing.T) {
+	harvestAlias(t, true)
+}
+
+func harvestAlias(t *testing.T, lateSeed bool) {
+	t.Helper()
 	const (
 		sdrRate    = 96_000.0 // wideband input; the DDC decimates 2:1 to 48 kHz
 		sps        = 16       // 6000 sym/s × 16 = 96 kHz
@@ -128,14 +142,20 @@ func TestManagerHarvestsAliasWithoutVoiceTuner(t *testing.T) {
 		t := time.NewTicker(200 * time.Millisecond)
 		defer t.Stop()
 		for {
-			bus.Publish(events.Event{
-				Kind: events.KindGrant,
-				Payload: trunking.Grant{
-					System: "P25P2Site", Protocol: "p25-phase2",
-					GroupID: 42, FrequencyHz: targetHz,
-					P25Phase2Decode: trunking.P25Phase2Decode{Seed: testSeed},
-				},
-			})
+			g := trunking.Grant{
+				System: "P25P2Site", Protocol: "p25-phase2",
+				GroupID: 42, FrequencyHz: targetHz,
+				P25Phase2Decode: trunking.P25Phase2Decode{Seed: testSeed},
+			}
+			if lateSeed {
+				g.P25Phase2Decode.Seed, g.NAC = 0, 0x161
+			}
+			bus.Publish(events.Event{Kind: events.KindGrant, Payload: g})
+			if lateSeed {
+				bus.Publish(events.Event{Kind: events.KindSiteUpdate, Payload: trunking.SiteUpdate{
+					System: "P25P2Site", WACN: 0xBEE00, SystemID: 0x164,
+				}})
+			}
 			select {
 			case <-ctx.Done():
 				return

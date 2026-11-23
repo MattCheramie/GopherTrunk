@@ -53,6 +53,12 @@ type Manager struct {
 	idleTimeout time.Duration
 	maxDuration time.Duration
 
+	// seeds is the latest site identity per system (KindSiteUpdate): a
+	// follow whose grant carried no descramble seed takes it from here
+	// once the control channel has decoded the site's Network Status
+	// Broadcast (issue #1364).
+	seeds p25p2.SiteSeeds
+
 	mu         sync.Mutex
 	busy       map[string]bool               // tuner serial -> in use
 	active     map[uint32]context.CancelFunc // grant frequency -> follow cancel
@@ -138,6 +144,10 @@ func (m *Manager) Run(ctx context.Context) error {
 			case events.KindCallEnd:
 				if ce, ok := ev.Payload.(trunking.CallEnd); ok {
 					m.onVoiceEnd(ce.Grant.FrequencyHz)
+				}
+			case events.KindSiteUpdate:
+				if su, ok := ev.Payload.(trunking.SiteUpdate); ok {
+					m.seeds.Note(su)
 				}
 			}
 		}
@@ -240,26 +250,38 @@ func (m *Manager) follow(ctx context.Context, vt *wbvoice.VirtualTuner, g trunki
 	// drainBursts frames the dibit stream in the real TDMA air format and
 	// dispatches its signalling bursts; any framed burst counts as channel
 	// activity.
-	drainBursts := func(dibits []uint8, baseIdx int) {
-		bursts := airFramer.Process(dibits, baseIdx)
+	// A grant made before the site's identity was known carries no seed:
+	// take it as soon as the control channel publishes the identity. A
+	// follow harvests repeating signalling (aliases), so the bursts before
+	// that are not held.
+	drainBursts := func(dibits []uint8, rel []float32, baseIdx int) {
+		if masks == nil {
+			if seed := m.seeds.Seed(g.System, g.NAC); seed != 0 {
+				masks = p25p2.NewAirMasks(seed)
+				m.log.Info("sigfollow: p25p2 descramble seed learned from the site's identity",
+					"system", g.System, "serial", vt.Serial(), "seed", seed)
+			}
+		}
+		bursts := airFramer.ProcessSoft(dibits, rel, baseIdx)
 		if len(bursts) > 0 {
 			lastActivity.Store(time.Now().UnixNano())
 		}
 		dispatcher.DispatchAir(bursts, masks)
 	}
+	// The soft path slices the same hard dibits and adds their
+	// reliabilities, which the signalling decode uses to retry a burst it
+	// cannot correct with its least reliable symbols erased (issue #1364).
+	var rel []float32
 	rxOpts := p25p2rx.Options{
 		SampleRateHz: rateHz,
 		ClockMode:    p25p2rx.ClockGardner,
 		GardnerGain:  gardnerGain,
 		Equalizer:    macCfg.Equalizer,
-	}
-	if macCfg.SoftDecision {
-		rxOpts.SoftDecision = true
-		rxOpts.SoftSink = func(dibits []uint8, _ []complex64, baseIdx int) {
-			drainBursts(dibits, baseIdx)
-		}
-	} else {
-		rxOpts.DibitSink = drainBursts
+		SoftDecision: true,
+		SoftSink: func(dibits []uint8, soft []complex64, baseIdx int) {
+			rel = p25p2.SoftReliability(soft, rel)
+			drainBursts(dibits, rel, baseIdx)
+		},
 	}
 	rx := p25p2rx.New(rxOpts)
 	// Started at a grant on a carrier that is already up: seed the timing

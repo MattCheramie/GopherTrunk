@@ -40,6 +40,29 @@ for tagged releases.
   - `ess_syncs`: encryption syncs read from the voice bursts.
 
 ### Fixed
+- **P25 Phase 2: a call granted before the site's identity was known decoded
+  nothing** (#1364). A Phase 2 traffic channel is scrambled with a seed made
+  from the site's WACN, System ID and NAC, which a control channel learns from
+  its Network Status Broadcast. Until the first one, both Phase 2 control
+  channel decoders used a seed built from values the configuration never sets
+  (and the site number in place of the NAC), and a hybrid site's Phase 1
+  control channel built one from zeros. A call granted in those first seconds
+  was handed that wrong seed and stayed silent for its whole length, with no
+  warning. Such a grant now carries no seed. The voice chain holds the call's
+  bursts (up to 10 s) and decodes them once the control channel publishes the
+  site's identity, and the signalling follower adopts the seed the same way.
+  The call census reports `descramble_seed_late` and the held and dropped
+  burst counts. siglab's Phase 2 FEC tally takes the seed from the capture's
+  own Network Status Broadcast.
+- **P25 Phase 2 signalling decodes on weaker signals** (#1364). A signalling
+  burst whose Reed-Solomon decode fails is retried with its least reliable
+  symbols erased (the receiver's soft decisions now reach the decoder on the
+  voice chain, both control-channel decoders and the signalling follower).
+  On the real MMR Phase 2 carrier with noise added, it decodes 76 bursts where
+  the hard decode got 50 (at -1 dB wideband SNR) and 137 against 125 (at
+  0 dB), and every extra decode matches the clean capture's content. No
+  random burst out of 200 000 decodes, with or without the retry. The call
+  census reports how many bursts needed it (`mac_pdus_soft`).
 - **wM-Bus: a telegram that starts while another is being received is no
   longer lost** (#1256). The framer stopped looking for a new telegram once it
   had found one, until that one's last byte. Where many meters are in range,

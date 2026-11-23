@@ -22,12 +22,30 @@ type airState struct {
 // format fixes the channel coding. Process (the flat sync-window adapter
 // on the older working model) remains for its own tests.
 func (c *ControlChannel) ProcessAir(dibits []uint8, baseIdx int) int {
+	return c.processAir(dibits, nil, baseIdx)
+}
+
+// ProcessAirSoft is ProcessAir with each dibit's reliability (rel, parallel
+// to dibits; SoftReliability of the receiver's soft symbols): a signalling
+// burst the hard decode cannot correct retries with its least reliable
+// symbols erased (issue #1364).
+func (c *ControlChannel) ProcessAirSoft(dibits []uint8, rel []float32, baseIdx int) int {
+	return c.processAir(dibits, rel, baseIdx)
+}
+
+func (c *ControlChannel) processAir(dibits []uint8, rel []float32, baseIdx int) int {
 	if c.air == nil {
 		c.air = &airState{framer: NewAirFramer()}
 	}
 	a := c.air
 	c.syncAirMasks()
-	for _, b := range a.framer.Process(dibits, baseIdx) {
+	var bursts []AirBurst
+	if rel != nil {
+		bursts = a.framer.ProcessSoft(dibits, rel, baseIdx)
+	} else {
+		bursts = a.framer.Process(dibits, baseIdx)
+	}
+	for _, b := range bursts {
 		if !b.DUID.IsSignalling() {
 			continue
 		}

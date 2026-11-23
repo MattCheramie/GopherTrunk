@@ -14,25 +14,20 @@ import (
 // fragment PDUs. TalkerAliasAssembler buffers the fragments per source
 // unit and emits the completed name once every block has arrived.
 //
-// Layout note: the talker-alias MAC opcode, the fragment header, and
-// the character encoding are not in the repo's spec PDFs — Motorola and
-// Harris each have their own talker-alias format. This file is the
-// project's working model: a single OpVendorTalkerAlias opcode whose
-// payload is SourceID(3) + BlockIndex(1) + BlockCount(1) + Data, ASCII
-// in the data. All wire detail is confined here; the assembler logic
-// (per-source buffering, completion, staleness eviction) is
-// encoding-independent and tolerant of reordered or missing fragments.
+// Two models live in this file. The REAL one is the Motorola Phase 2 alias
+// (#376): HEADER opcode 0x91 + DATA opcodes 0x95 (MFID 0x90) on FACCH-S,
+// enciphered with the Motorola alias cipher and closed by a CRC-16, the
+// source RID inline in the header (AsMotorolaAliasHeader /
+// AsMotorolaAliasData + MotorolaAliasAssembler below). It is pinned against
+// SDRTrunk's fragment stream and a real capture, and it is what production
+// decodes: internal/sigfollow's MACDispatcher, which both the voice chain and
+// the signalling follower run.
 //
-// CORRECTION PENDING (#376): the working model above does not match the
-// real Motorola Phase 2 alias observed on-air (SDRTrunk, Victorian MMR).
-// The real form rides on FACCH-S during hangtime with a HEADER opcode
-// 0x91 + DATA opcodes 0x95 (see mac_vendor.go), the fragments are run
-// through the Motorola alias cipher (port phase1/motorola_alias_cipher.go)
-// not read as plain ASCII, there is a CRC-16 tail to validate, and the
-// source RID is carried inline in the header rather than supplied
-// separately. The encoding-independent assembler below should survive
-// the correction; AsTalkerAliasFragment + cleanAlias are what change.
-// Implement against the fixtures before trusting the output.
+// The OLDER working model (OpVendorTalkerAlias 0x82: SourceID(3) +
+// BlockIndex(1) + BlockCount(1) + ASCII data, TalkerAliasAssembler,
+// AsTalkerAliasFragment) matches no reference and nothing in production calls
+// it; it survives only for its own tests, like the rest of the pre-#1290
+// working-model MAC code, and goes with that code's separate removal.
 
 // TalkerAliasFragment is one numbered piece of a radio's talker alias.
 type TalkerAliasFragment struct {

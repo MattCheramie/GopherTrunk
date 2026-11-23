@@ -561,11 +561,17 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	// (cc.ProcessAir: S-/I-ISCH timeslot grid, DUID, RS(63,35) + CRC
 	// signalling decode). A receiver reset restarts the dibit count, which
 	// the framer reads as a discontinuity and re-hunts.
+	// The soft path slices the same hard dibits and adds their
+	// reliabilities, which the signalling decode uses to retry a burst it
+	// cannot correct with its least reliable symbols erased (issue #1364).
+	var rel []float32
 	rx := p25phase2rx.New(p25phase2rx.Options{
 		SampleRateHz: opts.SampleRateHz,
-		DibitSink: func(dibits []uint8, baseIdx int) {
+		SoftDecision: true,
+		SoftSink: func(dibits []uint8, soft []complex64, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
-			cc.ProcessAir(dibits, baseIdx)
+			rel = p25phase2.SoftReliability(soft, rel)
+			cc.ProcessAirSoft(dibits, rel, baseIdx)
 		},
 		ClockMode: clockMode,
 		// Tuned smaller than the 0.03 default — H-DQPSK at
