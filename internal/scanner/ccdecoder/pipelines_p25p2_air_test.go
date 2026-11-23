@@ -101,3 +101,29 @@ func TestP25Phase2PipelineBootstrapsSeedAndGrants(t *testing.T) {
 		}
 	}
 }
+
+// The pipeline installs no descramble seed of its own (issue #1364). It used
+// to build one from the system's configured WACN / System ID / Site; the
+// configuration sets none of them, and Site is not the Color Code the seed
+// needs, so it named a sequence no site sends. Grants made before the control
+// channel's Network Status Broadcast then carried that wrong seed and the
+// voice chain decoded nothing for the whole call. With no seed, they carry
+// none, and the voice chain waits for the site's identity instead.
+func TestP25Phase2PipelineInstallsNoPlaceholderSeed(t *testing.T) {
+	for _, sys := range []trunking.System{
+		{Name: "P2", Protocol: trunking.ProtocolP25Phase2},
+		{Name: "P2", Protocol: trunking.ProtocolP25Phase2, WACN: 0xBEE00, SystemID: 0x164, Site: 3},
+	} {
+		pipe, ok, err := NewPipeline(trunking.ProtocolP25Phase2, PipelineOptions{
+			Log: discardLogger(), SystemName: "P2", FrequencyHz: 851_000_000, System: sys,
+			SampleRateHz: DDCTargetForProtocol(trunking.ProtocolP25Phase2),
+		})
+		if !ok || err != nil {
+			t.Fatalf("NewPipeline: ok=%v err=%v", ok, err)
+		}
+		if got := pipe.(*p25Phase2Pipeline).cc.ScramblerSeed(); got != 0 {
+			t.Errorf("system %+v: seed %#x before any Network Status Broadcast, want none", sys, got)
+		}
+		pipe.Close()
+	}
+}

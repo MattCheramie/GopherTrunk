@@ -409,11 +409,12 @@ type System struct {
 	// Recognised values (case-insensitive): "" / "on" / "true" /
 	// "1" → ScramblerOn (the default — live Phase 2 traffic is
 	// always scrambled); "off" / "false" / "0" → ScramblerOff
-	// (opt-out for unscrambled fixtures). The seed is computed from
-	// (WACN, SystemID, low 12 bits of Site as the spec's Color
-	// Code = NAC) per spec equation (5). Forwarded into
-	// p25phase2.ControlChannel.SetScramblerMode +
-	// SetScramblerSeed by the ccdecoder connector.
+	// (opt-out for unscrambled fixtures). The seed is (WACN,
+	// SystemID, Color Code = NAC) per spec equation (5); the control
+	// channel learns it from its clear LCCH's Network Status Broadcast
+	// (issue #1364: it is not built from this struct's Site, which is
+	// not the Color Code). Forwarded into
+	// p25phase2.ControlChannel.SetScramblerMode by the ccdecoder connector.
 	P25Phase2ScramblerMode string
 	// P25Phase2SoftDecision enables the soft-decision demod path on the
 	// P25 Phase 2 traffic-channel receiver (issue #915). Recognised

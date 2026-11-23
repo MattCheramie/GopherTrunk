@@ -2116,7 +2116,16 @@ func (c *ControlChannel) publishVoiceGrant(g voiceGrant, nac uint16) {
 	var p2dec trunking.P25Phase2Decode
 	if c.bandPlan.IsTDMA(g.channelID) {
 		protocol = "p25-phase2"
-		seed := framing.PN44SeedFromIdentity(net.WACN, net.SystemID, nac&0x0FFF)
+		// The seed is only known once a Network Status Broadcast has
+		// named the WACN (an RFSS Status Broadcast carries the System ID
+		// but no WACN). Before that, a seed built from zeros would
+		// descramble nothing and the voice chain could not tell it from a
+		// real one, so the grant carries none (issue #1364): the chain
+		// waits for this site's identity instead (KindSiteUpdate).
+		var seed uint64
+		if net.WACN != 0 && net.SystemID != 0 {
+			seed = framing.PN44SeedFromIdentity(net.WACN, net.SystemID, nac&0x0FFF)
+		}
 		p2dec = trunking.P25Phase2Decode{
 			Trellis:      c.p25Phase2Trellis,
 			RS:           c.p25Phase2RS,
@@ -2212,6 +2221,7 @@ func (c *ControlChannel) publishSiteUpdate() {
 			ControlChannelTSBKCount:       tsbkCount,
 			WACN:                          net.WACN,
 			SystemID:                      net.SystemID,
+			NAC:                           c.lastNAC,
 			WACNHex:                       trunking.IDHex(uint64(net.WACN)),
 			SystemIDHex:                   trunking.IDHex(uint64(net.SystemID)),
 			RFSSIDHex:                     trunking.IDHex(uint64(net.RFSS)),

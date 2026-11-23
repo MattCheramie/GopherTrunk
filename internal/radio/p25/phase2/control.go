@@ -637,11 +637,11 @@ func New(opts Options) *ControlChannel {
 //
 // Network Status Broadcast - Update PDUs (opcode 0xFB) auto-update
 // the descrambler seed from their (WACN, SystemID, ColorCode)
-// payload per TIA-102.BBAC-1 §7.2.5 equation (5). Operators don't
-// need to hand-configure the seed any more once the first NSB-
-// Update lands on the bus — the connector still installs an
-// initial seed from per-system config for descrambling to work
-// against the very first PDUs.
+// payload per TIA-102.BBAC-1 §7.2.5 equation (5). Until the first
+// one, the control channel has no seed (the connectors install none:
+// the configuration does not name the site's identity) and its grants
+// carry none, so a voice chain waits for the site's identity rather
+// than descramble with a wrong seed (issue #1364).
 func (c *ControlChannel) Ingest(p MACPDU) {
 	c.macDecoded.Add(1)
 	c.lastActivityNano.Store(c.now().UnixNano())
@@ -842,7 +842,7 @@ func (c *ControlChannel) publishSiteUpdate() {
 	}
 	now := c.now()
 	c.mu.Lock()
-	rfss, site, wacn, sysid := c.siteRFSS, c.siteSite, c.netWACN, c.netSysID
+	rfss, site, wacn, sysid, nac := c.siteRFSS, c.siteSite, c.netWACN, c.netSysID, c.nac
 	// Publish once any identity scalar is known. WACN/System ID come only
 	// from the NSB and RFSS/Site only from the RFSS Status Broadcast, so an
 	// NSB-only or RFSS-only site must still surface (mirrors Phase 1's gate).
@@ -871,6 +871,7 @@ func (c *ControlChannel) publishSiteUpdate() {
 			ControlChannelHz: c.freqHz,
 			WACN:             wacn,
 			SystemID:         sysid,
+			NAC:              nac,
 			At:               now,
 		},
 	})

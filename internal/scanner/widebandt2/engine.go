@@ -67,7 +67,6 @@ import (
 	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier2"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
@@ -1165,9 +1164,12 @@ func applyP25Phase2Modes(cc *p25phase2.ControlChannel, sys trunking.System, log 
 			"system", sys.Name)
 	}
 	cc.SetScramblerMode(scramblerMode)
-	cc.SetScramblerSeed(framing.PN44SeedFromIdentity(
-		sys.WACN, sys.SystemID, uint16(sys.Site),
-	))
+	// No descramble seed is installed here: the seed is (WACN, System ID,
+	// Color Code = NAC), the configuration carries none of them, and a seed
+	// built from the system's Site (8 bits, not the 12-bit Color Code) only
+	// ever named a sequence no site sends. The control channel installs the
+	// real seed from the clear LCCH's Network Status Broadcast, and until
+	// then its grants carry no seed rather than a wrong one (issue #1364).
 	softDecision, softOK := p25phase2rx.ParseSoftDecision(sys.P25Phase2SoftDecision)
 	if !softOK {
 		log.Warn("widebandt2: unrecognised p25_phase2_soft_decision; falling back to off",

@@ -593,7 +593,7 @@ func TestComposerP25Phase2VoiceChainWarnsWithoutSeed(t *testing.T) {
 	close(iqCh)
 	done := make(chan struct{})
 	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "TestSys",
-		p25p2.MACDecodeConfig{}, 0, iqCh, 48_000, done)
+		p25p2.MACDecodeConfig{}, 0, 0, iqCh, 48_000, done)
 	<-done
 
 	if out := buf.String(); !strings.Contains(out, "has no scrambler seed") {
@@ -630,7 +630,7 @@ func TestComposerP25Phase2CallCensusAlwaysFires(t *testing.T) {
 	close(iqCh)
 	done := make(chan struct{})
 	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "TestSys",
-		p25p2.MACDecodeConfig{Seed: 12345}, 0, iqCh, 48_000, done)
+		p25p2.MACDecodeConfig{Seed: 12345}, 0, 0, iqCh, 48_000, done)
 	<-done
 
 	out := buf.String()
@@ -687,7 +687,7 @@ func TestComposerP25Phase2CallCensusCountsMAC(t *testing.T) {
 	close(iqCh)
 	done := make(chan struct{})
 	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "MMR",
-		p25p2.MACDecodeConfig{Seed: p25p2TestSeed}, 0, iqCh, sampleRate, done)
+		p25p2.MACDecodeConfig{Seed: p25p2TestSeed}, 0, 0, iqCh, sampleRate, done)
 	<-done
 
 	out := buf.String()
@@ -983,7 +983,7 @@ func TestComposerP25Phase2SourceUpdateOncePerChange(t *testing.T) {
 	close(iqCh)
 	done := make(chan struct{})
 	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "MMR",
-		p25p2.MACDecodeConfig{Seed: p25p2TestSeed}, 0, iqCh, sampleRate, done)
+		p25p2.MACDecodeConfig{Seed: p25p2TestSeed}, 0, 0, iqCh, sampleRate, done)
 	<-done
 
 	var updates []trunking.CallSourceUpdate
