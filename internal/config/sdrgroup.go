@@ -691,3 +691,58 @@ func validateGroupChannels(idx int, g SDRGroupConfig, systems []SystemConfig) er
 	msg := strings.ReplaceAll(err.Error(), fmt.Sprintf("sdr.devices[%d]", sentinel), fmt.Sprintf("sdr.groups[%d]", idx))
 	return errors.New(msg)
 }
+
+// sdrGroupNamed reports whether name is an sdr.groups entry.
+func (c Config) sdrGroupNamed(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, g := range c.SDR.Groups {
+		if g.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// SDRGroupMemberSerials returns the serials of the sdr.devices entries that
+// name the group, in config order.
+func (c Config) SDRGroupMemberSerials(name string) []string {
+	var out []string
+	for _, d := range c.SDR.Devices {
+		if strings.TrimSpace(d.Group) == name && name != "" {
+			out = append(out, d.Serial)
+		}
+	}
+	return out
+}
+
+// BasebandRecordEntries is baseband.record with every entry whose serial
+// names an sdr.groups entry replaced by one entry per member (same dir,
+// format and tap). An entry for a serial that is also listed explicitly keeps
+// the explicit one.
+func (c Config) BasebandRecordEntries() []BasebandRecordConfig {
+	var out []BasebandRecordConfig
+	explicit := map[string]bool{}
+	for _, r := range c.Baseband.Record {
+		if !c.sdrGroupNamed(r.Serial) {
+			explicit[r.Serial] = true
+		}
+	}
+	for _, r := range c.Baseband.Record {
+		if !c.sdrGroupNamed(r.Serial) {
+			out = append(out, r)
+			continue
+		}
+		for _, s := range c.SDRGroupMemberSerials(strings.TrimSpace(r.Serial)) {
+			if explicit[s] {
+				continue
+			}
+			m := r
+			m.Serial = s
+			out = append(out, m)
+		}
+	}
+	return out
+}

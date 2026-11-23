@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -157,5 +158,65 @@ func TestDaemonRejectsUnplannableGroup(t *testing.T) {
 	_, err := NewDaemon(cfg, "test-group", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), "uncovered") {
 		t.Fatalf("NewDaemon err = %v, want the planner's uncovered-range error", err)
+	}
+}
+
+// TestResolveSDRGroupBand pins the capture routing: a slice inside one
+// member's window resolves to that member (group: prefix or not), a slice
+// across a seam is refused naming both members, and a non-group name is left
+// for the ordinary serial path.
+func TestResolveSDRGroupBand(t *testing.T) {
+	_, plans, err := groupDaemonConfig().WithSDRGroupsExpanded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := plans[0]
+	top := p.Members[2]
+	for _, name := range []string{"south", "group:south"} {
+		serial, isGroup, err := resolveSDRGroupBand(plans, name, top.CenterFreqHz+100_000, top.CenterFreqHz+125_000)
+		if err != nil || !isGroup || serial != top.Serial {
+			t.Errorf("%s: resolve = %q, %v, %v; want %s", name, serial, isGroup, err, top.Serial)
+		}
+	}
+	// A band from the middle member's centre to the top member's: no single
+	// member holds it.
+	mid := p.Members[1]
+	_, isGroup, err := resolveSDRGroupBand(plans, "south", mid.CenterFreqHz, top.CenterFreqHz)
+	if !isGroup || err == nil || !strings.Contains(err.Error(), "straddles the seam") ||
+		!strings.Contains(err.Error(), mid.Serial) || !strings.Contains(err.Error(), top.Serial) {
+		t.Errorf("seam-straddling slice: isGroup=%v err=%v", isGroup, err)
+	}
+	if _, isGroup, _ := resolveSDRGroupBand(plans, "mock-00", 851_000_000, 851_100_000); isGroup {
+		t.Error("a member serial resolved as a group")
+	}
+}
+
+// TestSDRGroupRecordPlanFile: a baseband.record entry naming the group
+// records every member and writes the plan beside the files.
+func TestSDRGroupRecordPlanFile(t *testing.T) {
+	cfg := groupDaemonConfig()
+	dir := t.TempDir()
+	cfg.Baseband.Record = []config.BasebandRecordConfig{{Serial: "south", Dir: dir}}
+	entries := cfg.BasebandRecordEntries()
+	if len(entries) != 3 {
+		t.Fatalf("record entries = %+v, want one per member", entries)
+	}
+	_, plans, err := cfg.WithSDRGroupsExpanded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{sdrGroups: plans, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	d.writeSDRGroupRecordPlans(cfg, d.log)
+	matches, _ := filepath.Glob(filepath.Join(dir, "south_plan_*.json"))
+	if len(matches) != 1 {
+		t.Fatalf("plan files = %v", matches)
+	}
+	body, _ := os.ReadFile(matches[0])
+	var pf sdrGroupPlanFile
+	if err := json.Unmarshal(body, &pf); err != nil {
+		t.Fatal(err)
+	}
+	if pf.Group != "south" || len(pf.Members) != 3 || pf.Members[0].CenterFreqHz != plans[0].Members[0].CenterFreqHz {
+		t.Errorf("plan file = %+v", pf)
 	}
 }

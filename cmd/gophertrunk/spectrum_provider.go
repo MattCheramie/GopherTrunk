@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/MattCheramie/GopherTrunk/internal/api"
+	"github.com/MattCheramie/GopherTrunk/internal/config"
 	"github.com/MattCheramie/GopherTrunk/internal/dsp/spectrum"
 	p25phase1rx "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/sdr"
@@ -46,7 +47,10 @@ type spectrumProvider struct {
 	// capture-only builds. Config alone cannot say which of several
 	// in-band CCs is the live one.
 	lockedCCs func() []uint32
-	log       *slog.Logger
+	// groups is the sdr.groups plans: each group is listed as one stitched
+	// device (group:<name>) whose frames combine its members' spectra.
+	groups []config.SDRGroupPlan
+	log    *slog.Logger
 }
 
 func newSpectrumProvider(pool *sdr.Pool, brokers map[string]*iqtap.Broker, systems []trunking.System, log *slog.Logger) *spectrumProvider {

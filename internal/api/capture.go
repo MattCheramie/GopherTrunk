@@ -57,6 +57,46 @@ type CaptureProvider interface {
 	CaptureStream(ctx context.Context, serial string, seconds int, sink func(iq []complex64) error) (sampleRateHz, centerHz uint32, err error)
 }
 
+// CaptureGroupResolver is optionally implemented by a CaptureProvider whose
+// devices include sdr.groups entries. A group is several SDRs, each streaming
+// its own slice of the group's span on its own clock, so a capture "from the
+// group" is really a capture from the ONE member whose window holds every
+// requested slice. ResolveCaptureGroup returns that member's serial for the
+// band [lowHz, highHz]. isGroup is false when name is not a group (the
+// caller then treats it as an ordinary serial); err is set when it is a group
+// but no single member covers the band.
+type CaptureGroupResolver interface {
+	ResolveCaptureGroup(name string, lowHz, highHz uint32) (serial string, isGroup bool, err error)
+}
+
+// resolveCaptureGroupSerial maps a capture request on an sdr.groups entry to
+// the member that covers it. A group capture must name its slice(s): there is
+// no single full-band stream to record.
+func resolveCaptureGroupSerial(gr CaptureGroupResolver, req captureRequest) (string, bool, error) {
+	centers := req.CentersHz
+	if len(centers) == 0 && req.CenterHz != 0 {
+		centers = []uint32{req.CenterHz}
+	}
+	lo, hi := uint32(0), uint32(0)
+	for i, c := range centers {
+		l, h := c-min(c, req.BandwidthHz/2), c+req.BandwidthHz/2
+		if i == 0 || l < lo {
+			lo = l
+		}
+		if h > hi {
+			hi = h
+		}
+	}
+	serial, isGroup, err := gr.ResolveCaptureGroup(req.Serial, lo, hi)
+	if !isGroup {
+		return "", false, nil
+	}
+	if len(centers) == 0 || req.BandwidthHz == 0 {
+		return "", true, fmt.Errorf("%q is an SDR group: each member streams its own slice of the span, so there is no single full-band stream to record — give center_hz (or centers_hz) and bandwidth_hz, or capture one member's serial", req.Serial)
+	}
+	return serial, true, err
+}
+
 // captureRequest is the body of POST /api/v1/siglab/capture.
 //
 // CenterHz + BandwidthHz (both optional) request a narrowband slice carved from
@@ -233,6 +273,18 @@ func (s *Server) handleSiglabCapture(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
 		return
+	}
+
+	if gr, ok := s.capture.(CaptureGroupResolver); ok {
+		serial, isGroup, err := resolveCaptureGroupSerial(gr, req)
+		if err != nil {
+			s.writeError(w, http.StatusBadRequest, "siglab: "+err.Error())
+			return
+		}
+		if isGroup {
+			s.log.Info("siglab: group capture resolved to member", "group", req.Serial, "member", serial)
+			req.Serial = serial
+		}
 	}
 
 	rate, centerHz := captureDeviceRateCenter(s.capture.Devices(), req.Serial)

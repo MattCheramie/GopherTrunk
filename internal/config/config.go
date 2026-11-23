@@ -345,7 +345,10 @@ func (a BasebandAutoRecordConfig) CooldownDuration() (time.Duration, error) {
 
 // BasebandRecordConfig taps one tuner's IQ to WAV recordings.
 type BasebandRecordConfig struct {
-	// Serial is the SDR serial whose IQ stream is recorded.
+	// Serial is the SDR serial whose IQ stream is recorded. It may name an
+	// sdr.groups entry instead: every member then records its own file (the
+	// serial is in each file name) and the group's plan is written beside
+	// them so the files can be lined up by frequency.
 	Serial string `yaml:"serial"`
 	// Dir is the directory recordings are written into.
 	Dir string `yaml:"dir"`

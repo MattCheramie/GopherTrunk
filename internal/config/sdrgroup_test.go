@@ -294,3 +294,22 @@ func TestSDRGroupMemberForSeam(t *testing.T) {
 		t.Error("MemberFor accepted a band wider than a member")
 	}
 }
+
+func TestBasebandRecordOnSDRGroup(t *testing.T) {
+	c := groupConfig(SDRGroupConfig{Name: "south", LowHz: 851_000_000, HighHz: 853_000_000},
+		member("A"), member("B"), DeviceConfig{Serial: "C", Role: "voice"})
+	c.Baseband.Record = []BasebandRecordConfig{{Serial: "south", Dir: "x"}, {Serial: "B", Dir: "y", Format: "flac"}}
+	got := c.BasebandRecordEntries()
+	want := []BasebandRecordConfig{{Serial: "A", Dir: "x"}, {Serial: "B", Dir: "y", Format: "flac"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("entries = %+v, want %+v (the explicit B entry wins over the group's)", got, want)
+	}
+	c.Baseband.Record = []BasebandRecordConfig{{Serial: "south", Dir: "x", Tap: "ddc"}}
+	var msgs []string
+	for _, e := range c.ValidateAll() {
+		msgs = append(msgs, e.Error())
+	}
+	if !strings.Contains(strings.Join(msgs, "\n"), "has no single DDC stream") {
+		t.Errorf("tap: ddc on a group: errors %q", msgs)
+	}
+}

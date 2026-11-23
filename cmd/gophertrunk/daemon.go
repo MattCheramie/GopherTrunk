@@ -3072,6 +3072,7 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 			// Every live view goes through acquireViewerIQ so an SDR no
 			// decoder streams still produces frames while it is watched.
 			sp := newSpectrumProvider(d.pool, d.iqBrokers, d.systems, log)
+			sp.groups = d.sdrGroups
 			sp.viewerIQ = d.acquireViewerIQ
 			// Let the symbol panels rest on the CC being decoded, not
 			// merely the configured one nearest the tuner (#557
@@ -3093,6 +3094,7 @@ func (d *Daemon) buildAPIServer(cfg config.Config, version string, log *slog.Log
 			mp.viewerIQ = d.acquireViewerIQ
 			opts.Mixer = mp
 			cp := newCaptureProvider(d.pool, d.iqBrokers, log)
+			cp.sp.groups = d.sdrGroups
 			cp.viewerIQ = d.acquireViewerIQ
 			opts.Capture = cp
 		}
@@ -5468,8 +5470,12 @@ func (d *Daemon) wrapBasebandRecorders(cfg config.Config, log *slog.Logger) {
 	if len(cfg.Baseband.Record) == 0 || d.pool == nil {
 		return
 	}
-	recBySerial := make(map[string]config.BasebandRecordConfig, len(cfg.Baseband.Record))
-	for _, r := range cfg.Baseband.Record {
+	// A record entry naming an sdr.groups entry records every member; the
+	// group's plan goes beside the files so they can be lined up.
+	d.writeSDRGroupRecordPlans(cfg, log)
+	entries := cfg.BasebandRecordEntries()
+	recBySerial := make(map[string]config.BasebandRecordConfig, len(entries))
+	for _, r := range entries {
 		if r.TapDDC() {
 			// Narrowband DDC-output recording is teed at the control-channel
 			// decoder (ccDecoderOpts.DDCRecordDir), not by wrapping the raw

@@ -1039,6 +1039,9 @@ func (c Config) validateBaseband() []error {
 		default:
 			errs = append(errs, fmt.Errorf("baseband.record[%d]: tap must be wideband|ddc", i))
 		}
+		if c.sdrGroupNamed(r.Serial) && r.TapDDC() {
+			errs = append(errs, fmt.Errorf("baseband.record[%d]: serial %q is an sdr.groups entry; a group records its members' wideband IQ (tap: wideband), it has no single DDC stream", i, r.Serial))
+		}
 		switch strings.ToLower(strings.TrimSpace(r.Format)) {
 		case "", "wav", "flac":
 		default:
