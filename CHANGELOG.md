@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.4.4] — 2026-11-24
+
 ### Added
 - **dPMR Mode 3 trunking** (#1374): a `protocol: dpmr` system now decodes
   a real Mode 3 beacon channel and follows its calls. It locks on the beacon's
