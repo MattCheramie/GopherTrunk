@@ -7,14 +7,14 @@ import (
 
 // SynthOptions configures Synthesize.
 type SynthOptions struct {
-	Mode   Mode   // ModeT1 (default) or ModeC1
+	Mode   Mode   // ModeT1 (default), ModeC1 or ModeS1
 	Format Format // FormatA (default) or FormatB (C mode only)
 	// SampleRateHz is the IQ rate. Required.
 	SampleRateHz float64
 	// OffsetHz places the carrier off the IQ centre.
 	OffsetHz float64
-	// ChipRateHz defaults to ChipRateHz; T mode meters may be a few
-	// percent off it.
+	// ChipRateHz defaults to ChipRateHz (S1ChipRateHz in S mode); T mode
+	// meters may be a few percent off it.
 	ChipRateHz float64
 	// DeviationHz defaults to 50 kHz (T mode nominal).
 	DeviationHz float64
@@ -32,17 +32,26 @@ func Synthesize(data []byte, o SynthOptions) []complex64 {
 	if o.Mode == 0 {
 		o.Mode = ModeT1
 	}
-	if o.Format == 0 || o.Mode == ModeT1 {
+	if o.Format == 0 || o.Mode != ModeC1 {
 		o.Format = FormatA
 	}
 	if o.ChipRateHz == 0 {
 		o.ChipRateHz = ChipRateHz
+		if o.Mode == ModeS1 {
+			o.ChipRateHz = S1ChipRateHz
+		}
 	}
 	if o.DeviationHz == 0 {
 		o.DeviationHz = 50_000
 	}
 	r := rand.New(rand.NewSource(o.Seed))
-	chips := encodeFrameChips(o.Mode, o.Format, buildFrame(data, o.Format), 48)
+	var chips []uint8
+	if o.Mode == ModeS1 {
+		// S1 meters send a long preamble; 64 chips is the short S1-m one.
+		chips = encodeS1Chips(buildFrame(data, FormatA), 64)
+	} else {
+		chips = encodeFrameChips(o.Mode, o.Format, buildFrame(data, o.Format), 48)
+	}
 	rate := o.SampleRateHz
 	spc := rate / o.ChipRateHz
 	n := int(float64(len(chips)) * spc)

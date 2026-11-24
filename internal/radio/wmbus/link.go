@@ -31,6 +31,9 @@ const (
 	ModeT1 Mode = iota + 1
 	// ModeC1 is meter-to-other C mode: 100 kchip/s NRZ.
 	ModeC1
+	// ModeS1 is meter-to-other S mode: 32.768 kchip/s Manchester, at
+	// 868.3 MHz (s1.go).
+	ModeS1
 )
 
 func (m Mode) String() string {
@@ -39,6 +42,8 @@ func (m Mode) String() string {
 		return "T1"
 	case ModeC1:
 		return "C1"
+	case ModeS1:
+		return "S1"
 	}
 	return "?"
 }

@@ -34,6 +34,9 @@ type Telegram struct {
 
 	// HasAFL reports an authentication and fragmentation layer (CI 0x90).
 	HasAFL bool
+	// AFLCounter is its message counter, when it carries one.
+	AFLCounter    uint32
+	HasAFLCounter bool
 
 	// Transport layer header (short 0x7A / long 0x72), when present.
 	HasTPL       bool
@@ -46,10 +49,19 @@ type Telegram struct {
 	TPLID           string
 	TPLVersion      byte
 	TPLDeviceType   byte
+	// KDF is security mode 7's key derivation function (1 = AES-CMAC).
+	KDF int
 
 	// Encrypted reports that the application data could not be read
 	// because it is encrypted (TPL security mode or ELL encryption).
 	Encrypted bool
+	// Decrypted reports that the application data was encrypted and was
+	// decrypted with a configured key (Payload and Records are then the
+	// plaintext's).
+	Decrypted bool
+	// DecryptErr says why a configured key did not decrypt the telegram
+	// (usually a wrong key); empty when no key was configured.
+	DecryptErr string
 	// Payload is the application data, starting after the last header
 	// parsed (still encrypted when Encrypted is set).
 	Payload []byte
@@ -57,6 +69,9 @@ type Telegram struct {
 	// application layer. Empty for encrypted, compact or
 	// manufacturer-specific payloads.
 	Records []Record
+	// QundisWalkBy reports that Records hold the readings of a Qundis
+	// manufacturer-specific walk-by data set (qds.go).
+	QundisWalkBy bool
 	// RecordsErr explains why record parsing stopped early, if it did.
 	RecordsErr string
 }
@@ -68,8 +83,15 @@ func (t Telegram) DeviceTypeName() string { return DeviceTypeName(t.DeviceType) 
 // header.
 var ErrTooShort = errors.New("wmbus: telegram shorter than the data link header")
 
-// ParseTelegram parses a frame's CRC-stripped data.
-func ParseTelegram(f Frame) (Telegram, error) {
+// ParseTelegram parses a frame's CRC-stripped data. Encrypted application
+// data is left encrypted; ParseTelegramKeys decrypts it.
+func ParseTelegram(f Frame) (Telegram, error) { return ParseTelegramKeys(f, nil) }
+
+// ParseTelegramKeys parses a frame's CRC-stripped data and decrypts its
+// application layer with the meter's key when keys holds one (see crypto.go).
+// A telegram whose key is missing or wrong parses exactly as ParseTelegram
+// parses it, with DecryptErr set in the second case.
+func ParseTelegramKeys(f Frame, keys KeyLookup) (Telegram, error) {
 	t := Telegram{Mode: f.Mode, Format: f.Format, CRCOK: f.CRCOK}
 	d := f.Data
 	if len(d) < 11 {
@@ -84,6 +106,12 @@ func ParseTelegram(f Frame) (Telegram, error) {
 	t.CI = d[10]
 	p := d[11:]
 	ci := t.CI
+	var key []byte
+	if keys != nil {
+		if k, ok := keys(t.ID); ok && len(k) == 16 {
+			key = k
+		}
+	}
 
 	// Extended link layer: one of these may sit between the data link
 	// header and the transport layer.
@@ -102,25 +130,53 @@ func ParseTelegram(f Frame) (Telegram, error) {
 			sn := uint32(p[2]) | uint32(p[3])<<8 | uint32(p[4])<<16 | uint32(p[5])<<24
 			t.ELLSec = int(sn >> 29 & 0x7)
 		}
-		ci, p = p[need], p[need+1:]
 		if t.ELLSec != 0 {
-			// The rest, next CI included, is AES-CTR ciphertext.
-			t.AppCI, t.Encrypted, t.Payload = 0, true, p
-			return t, nil
+			// The payload CRC, the next CI and everything after it are
+			// AES-CTR ciphertext.
+			enc := p[6:]
+			if key == nil {
+				t.AppCI, t.Encrypted, t.Payload = 0, true, enc
+				return t, nil
+			}
+			iv := make([]byte, 0, 13)
+			iv = append(iv, d[2:10]...)
+			iv = append(iv, p[0]&^0x12)
+			iv = append(iv, p[2:6]...)
+			plain, err := decryptELL(key, iv, enc)
+			if err != nil {
+				t.AppCI, t.Encrypted, t.Payload = 0, true, enc
+				t.DecryptErr = "ELL AES-CTR: " + err.Error()
+				return t, nil
+			}
+			t.Decrypted = true
+			ci, p = plain[0], plain[1:]
+		} else {
+			ci, p = p[need], p[need+1:]
 		}
 	}
 	// Authentication and fragmentation layer (CI 0x90): a length byte,
-	// that many bytes (fragment control, message counter, MAC), then the
-	// transport layer's CI. OMS security mode 7 meters send one.
+	// that many bytes (fragment control, message control, key information,
+	// message counter, MAC), then the transport layer's CI. OMS security
+	// mode 7 meters send one; its message counter feeds mode 7's key.
+	var aflCounter []byte
 	if ci == 0x90 {
 		if len(p) < 1 || len(p) < 2+int(p[0]) {
 			return t, fmt.Errorf("wmbus: CI 0x90: authentication layer truncated")
 		}
 		t.HasAFL = true
+		aflCounter = parseAFLCounter(p[1 : 1+int(p[0])])
+		if aflCounter != nil {
+			t.AFLCounter = uint32(aflCounter[0]) | uint32(aflCounter[1])<<8 |
+				uint32(aflCounter[2])<<16 | uint32(aflCounter[3])<<24
+			t.HasAFLCounter = true
+		}
 		ci, p = p[1+int(p[0])], p[2+int(p[0]):]
 	}
 	t.AppCI = ci
 
+	// The meter's M-field and A-field as security modes 5 and 7 use them:
+	// the long transport header's when there is one, else the link layer's.
+	mfct, addr := d[2:4], d[4:10]
 	switch ci {
 	case 0x7A, 0x7B: // short transport layer header
 		if len(p) < 4 {
@@ -140,15 +196,64 @@ func ParseTelegram(f Frame) (Telegram, error) {
 		t.TPLVersion, t.TPLDeviceType = p[6], p[7]
 		t.Access, t.Status = p[8], p[9]
 		t.ConfigWord = uint16(p[10]) | uint16(p[11])<<8
+		mfct = p[4:6]
+		addr = append(append([]byte(nil), p[0:4]...), p[6], p[7])
 		p = p[12:]
 	}
 	if t.HasTPL {
 		t.SecurityMode = int(t.ConfigWord >> 8 & 0x1F)
 	}
+	if t.SecurityMode == 7 {
+		// Mode 7's configuration word is followed by one extension byte
+		// naming the key derivation function.
+		if len(p) < 1 {
+			return t, fmt.Errorf("wmbus: security mode 7: configuration extension missing")
+		}
+		t.KDF = int(p[0] >> 4 & 3)
+		p = p[1:]
+	}
 	t.Payload = p
 	if t.SecurityMode != 0 {
-		t.Encrypted = true
-		return t, nil
+		blocks := int(t.ConfigWord >> 4 & 0x0F)
+		var plain []byte
+		var err error
+		switch {
+		case key == nil:
+		case t.SecurityMode == 5:
+			iv := make([]byte, 0, 16)
+			iv = append(iv, mfct...)
+			iv = append(iv, addr...)
+			for len(iv) < 16 {
+				iv = append(iv, t.Access)
+			}
+			plain, err = decryptCBC(key, iv, p, 16*blocks)
+		case t.SecurityMode == 7:
+			switch {
+			case t.KDF != 1:
+				err = fmt.Errorf("key derivation function %d not supported", t.KDF)
+			case aflCounter == nil:
+				err = errors.New("no message counter (authentication layer missing)")
+			default:
+				var k []byte
+				if k, err = mode7Key(key, aflCounter, addr[:4]); err == nil {
+					plain, err = decryptCBC(k, make([]byte, 16), p, 16*blocks)
+				}
+			}
+		default:
+			err = fmt.Errorf("%s not supported", SecurityModeName(t.SecurityMode))
+		}
+		if key == nil {
+			t.Encrypted = true
+			return t, nil
+		}
+		if err != nil {
+			t.Encrypted = true
+			t.DecryptErr = SecurityModeName(t.SecurityMode) + ": " + err.Error()
+			return t, nil
+		}
+		t.Decrypted = true
+		p = plain
+		t.Payload = p
 	}
 	switch ci {
 	case 0x72, 0x7A, 0x78:
@@ -157,12 +262,33 @@ func ParseTelegram(f Frame) (Telegram, error) {
 		// signature of an earlier full frame; 0xA0–0xB7 are
 		// manufacturer-specific.)
 		recs, err := ParseRecords(p)
-		t.Records = recs
+		t.Records = expandQundisWalkBy(&t, recs, d, key)
 		if err != nil {
 			t.RecordsErr = err.Error()
 		}
 	}
 	return t, nil
+}
+
+// parseAFLCounter returns the message counter (4 bytes, as sent) of an
+// authentication and fragmentation layer's fields (after its length byte),
+// or nil when it has none.
+func parseAFLCounter(b []byte) []byte {
+	if len(b) < 2 {
+		return nil
+	}
+	fc := uint16(b[0]) | uint16(b[1])<<8
+	pos := 2
+	if fc&0x2000 != 0 { // message control
+		pos++
+	}
+	if fc&0x0200 != 0 { // key information
+		pos += 2
+	}
+	if fc&0x0800 == 0 || pos+4 > len(b) {
+		return nil
+	}
+	return b[pos : pos+4]
 }
 
 // SecurityModeName names a TPL security mode.
