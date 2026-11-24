@@ -7,5 +7,12 @@
     "listed here — or listed but past its review_by date — fails the check.",
     "Every entry needs id, a written reason, added, and review_by."
   ],
-  "accepted": []
+  "accepted": [
+    {
+      "id": "GO-2026-6278",
+      "reason": "Gorilla WebSocket's weak-PRNG finding is in the CLIENT frame-masking path (RFC 6455 requires clients to mask, servers must not). Production GopherTrunk uses gorilla/websocket only as a server (websocket.Upgrader in internal/api); the only websocket.Dialer usage is in _test.go files, which is why govulncheck reaches the symbol. The mask key is an anti-cache-poisoning obfuscation, not a confidentiality or integrity control, and no fixed release exists (v1.5.3 is the latest tag). Revisit if a patched version ships or a server-reachable path appears.",
+      "added": "2026-11-24",
+      "review_by": "2027-02-24"
+    }
+  ]
 }
