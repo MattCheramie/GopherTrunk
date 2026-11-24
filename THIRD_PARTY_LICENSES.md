@@ -21,7 +21,7 @@ the daemon imports directly. License names follow SPDX identifiers.
 | `github.com/charmbracelet/lipgloss` | v1.1.0 | MIT | https://github.com/charmbracelet/lipgloss/blob/master/LICENSE |
 | `github.com/ebitengine/purego` | v0.10.0 | Apache-2.0 | https://github.com/ebitengine/purego/blob/main/LICENSE |
 | `github.com/ebitengine/oto/v3` | v3.3.3 | Apache-2.0 | https://github.com/ebitengine/oto/blob/main/LICENSE |
-| `github.com/gorilla/websocket` | v1.5.3 | BSD-2-Clause | https://github.com/gorilla/websocket/blob/master/LICENSE |
+| `github.com/gorilla/websocket` | v1.5.4-0.20240701034025-d67f41855da4 | BSD-2-Clause | https://github.com/gorilla/websocket/blob/master/LICENSE |
 | `github.com/ledongthuc/pdf` | v0.0.0-20250511090121-5959a4027728 | BSD-3-Clause | https://github.com/ledongthuc/pdf/blob/master/LICENSE |
 | `github.com/prometheus/client_golang` | v1.23.2 | Apache-2.0 | https://github.com/prometheus/client_golang/blob/main/LICENSE |
 | `golang.org/x/sys` | v0.42.0 | BSD-3-Clause | https://cs.opensource.google/go/x/sys/+/refs/tags/v0.42.0:LICENSE |
