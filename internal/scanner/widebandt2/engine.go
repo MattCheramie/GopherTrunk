@@ -67,7 +67,6 @@ import (
 	dmrrx "github.com/MattCheramie/GopherTrunk/internal/radio/dmr/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier2"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/dmr/tier3"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/nxdn"
 	nxdnrx "github.com/MattCheramie/GopherTrunk/internal/radio/nxdn/receiver"
 	p25phase1 "github.com/MattCheramie/GopherTrunk/internal/radio/p25/phase1"
@@ -980,11 +979,19 @@ func buildChannel(sys trunking.System, ch ChannelConfig, outRateHz float64, bus 
 			log.Warn("widebandt2: unrecognised p25_phase2_clock_mode; falling back to gardner",
 				"system", sys.Name, "value", sys.P25Phase2ClockMode)
 		}
+		// Soft path: the same hard dibits plus their reliabilities, which
+		// the signalling decode uses to retry a burst it cannot correct
+		// with its least reliable symbols erased (issue #1364).
+		var rel []float32
 		rx := p25phase2rx.New(p25phase2rx.Options{
 			SampleRateHz: outRateHz,
-			DibitSink:    p25phase2.DibitSink(func(d []uint8, b int) { cc.ProcessAir(d, b) }),
-			ClockMode:    clockMode,
-			GardnerGain:  p25Phase2GardnerGain,
+			SoftDecision: true,
+			SoftSink: p25phase2.SoftDibitSink(func(d []uint8, soft []complex64, b int) {
+				rel = p25phase2.SoftReliability(soft, rel)
+				cc.ProcessAirSoft(d, rel, b)
+			}),
+			ClockMode:   clockMode,
+			GardnerGain: p25Phase2GardnerGain,
 		})
 		// Seed the symbol timing feed-forward at every start, as the
 		// ccdecoder p25Phase2Pipeline does (issue #1364): the engine starts on
@@ -1165,9 +1172,12 @@ func applyP25Phase2Modes(cc *p25phase2.ControlChannel, sys trunking.System, log 
 			"system", sys.Name)
 	}
 	cc.SetScramblerMode(scramblerMode)
-	cc.SetScramblerSeed(framing.PN44SeedFromIdentity(
-		sys.WACN, sys.SystemID, uint16(sys.Site),
-	))
+	// No descramble seed is installed here: the seed is (WACN, System ID,
+	// Color Code = NAC), the configuration carries none of them, and a seed
+	// built from the system's Site (8 bits, not the 12-bit Color Code) only
+	// ever named a sequence no site sends. The control channel installs the
+	// real seed from the clear LCCH's Network Status Broadcast, and until
+	// then its grants carry no seed rather than a wrong one (issue #1364).
 	softDecision, softOK := p25phase2rx.ParseSoftDecision(sys.P25Phase2SoftDecision)
 	if !softOK {
 		log.Warn("widebandt2: unrecognised p25_phase2_soft_decision; falling back to off",

@@ -83,7 +83,12 @@ const p25p2VoiceGardnerGain = 0.005
 // Two calls share a Phase 2 carrier, one per logical channel, and the
 // chain used to record both into one WAV (#1273). The MAC signalling
 // (SACCH/FACCH) rides the same bursts and decodes on the air format too.
-func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, system string, macCfg p25p2.MACDecodeConfig, timeslot uint8, iqCh <-chan []complex64, iqHz float64, done chan<- struct{}) {
+//
+// grantNAC is the NAC the grant was heard on. A grant made before the site's
+// identity was known carries no seed (issue #1364); the chain then holds its
+// bursts (p25p2SeedWaitMaxBursts) and decodes them once the control channel
+// publishes the identity (KindSiteUpdate), so the call loses nothing.
+func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, system string, macCfg p25p2.MACDecodeConfig, timeslot uint8, grantNAC uint16, iqCh <-chan []complex64, iqHz float64, done chan<- struct{}) {
 	defer close(done)
 	defer gtlog.Recover(c.log, "voice-chain-p25p2:"+serial, nil)
 
@@ -106,9 +111,16 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// interleave / scrambler modes no longer change anything; the seed is
 	// the one input that matters (issue #451): without it neither the voice
 	// frames nor the scrambled SACCH/FACCH can be descrambled.
+	seedLate := false
 	if macCfg.Seed == 0 {
-		c.log.Warn("composer: p25p2 has no scrambler seed; voice and scrambled MAC decode will fail until the system identity is known (set WACN/SystemID/site, or wait for a Network Status Broadcast on Phase 2 control channels)",
-			"serial", serial, "system", system, "seed", macCfg.Seed)
+		if s := c.p25IDs.Seed(system, grantNAC); s != 0 {
+			macCfg.Seed, seedLate = s, true
+			c.log.Info("composer: p25p2 grant carried no scrambler seed; using the site identity the control channel has published since",
+				"serial", serial, "system", system, "seed", s)
+		} else {
+			c.log.Warn("composer: p25p2 has no scrambler seed yet; holding the call's bursts until the control channel decodes the site's Network Status Broadcast",
+				"serial", serial, "system", system, "max_wait_bursts", p25p2SeedWaitMaxBursts)
+		}
 	}
 
 	// Front-end decimator: an 81-tap anti-alias FIR that convolves ONLY at
@@ -222,9 +234,79 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 	// stream order with the voice bursts around it: a MAC_END_PTT must roll
 	// the recording before the next over's first voice burst is written.
 	var oneBurst [1]p25p2.AirBurst
+	dispatchSig := func(b p25p2.AirBurst) {
+		oneBurst[0] = b
+		nSig, nDec := dispatcher.DispatchAir(oneBurst[:], airMasks)
+		macBursts.Add(uint64(nSig))
+		macPDUsDecoded.Add(uint64(nDec))
+	}
+	decodeVoice := func(b p25p2.AirBurst) {
+		if es, _, ok := ess.Add(b, airMasks); ok {
+			essSyncs.Add(1)
+			c.publishP25Phase2CallEncryption(serial, es, &encFilter)
+		}
+		if rs == nil {
+			return
+		}
+		frames, errs := p25p2.ExtractAirVoiceFramesDetail(b, airMasks)
+		for i, e := range errs {
+			if e <= 0 {
+				continue
+			}
+			corrErrBits.Add(uint64(e))
+			errsByFrame[i].Add(uint64(e))
+			if vs := b.Slot >> 1; vs >= 0 && vs < len(errsBySlot) {
+				errsBySlot[vs].Add(uint64(e))
+			}
+		}
+		for _, f := range frames {
+			if werr := rs.WriteRawFrame(serial, f); werr != nil {
+				c.log.Warn("composer: p25p2 raw-frame write failed",
+					"serial", serial, "err", werr)
+			}
+		}
+	}
+	// held is the call's own bursts (its voice and its scrambled
+	// signalling) kept in stream order while the chain has no seed;
+	// heldDropped counts the oldest ones a long wait pushed out.
+	var held []p25p2.AirBurst
+	var heldDropped, heldReplayed atomic.Uint64
+	hold := func(b p25p2.AirBurst) {
+		if len(held) >= p25p2SeedWaitMaxBursts {
+			copy(held, held[1:])
+			held = held[:len(held)-1]
+			heldDropped.Add(1)
+		}
+		held = append(held, b)
+	}
+	// adoptSeed installs a seed the site's identity named after the chain
+	// started and decodes what was held, in order.
+	adoptSeed := func() {
+		s := c.p25IDs.Seed(system, grantNAC)
+		if s == 0 {
+			return
+		}
+		macCfg.Seed, seedLate = s, true
+		airMasks = p25p2.NewAirMasks(s)
+		c.log.Info("composer: p25p2 scrambler seed learned from the site's identity; decoding the held bursts",
+			"serial", serial, "system", system, "seed", s,
+			"held_bursts", len(held), "dropped_bursts", heldDropped.Load())
+		for _, b := range held {
+			heldReplayed.Add(1)
+			if b.DUID.IsSignalling() {
+				dispatchSig(b)
+			} else {
+				decodeVoice(b)
+			}
+		}
+		held = nil
+	}
 	// drainAirBursts records the granted logical channel's voice frames and
 	// dispatches its MAC signalling.
 	drainAirBursts := func(bursts []p25p2.AirBurst) {
+		if airMasks == nil && len(bursts) > 0 {
+			adoptSeed()
+		}
 		for _, b := range bursts {
 			if airBursts.Add(1) == 1 {
 				firstBurst.Store(int64(b.StartDibit))
@@ -237,10 +319,11 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 				// belongs to the other call; a clear LCCH is the
 				// carrier's own and is always taken.
 				if b.DUID == p25p2.DUIDLCCHClear || wantLCH < 0 || b.LogicalChannel == wantLCH {
-					oneBurst[0] = b
-					nSig, nDec := dispatcher.DispatchAir(oneBurst[:], airMasks)
-					macBursts.Add(uint64(nSig))
-					macPDUsDecoded.Add(uint64(nDec))
+					if airMasks == nil && b.DUID != p25p2.DUIDLCCHClear {
+						hold(b)
+					} else {
+						dispatchSig(b)
+					}
 				}
 				continue
 			}
@@ -259,56 +342,32 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			voiceSubframes.Add(1)
 			bt.onVoice(0)
 			if airMasks == nil {
+				hold(b)
 				continue
 			}
-			if es, _, ok := ess.Add(b, airMasks); ok {
-				essSyncs.Add(1)
-				c.publishP25Phase2CallEncryption(serial, es, &encFilter)
-			}
-			if rs == nil {
-				continue
-			}
-			frames, errs := p25p2.ExtractAirVoiceFramesDetail(b, airMasks)
-			for i, e := range errs {
-				if e <= 0 {
-					continue
-				}
-				corrErrBits.Add(uint64(e))
-				errsByFrame[i].Add(uint64(e))
-				if vs := b.Slot >> 1; vs >= 0 && vs < len(errsBySlot) {
-					errsBySlot[vs].Add(uint64(e))
-				}
-			}
-			for _, f := range frames {
-				if werr := rs.WriteRawFrame(serial, f); werr != nil {
-					c.log.Warn("composer: p25p2 raw-frame write failed",
-						"serial", serial, "err", werr)
-				}
-			}
+			decodeVoice(b)
 		}
 	}
-	// Build the receiver on the hard slicer by default; when the grant
-	// carries the soft-decision flag (issue #915) wire the soft sink. The
-	// air framer slices hard dibits either way; the soft path keeps the
-	// receiver's soft-decision demod.
+	// The receiver always runs its soft path: it slices the same hard
+	// dibits as the hard path (identical on the real MMR carrier) and adds
+	// each dibit's reliability, which lets a signalling burst the hard
+	// Reed-Solomon decode cannot correct retry with its least reliable
+	// symbols erased (p25p2.DecodeAirMAC; issue #1364). The grant's
+	// soft-decision flag selected that path for the older working-model
+	// trellis and no longer changes anything here.
+	var rel []float32
 	rxOpts := p25p2rx.Options{
 		SampleRateHz:  symbolHz,
 		ClockMode:     p25p2rx.ClockGardner,
 		GardnerGain:   p25p2VoiceGardnerGain,
 		Equalizer:     macCfg.Equalizer,
 		EnableDCBlock: macCfg.DCBlock,
-	}
-	if macCfg.SoftDecision {
-		rxOpts.SoftDecision = true
-		rxOpts.SoftSink = func(dibits []uint8, soft []complex64, baseIdx int) {
+		SoftDecision:  true,
+		SoftSink: func(dibits []uint8, soft []complex64, baseIdx int) {
 			dibitsSeen.Add(uint64(len(dibits)))
-			drainAirBursts(airFramer.Process(dibits, baseIdx))
-		}
-	} else {
-		rxOpts.DibitSink = func(dibits []uint8, baseIdx int) {
-			dibitsSeen.Add(uint64(len(dibits)))
-			drainAirBursts(airFramer.Process(dibits, baseIdx))
-		}
+			rel = p25p2.SoftReliability(soft, rel)
+			drainAirBursts(airFramer.ProcessSoft(dibits, rel, baseIdx))
+		},
 	}
 	rx := p25p2rx.New(rxOpts)
 	// The chain starts at the grant, at an arbitrary sub-symbol phase of a
@@ -356,8 +415,14 @@ func (c *Composer) runP25Phase2VoiceChain(ctx context.Context, serial string, sy
 			"other_slot_voice_bursts", otherSlotVoice.Load(),
 			"logical_channel", wantLCH,
 			"descramble_seed_known", airMasks != nil,
+			"descramble_seed_late", seedLate,
+			"seed_wait_replayed_bursts", heldReplayed.Load(),
+			"seed_wait_dropped_bursts", heldDropped.Load() + uint64(len(held)),
 			"mac_bursts", macBursts.Load(),
 			"mac_pdus", macPDUsDecoded.Load(),
+			// Of those, the bursts only the soft retry decoded: their
+			// least reliable symbols erased (issue #1364).
+			"mac_pdus_soft", dispatcher.SoftDecoded(),
 			"ess_syncs", essSyncs.Load(),
 			"voice_errs_by_frame", p25p2CensusCounts(errsByFrame[:]),
 			"voice_errs_by_timeslot", p25p2CensusCounts(errsBySlot[:]),

@@ -289,6 +289,12 @@ type AirBurst struct {
 	DUID DUID
 	// Packet is the 180-dibit packet, de-rotated, NOT descrambled.
 	Packet []uint8
+	// Rel is each packet dibit's reliability (larger is surer; the
+	// receiver's distance of the decision from its nearest boundary),
+	// parallel to Packet, when the framer was fed by ProcessSoft; nil
+	// otherwise. DecodeAirMAC uses it to erase the least reliable symbols
+	// of a signalling burst its hard decode cannot correct (issue #1364).
+	Rel []float32
 }
 
 // Body returns the 160-dibit burst body.
@@ -383,7 +389,8 @@ const airReanchorMisses = 1
 // safe for concurrent use.
 type AirFramer struct {
 	buf      []uint8
-	bufStart int // absolute index of buf[0]
+	rel      []float32 // parallel to buf when fed by ProcessSoft, else nil
+	bufStart int       // absolute index of buf[0]
 
 	locked   bool
 	rot      uint8
@@ -416,12 +423,32 @@ func (f *AirFramer) Locked() bool { return f.locked }
 // (monotonic across calls) and returns the bursts completed by them, in
 // stream order.
 func (f *AirFramer) Process(dibits []uint8, baseIdx int) []AirBurst {
+	return f.process(dibits, nil, baseIdx)
+}
+
+// ProcessSoft is Process with each dibit's reliability (rel, parallel to
+// dibits): the bursts it returns carry Rel. A framer should be fed one way
+// for its whole life; a hard Process call after soft ones drops the
+// reliabilities buffered so far.
+func (f *AirFramer) ProcessSoft(dibits []uint8, rel []float32, baseIdx int) []AirBurst {
+	if len(rel) != len(dibits) {
+		return f.process(dibits, nil, baseIdx)
+	}
+	return f.process(dibits, rel, baseIdx)
+}
+
+func (f *AirFramer) process(dibits []uint8, rel []float32, baseIdx int) []AirBurst {
 	if len(f.buf) == 0 {
 		f.bufStart = baseIdx
 	} else if gap := baseIdx - (f.bufStart + len(f.buf)); gap != 0 {
 		// A discontinuity (dropped IQ): the grid is no longer valid.
-		f.buf, f.bufStart = f.buf[:0], baseIdx
+		f.buf, f.rel, f.bufStart = f.buf[:0], f.rel[:0], baseIdx
 		f.unlock()
+	}
+	if rel != nil && len(f.rel) == len(f.buf) {
+		f.rel = append(f.rel, rel...)
+	} else {
+		f.rel = f.rel[:0]
 	}
 	f.buf = append(f.buf, dibits...)
 	var out []AirBurst
@@ -437,6 +464,9 @@ func (f *AirFramer) Process(dibits []uint8, baseIdx int) []AirBurst {
 			break
 		}
 		if b, ok := f.cut(f.buf[off : off+AirPacketDibits]); ok {
+			if len(f.rel) == len(f.buf) {
+				b.Rel = append([]float32(nil), f.rel[off:off+AirPacketDibits]...)
+			}
 			out = append(out, b)
 		}
 		f.next += AirPacketDibits
@@ -569,5 +599,8 @@ func (f *AirFramer) trim() {
 	}
 	keep = min(keep, len(f.buf))
 	f.buf = append(f.buf[:0], f.buf[keep:]...)
+	if len(f.rel) >= keep {
+		f.rel = append(f.rel[:0], f.rel[keep:]...)
+	}
 	f.bufStart += keep
 }

@@ -283,17 +283,20 @@ func tetraFEC(stream []uint8, land *SyncLandscape, sys trunking.System) []FECSta
 // (40,9,16) I-ISCH that names timeslots 0,1,4,5,8,9, and the RS(63,35) + CRC
 // decode of every signalling burst (SACCH / FACCH / LCCH). The air framer
 // finds the timeslot grid itself (any dibit rotation), so land is unused.
-// Scrambled bursts decode only with the site's PN44 seed; with no identity
-// configured only the clear ones can, and the scrambled ones are counted
-// uncorrectable.
-func p25p2FEC(stream []uint8, _ *SyncLandscape, sys trunking.System) []FECStat {
+// Scrambled bursts decode only with the site's PN44 seed (WACN, System ID,
+// Color Code), which a clear LCCH's Network Status Broadcast names, as the
+// control channel learns it: the bursts are framed first and the seed taken
+// from the first such broadcast in the capture. With none, only the clear
+// bursts can decode and the scrambled ones are counted uncorrectable. (The
+// seed used to be built from the system's Site, which is not the Color Code
+// and was never set, so a capture's scrambled bursts always failed: issue
+// #1364.)
+func p25p2FEC(stream []uint8, _ *SyncLandscape, _ trunking.System) []FECStat {
 	isch := FECStat{Stage: "I-ISCH (40,9,16)"}
 	mac := FECStat{Stage: "MAC RS(63,35)+CRC"}
-	var masks *p25phase2.AirMasks
-	if sys.WACN != 0 || sys.SystemID != 0 {
-		masks = p25phase2.NewAirMasks(framing.PN44SeedFromIdentity(sys.WACN, sys.SystemID, uint16(sys.Site)))
-	}
-	for _, b := range p25phase2.NewAirFramer().Process(stream, 0) {
+	bursts := p25phase2.NewAirFramer().Process(stream, 0)
+	masks := p25p2CaptureMasks(bursts)
+	for _, b := range bursts {
 		if b.Slot%4 < 2 {
 			var w uint64
 			for _, d := range b.Packet[:p25phase2.AirISCHDibits] {
@@ -318,6 +321,26 @@ func p25p2FEC(stream []uint8, _ *SyncLandscape, sys trunking.System) []FECStat {
 		tallyErrs(&mac, errs)
 	}
 	return []FECStat{isch, mac}
+}
+
+// p25p2CaptureMasks returns the descramble masks named by the first Network
+// Status Broadcast on a clear LCCH among bursts, or nil when there is none.
+func p25p2CaptureMasks(bursts []p25phase2.AirBurst) *p25phase2.AirMasks {
+	for _, b := range bursts {
+		if b.DUID != p25phase2.DUIDLCCHClear {
+			continue
+		}
+		m, ok := p25phase2.DecodeAirMAC(b, nil)
+		if !ok {
+			continue
+		}
+		for _, pdu := range m.Messages() {
+			if nsb, ok := pdu.AsNetworkStatusBroadcast(); ok {
+				return p25phase2.NewAirMasks(framing.PN44SeedFromIdentity(nsb.WACN, nsb.SystemID, nsb.ColorCode))
+			}
+		}
+	}
+	return nil
 }
 
 // dpmrFEC tallies the Mode 3 beacon frameset behind each FS1 hit: the

@@ -97,7 +97,11 @@ regardless of seed.
 
 `internal/radio/framing/pn44_p25_phase2.go` implements the whole primitive — `PN44Scrambler` with
 `Next`/`Advance`/`Apply`, `PN44SeedFromIdentity`, `PN44SeedInbound`, and the per-slot offset tables —
-and it is wired into the Phase 2 control-channel process adapter through the scrambler modes. Getting
+and it is wired into the Phase 2 control-channel process adapter through the scrambler modes. The seed
+is learned on air, never configured: a Phase 2 control channel reads it from its clear LCCH's Network
+Status Broadcast, a Phase 1 control channel of a hybrid site from its own Network Status Broadcast plus
+the NAC, and a voice call granted before either has arrived waits for the site's identity rather than
+descramble with a wrong seed (issue #1364). Getting
 the seed derivation and the descramble-before-FEC ordering right is what lets GopherTrunk read a real
 Phase 2 MAC PDU or voice burst instead of noise. The spec is TIA-102.BBAC-1 §7.2.5.
 

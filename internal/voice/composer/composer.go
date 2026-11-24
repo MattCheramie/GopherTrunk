@@ -359,6 +359,11 @@ type AudioAGCConfig struct {
 
 // Composer is the long-lived event-driven bridge.
 type Composer struct {
+	// p25IDs is the latest P25 site identity per system, from
+	// KindSiteUpdate: a Phase 2 voice chain granted before its site's
+	// identity was known takes its descramble seed from it (issue #1364).
+	p25IDs p25p2.SiteSeeds
+
 	bus    *events.Bus
 	dev    Devices
 	sink   PCMSink
@@ -567,6 +572,10 @@ func (c *Composer) Run(ctx context.Context) error {
 			case events.KindCallEnd:
 				if ce, ok := ev.Payload.(trunking.CallEnd); ok {
 					c.handleEnd(ce)
+				}
+			case events.KindSiteUpdate:
+				if su, ok := ev.Payload.(trunking.SiteUpdate); ok {
+					c.p25IDs.Note(su)
 				}
 			}
 		}
@@ -784,7 +793,7 @@ func (c *Composer) handleStart(parent context.Context, cs trunking.CallStart) {
 			Equalizer:    cs.Grant.P25Phase2Decode.Equalizer,
 			DCBlock:      cs.Grant.P25Phase2Decode.DCBlock,
 		}
-		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, cs.Grant.Timeslot, iqCh, rateHzF, ch.done)
+		go c.runP25Phase2VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, macCfg, cs.Grant.Timeslot, cs.Grant.NAC, iqCh, rateHzF, ch.done)
 	case voiceKindP25P1:
 		go c.runP25Phase1VoiceChain(chainCtx, cs.DeviceSerial, cs.Grant.System, iqCh, rateHzF, cs.Grant.P25Phase1DemodMode, voiceGateTalkgroup(cs.Grant), cs.Grant.CallID, cs.Grant.PatchedGroups, ch.done)
 	case voiceKindTETRA:

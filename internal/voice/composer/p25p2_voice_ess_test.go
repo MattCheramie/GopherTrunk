@@ -120,7 +120,7 @@ func runP25P2Chain(t *testing.T, dibits []uint8, split bool) []events.Event {
 	close(iqCh)
 	done := make(chan struct{})
 	c.runP25Phase2VoiceChain(context.Background(), "VOICE-1", "MMR",
-		p25p2.MACDecodeConfig{Seed: p25p2TestSeed}, 1, iqCh, sampleRate, done)
+		p25p2.MACDecodeConfig{Seed: p25p2TestSeed}, 1, 0, iqCh, sampleRate, done)
 	<-done
 	var out []events.Event
 	for {

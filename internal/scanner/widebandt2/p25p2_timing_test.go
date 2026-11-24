@@ -59,3 +59,26 @@ func TestP25Phase2ChannelRealAirEveryStartPhase(t *testing.T) {
 		bus.Close()
 	}
 }
+
+// A wideband Phase 2 control channel installs no descramble seed of its own
+// (issue #1364): the one it used to build from the system's WACN / System ID /
+// Site named a sequence no site sends (the configuration sets none of them,
+// and Site is not the 12-bit Color Code), and grants made before the
+// channel's Network Status Broadcast carried it to the voice chain.
+func TestP25Phase2ChannelInstallsNoPlaceholderSeed(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	const freq = 420_650_000
+	sys := trunking.System{
+		Name: "mmr", Protocol: trunking.ProtocolP25Phase2,
+		ControlChannels: []uint32{freq}, WACN: 0xBEE00, SystemID: 0x164, Site: 3,
+	}
+	bus := events.NewBus(8)
+	defer bus.Close()
+	ec, err := buildChannel(sys, ChannelConfig{FrequencyHz: freq, SystemName: "mmr"}, 48_000, bus, log, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ec.processor.(*p25phase2.ControlChannel).ScramblerSeed(); got != 0 {
+		t.Fatalf("seed %#x before any Network Status Broadcast, want none", got)
+	}
+}

@@ -17,7 +17,6 @@ import (
 	dstarrx "github.com/MattCheramie/GopherTrunk/internal/radio/dstar/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/edacs"
 	edacsrx "github.com/MattCheramie/GopherTrunk/internal/radio/edacs/receiver"
-	"github.com/MattCheramie/GopherTrunk/internal/radio/framing"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/ltr"
 	ltrrx "github.com/MattCheramie/GopherTrunk/internal/radio/ltr/receiver"
 	"github.com/MattCheramie/GopherTrunk/internal/radio/motorola"
@@ -524,16 +523,13 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 			"system", opts.SystemName, "value", opts.System.P25Phase2ScramblerMode)
 	}
 	cc.SetScramblerMode(scramblerMode)
-	// Derive the PN44 seed from (WACN, SystemID, low-12 bits of Site
-	// as the spec's Color Code = NAC) per TIA-102.BBAC-1 §7.2.5
-	// equation (5). System operators who haven't configured these
-	// values end up with a zero-input seed that maps to (2^44 - 1)
-	// per spec — the descrambler runs but with an unlikely-to-help
-	// sequence. Future PRs derive the seed from the Network Status
-	// Broadcast MAC message at runtime instead of static config.
-	cc.SetScramblerSeed(framing.PN44SeedFromIdentity(
-		opts.System.WACN, opts.System.SystemID, uint16(opts.System.Site),
-	))
+	// No descramble seed is installed here: the seed is (WACN, System ID,
+	// Color Code = NAC) per TIA-102.BBAC-1 §7.2.5 equation (5), the
+	// configuration carries none of them, and the seed this used to build
+	// from the system's Site (8 bits, not the 12-bit Color Code) named a
+	// sequence no site sends. The control channel installs the real seed
+	// from the clear LCCH's Network Status Broadcast, and until then its
+	// grants carry no seed rather than a wrong one (issue #1364).
 	softDecision, softOK := p25phase2rx.ParseSoftDecision(opts.System.P25Phase2SoftDecision)
 	if !softOK {
 		opts.Log.Warn("ccdecoder: unrecognised p25_phase2_soft_decision; falling back to off",
@@ -565,11 +561,17 @@ func newP25Phase2Pipeline(opts PipelineOptions) (ProtocolPipeline, error) {
 	// (cc.ProcessAir: S-/I-ISCH timeslot grid, DUID, RS(63,35) + CRC
 	// signalling decode). A receiver reset restarts the dibit count, which
 	// the framer reads as a discontinuity and re-hunts.
+	// The soft path slices the same hard dibits and adds their
+	// reliabilities, which the signalling decode uses to retry a burst it
+	// cannot correct with its least reliable symbols erased (issue #1364).
+	var rel []float32
 	rx := p25phase2rx.New(p25phase2rx.Options{
 		SampleRateHz: opts.SampleRateHz,
-		DibitSink: func(dibits []uint8, baseIdx int) {
+		SoftDecision: true,
+		SoftSink: func(dibits []uint8, soft []complex64, baseIdx int) {
 			opts.tapDibits(dibits, baseIdx)
-			cc.ProcessAir(dibits, baseIdx)
+			rel = p25phase2.SoftReliability(soft, rel)
+			cc.ProcessAirSoft(dibits, rel, baseIdx)
 		},
 		ClockMode: clockMode,
 		// Tuned smaller than the 0.03 default — H-DQPSK at

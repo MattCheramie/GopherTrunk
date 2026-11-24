@@ -535,6 +535,13 @@ type SiteUpdate struct {
 	SystemIDHex string `json:"SystemIDHex,omitempty"`
 	RFSSIDHex   string `json:"RFSSIDHex,omitempty"`
 	SiteIDHex   string `json:"SiteIDHex,omitempty"`
+	// NAC is the site's Network Access Code: the Phase 1 NID's NAC, or a
+	// Phase 2 control channel's Network Status Broadcast Color Code (the
+	// same number). With WACN and SystemID it names the P25 Phase 2 PN44
+	// descramble seed, which is how a Phase 2 voice chain granted before
+	// the site's identity was known learns its seed (issue #1364). Zero
+	// when unknown.
+	NAC uint16 `json:"NAC,omitempty"`
 	// Topology, when non-nil, is the full network-configuration snapshot of the
 	// camped site (identity + primary/secondary control channels + neighbours +
 	// band plan) as of this update. It is built on the decoder's Process
