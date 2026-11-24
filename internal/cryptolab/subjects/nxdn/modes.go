@@ -59,6 +59,23 @@ type crcOracle struct{ frameType string }
 
 func (o crcOracle) name() string { return "crc:" + o.frameType }
 
+// wantBits reports the exact frame length this CRC oracle can check, and
+// whether that length is fixed. sacch and cac are fixed-size information
+// fields; ccitt takes any whole-byte frame of at least 3 bytes, so its
+// length is not fixed (0, false). A frame that is not this length can never
+// pass, so brute uses it to catch an input/-frame-type mismatch up front
+// instead of running a pointless 32 768-key sweep that reports "no key".
+func (o crcOracle) wantBits() (int, bool) {
+	switch o.frameType {
+	case "sacch":
+		return radionxdn.SACCHInfoBits, true // 32
+	case "cac":
+		return 88, true
+	default: // ccitt: variable, whole bytes
+		return 0, false
+	}
+}
+
 func (o crcOracle) check(bits []byte) (float64, bool) {
 	switch o.frameType {
 	case "sacch": // 32-bit SACCH info block: 26 payload + CRC-6 trailer.
@@ -221,6 +238,39 @@ func (bruteMode) Run(_ context.Context, args []string, env cryptolab.Env) (*cryp
 		return nil, fmt.Errorf("nxdn brute: the ambe-fec oracle needs the NXDN voice decoder (roadmap phase 2); use crc or known-pt")
 	default:
 		return nil, fmt.Errorf("nxdn brute: -oracle must be crc|known-pt, got %q", *oracleName)
+	}
+
+	// Pre-flight: catch the common mistake of feeding the voice .raw sidecar
+	// (49-bit AMBE+2 frames, packed to 56-bit lines) to the CRC oracle. The
+	// scrambler only XORs the voice slots on air; the SACCH/CAC signalling
+	// that carries the VCALL stays CLEAR, so there is no scrambled CRC frame
+	// to recover a voice-call key from, and a bit-length mismatch means every
+	// key fails the oracle. Say so, with the fix, instead of a silent "no
+	// key" after a full sweep.
+	if co, ok := orc.(crcOracle); ok {
+		if want, fixed := co.wantBits(); fixed {
+			mismatched := 0
+			for _, f := range frames {
+				if len(f) != want {
+					mismatched++
+				}
+			}
+			if mismatched == len(frames) {
+				got := len(frames[0])
+				res := &cryptolab.Result{Tool: "nxdn", Mode: "brute"}
+				res.AddField("frames", len(frames))
+				res.AddField("frame_bits", got)
+				res.AddField("want_bits", want)
+				res.Summary = fmt.Sprintf("input frames are %d bits; the %s CRC oracle needs %d-bit frames — nothing to brute",
+					got, *frameType, want)
+				if got == 56 || got == 49 {
+					res.Note("These look like AMBE+2 voice frames from a recording's .raw sidecar (49 data bits, packed to 56-bit lines). The NXDN scrambler only ciphers the VOICE slots; the SACCH/CAC signalling stays clear, so the CRC oracle has no scrambled frame to work from. For voice there is no shipped key-recovery oracle yet (the AMBE/FEC oracle is roadmap phase 2). If you OWN the radio and know the key, set it under encryption_keys (algorithm: scrambler) and GopherTrunk descrambles in-process — see docs/nxdn-scrambler.md; `cryptolab nxdn descramble -key <k>` is the offline equivalent. Use -oracle known-pt only when you already have a plaintext crib.")
+				} else {
+					res.Note(fmt.Sprintf("Check -frame-type: sacch is a 32-bit SACCH info block, cac an 88-bit CAC message. Feed the matching scrambled field, one per line as hex (packed bits, MSB-first). See docs/nxdn-scrambler.md."))
+				}
+				return res, nil
+			}
+		}
 	}
 
 	type candidate struct {

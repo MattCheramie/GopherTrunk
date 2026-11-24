@@ -1687,7 +1687,10 @@ scanner:
   #   # destination). The same
   #   # entries are accepted on a trunking system's encryption_keys. Calls
   #   # whose key is not listed record as ciphertext (see recordings.
-  #   # mute_encrypted); NXDN DES / AES are identified, not decrypted.
+  #   # mute_encrypted); NXDN DES / AES are identified, not decrypted. The
+  #   # scrambler only ciphers the voice slots (the SACCH/CAC signalling
+  #   # stays clear), and there is no shipped offline voice-key brute yet;
+  #   # see docs/nxdn-scrambler.md for the full workflow.
   #   - label: "Plant ops"
   #     frequency_hz: 447100000
   #     mode: nxdn
