@@ -83,6 +83,11 @@ func (d *Daemon) buildHuntAcquirer() hunt.Acquirer {
 				if e.Role == sdr.RoleDedicated {
 					continue // pinned to a single-channel decoder (#1316); never a hunt SDR
 				}
+				if d.sdrGroupOf(e.Info.Serial) != "" {
+					// An sdr.groups member: retuning it blinds its slice of the
+					// group's span, so a hunt never picks one on its own.
+					continue
+				}
 				poolSerials = append(poolSerials, e.Info.Serial)
 			}
 		}
@@ -99,6 +104,11 @@ func (d *Daemon) buildHuntAcquirer() hunt.Acquirer {
 		// grants whose voice taps capture no audio (empty TG folders). Suspend
 		// those engines for the borrow — but only with the operator's explicit
 		// confirmation, since it knocks the live system offline for the run.
+		// An explicitly requested group member is a borrow like the control
+		// SDR: its engine must be suspended, with the operator's confirmation.
+		if d.sdrGroupOf(serial) != "" {
+			borrow = true
+		}
 		var borrowedEngines []*widebandt2.Engine
 		if borrow {
 			borrowedEngines = d.widebandEnginesForSerial(serial)

@@ -474,7 +474,11 @@ func (p *ScannerPanel) renderSystems(width int, s *state.SharedState) string {
 			}
 		}
 		if sys.WidebandSerial != "" {
-			freq += "  [wideband " + sys.WidebandSerial + "]"
+			if sys.WidebandGroup != "" {
+				freq += "  [group " + sys.WidebandGroup + " / " + sys.WidebandSerial + "]"
+			} else {
+				freq += "  [wideband " + sys.WidebandSerial + "]"
+			}
 		}
 		grantAge := "—"
 		if !sys.LastGrantAt.IsZero() {

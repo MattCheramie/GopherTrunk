@@ -290,7 +290,9 @@ function Hunt({
                     className="font-mono text-xs text-muted"
                     title="Decoded in parallel on a wideband SDR: never hunted, so hold / resume / retune do not apply"
                   >
-                    wideband {sys.wideband_serial}
+                    {sys.wideband_group
+                      ? `group ${sys.wideband_group} / ${sys.wideband_serial}`
+                      : `wideband ${sys.wideband_serial}`}
                   </span>
                 )}
               </div>

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, render, screen, waitFor, fireEvent } from "@testing-library/react";
 
-vi.mock("../api/spectrum", () => ({
+vi.mock("../api/spectrum", async (importOriginal) => ({
+  // groupMemberAt is pure; keep the real one.
+  groupMemberAt: (await importOriginal<typeof import("../api/spectrum")>()).groupMemberAt,
   fetchSpectrumDevices: vi.fn(),
   openSpectrumStream: vi.fn(),
   tuneSpectrumDevice: vi.fn().mockResolvedValue(undefined),
@@ -108,6 +110,51 @@ describe("Spectrum panel", () => {
     await waitFor(() => {
       expect(screen.getByText("live")).toBeInTheDocument();
     });
+  });
+
+  it("streams an SDR group as one panorama: seams marked, member named, never tuned", async () => {
+    vi.mocked(fetchSpectrumDevices).mockResolvedValue([
+      {
+        serial: "group:south",
+        driver: "group",
+        role: "group",
+        center_hz: 854_000_000,
+        sample_rate_hz: 6_000_000,
+        group: true,
+        members: ["rtl-a", "rtl-b", "rtl-c"],
+        seams_hz: [853_000_000, 855_000_000],
+      },
+    ]);
+    vi.mocked(openSpectrumStream).mockImplementation((_cfg, opts) => {
+      opts.onFrame?.({
+        ts_ns: 0,
+        center_hz: 854_000_000,
+        sample_rate_hz: 6_000_000,
+        bins: [-80, -70, -60, -50, -40, -30, -20, -10],
+      });
+      return { close: vi.fn() };
+    });
+
+    render(<Spectrum />);
+
+    // The panel asks the daemon for groups.
+    await waitFor(() =>
+      expect(vi.mocked(fetchSpectrumDevices).mock.calls[0]?.[1]).toEqual({ groups: true }),
+    );
+    expect(await screen.findByText(/group:south · 3 SDRs stitched/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByTestId("group-seam")).toHaveLength(2));
+    expect(screen.getByLabelText(/tune the sdr to a centre frequency/i)).toBeDisabled();
+
+    const canvas = await screen.findByLabelText(/spectrum waterfall — hover/i);
+    canvas.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 100, height: 320 }) as DOMRect;
+    // xRatio 0.9 → 856.4 MHz, past the second seam: the third member.
+    await waitFor(() => {
+      fireEvent.mouseMove(canvas, { clientX: 90, clientY: 10 });
+      expect(screen.getByText(/· rtl-c$/)).toBeInTheDocument();
+    });
+    fireEvent.click(canvas, { clientX: 90, clientY: 10 });
+    expect(tuneSpectrumDevice).not.toHaveBeenCalled();
   });
 
   it("shows the frequency and signal level under the cursor on hover", async () => {

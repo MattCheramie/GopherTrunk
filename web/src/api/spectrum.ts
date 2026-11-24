@@ -31,6 +31,25 @@ export interface SpectrumDevice {
   // absent when none matches. The Plots panels rest their view here so
   // they default off the centre DC spike onto a decodable channel. (#557)
   control_channel_hz?: number;
+  // An sdr.groups entry (serial "group:<name>"): several SDRs whose spectra
+  // the stream stitches into one panorama. Listed only when
+  // fetchSpectrumDevices is asked for groups; never tunable, and the
+  // single-stream views (symbols / diag / mixer) refuse it.
+  group?: boolean;
+  // Member serials, lowest frequency first.
+  members?: string[];
+  // Frequencies (Hz) where one member's slice hands over to the next.
+  seams_hz?: number[];
+}
+
+// groupMemberAt names the member of a group device whose slice holds hz:
+// the seams split the panorama into members.length slices.
+export function groupMemberAt(dev: SpectrumDevice, hz: number): string | null {
+  if (!dev.group || !dev.members || dev.members.length === 0) return null;
+  const seams = dev.seams_hz ?? [];
+  let i = 0;
+  while (i < seams.length && hz > seams[i]) i++;
+  return dev.members[Math.min(i, dev.members.length - 1)] ?? null;
 }
 
 // defaultSymbolDevice picks the SDR the symbol-domain panels (Eye
@@ -136,8 +155,13 @@ export function openSpectrumStream(
 
 export async function fetchSpectrumDevices(
   cfg: ClientConfig,
+  opts: { groups?: boolean } = {},
 ): Promise<SpectrumDevice[]> {
-  const url = joinURL(cfg.baseURL, "/api/v1/spectrum/devices");
+  // Groups are opt-in: only the Spectrum panel can stream one.
+  const url = joinURL(
+    cfg.baseURL,
+    opts.groups ? "/api/v1/spectrum/devices?groups=1" : "/api/v1/spectrum/devices",
+  );
   const headers: Record<string, string> = { Accept: "application/json" };
   if (cfg.token) headers["Authorization"] = `Bearer ${cfg.token}`;
   const res = await fetch(url, { headers });

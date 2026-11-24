@@ -257,6 +257,18 @@ type Options struct {
 	// set it get no warning.
 	Gain string
 
+	// AllowNoChannels lets an engine run with an empty Channels list. An
+	// sdr.groups member the planner placed only for voice-grant coverage or
+	// the stitched spectrum view has nothing to decode, but something must
+	// still own its IQ stream (tune the dongle, StreamIQ the broker) so the
+	// virtual voice taps and the spectrum view that Subscribe to it get IQ.
+	// Such an engine streams and drains, doing no per-channel work.
+	AllowNoChannels bool
+
+	// Group names the sdr.groups entry this engine's dongle belongs to
+	// ("" for a standalone wideband dongle). Reporting only.
+	Group string
+
 	// Channels is the list of per-repeater carriers to monitor.
 	// All FrequencyHz values must fall inside the dongle's IQ
 	// band (CenterFreqHz ± SampleRateHz/2 minus guardFrac).
@@ -290,6 +302,7 @@ type Engine struct {
 	metrics IQPowerObserver
 	// serial labels the whole-capture power/clip gauges (issue #749).
 	serial string
+	group  string
 	// now is the clock the diagnostics window uses; injectable for tests.
 	now func() time.Time
 	// lastDiagAt is the wall-clock time the per-channel diagnostics were
@@ -330,6 +343,12 @@ type Engine struct {
 // Options.Serial). It lets a coordinator — e.g. the daemon's hunt acquirer —
 // match a running engine to the SDR a hunt is about to borrow.
 func (e *Engine) Serial() string { return e.serial }
+
+// Group is the sdr.groups entry this engine's dongle is a member of, or "".
+func (e *Engine) Group() string { return e.group }
+
+// CenterFreqHz is the frequency the engine tunes its dongle to.
+func (e *Engine) CenterFreqHz() uint32 { return e.centerHz }
 
 // Suspend pauses decoding: the Run pump keeps draining the IQ stream (so the
 // SDR/broker never blocks) but processes nothing until Resume. Idempotent and
@@ -569,7 +588,7 @@ func New(opts Options) (*Engine, error) {
 	if opts.CenterFreqHz == 0 {
 		return nil, errors.New("widebandt2: CenterFreqHz is required")
 	}
-	if len(opts.Channels) == 0 {
+	if len(opts.Channels) == 0 && !opts.AllowNoChannels {
 		return nil, errors.New("widebandt2: at least one channel is required")
 	}
 	if len(opts.Systems) == 0 && !allConventional(opts.Channels) {
@@ -689,6 +708,7 @@ func New(opts Options) (*Engine, error) {
 		strategyTag: tag,
 		metrics:     opts.Metrics,
 		serial:      opts.Serial,
+		group:       opts.Group,
 		now:         now,
 	}
 
@@ -1322,6 +1342,11 @@ func (e *Engine) Run(ctx context.Context) error {
 			}
 			e.widebandPwr.Add(chunk)
 			e.foldInputClip(chunk)
+			if len(e.channels) == 0 {
+				// A channel-less group member: it streams only for the
+				// subscribers on its broker (voice taps, spectrum).
+				continue
+			}
 			e.bank.Process(chunk)
 			e.maybeLogDiagnostics(e.now())
 		}

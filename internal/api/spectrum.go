@@ -42,6 +42,44 @@ type SpectrumDevice struct {
 	// rest their view on it so they default off the centre DC spike onto a
 	// decodable channel instead of the useless SDR centre. (#557)
 	ControlChannelHz uint32 `json:"control_channel_hz,omitempty"`
+	// Group marks an sdr.groups entry: several SDRs whose spectra the
+	// stream stitches into one panorama (Serial is "group:<name>").
+	// CenterHz / SampleRateHz describe the whole panorama. A group is never
+	// retuned, and only the spectrum stream accepts it: the symbol, diag and
+	// mixer views need ONE stream, so open a member there instead.
+	Group bool `json:"group,omitempty"`
+	// Members are the group's member serials, lowest frequency first.
+	Members []string `json:"members,omitempty"`
+	// SeamsHz are the frequencies where one member's slice of the panorama
+	// hands over to the next.
+	SeamsHz []uint32 `json:"seams_hz,omitempty"`
+}
+
+// SpectrumGroupProvider is optionally implemented by a SpectrumProvider
+// that knows sdr.groups. Groups returns one stitched device per group;
+// they are listed by GET /api/v1/spectrum/devices?groups=1 only (other
+// clients would open per-device receivers on them) and accepted by the
+// spectrum stream.
+type SpectrumGroupProvider interface {
+	Groups() []SpectrumDevice
+}
+
+// spectrumGroups returns the provider's group devices, or nil.
+func (s *Server) spectrumGroups() []SpectrumDevice {
+	if gp, ok := s.spectrum.(SpectrumGroupProvider); ok {
+		return gp.Groups()
+	}
+	return nil
+}
+
+// isSpectrumGroup reports whether serial is one of the provider's groups.
+func (s *Server) isSpectrumGroup(serial string) bool {
+	for _, g := range s.spectrumGroups() {
+		if g.Serial == serial {
+			return true
+		}
+	}
+	return false
 }
 
 // SpectrumFrame is the wire shape of one frame on the WS stream.
@@ -82,7 +120,11 @@ func (s *Server) handleSpectrumDevices(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusServiceUnavailable, "spectrum subsystem not enabled")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.spectrum.Devices())
+	devices := s.spectrum.Devices()
+	if q := r.URL.Query().Get("groups"); q == "1" || q == "true" {
+		devices = append(devices, s.spectrumGroups()...)
+	}
+	writeJSON(w, http.StatusOK, devices)
 }
 
 // handleSpectrumTune answers POST /api/v1/spectrum/devices/{serial}/tune.
@@ -110,6 +152,10 @@ func (s *Server) handleSpectrumTune(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.CenterHz == 0 {
 		s.writeError(w, http.StatusBadRequest, "center_hz is required and must be > 0")
+		return
+	}
+	if s.isSpectrumGroup(serial) {
+		s.writeError(w, http.StatusBadRequest, serial+" is an SDR group: its members hold the frequencies the group plan gave them and are never retuned")
 		return
 	}
 	if err := s.spectrum.Tune(serial, body.CenterHz); err != nil {
@@ -161,7 +207,7 @@ func (s *Server) handleSpectrumStream(w http.ResponseWriter, r *http.Request) {
 	// status, not a successful handshake followed by a close: browser clients
 	// reset their reconnect backoff on `onopen`, so a handshake that always
 	// succeeds makes the backoff dead code and a stale tab reconnects forever.
-	if s.rejectUnknownDevice(w, serial) {
+	if !s.isSpectrumGroup(serial) && s.rejectUnknownDevice(w, serial) {
 		return
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)

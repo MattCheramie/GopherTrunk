@@ -95,6 +95,9 @@ export interface DeviceConfig {
   TunerStrategy?: string;
   VoiceTaps?: number;
   SignallingTaps?: number;
+  // Member of the named sdr.groups entry: the group supplies channels, taps
+  // and strategy and plans CenterFreqHz unless it is set (a pin).
+  Group?: string;
   // Per-device IQ rate (issue #1260): only on a role: voice SDR that
   // scanner.conventional channels name with `device:`, or on an SDR a
   // single-channel decoder section pins by serial (#1316). 0 = sdr.sample_rate.
@@ -175,9 +178,23 @@ export interface IIOConfig {
   ConnectTimeoutMs: number;
 }
 
+// A group of role: wideband SDRs tiling one span (sdr.groups).
+export interface SDRGroupConfig {
+  Name: string;
+  LowHz: number;
+  HighHz: number;
+  OverlapHz: number;
+  VoiceTaps: number;
+  SignallingTaps: number;
+  TunerStrategy: string;
+  Channels?: DeviceChannelConfig[] | null;
+  Conventional?: ConvChannelConfig[] | null;
+}
+
 export interface SDRConfig {
   SampleRate: number;
   Devices: DeviceConfig[];
+  Groups?: SDRGroupConfig[] | null;
   RTLTCP?: RTLTCPConfig[] | null;
   SoapyRemote?: SoapyRemoteConfig[] | null;
   Sidecar?: SidecarConfig[] | null;

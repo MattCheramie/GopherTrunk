@@ -129,6 +129,17 @@ harder here than with a single dongle:
 > [broadcast notch or bandpass filter](/sdr-filters/) ahead of the split, keep gain
 > conservative on wideband captures, and check the noise floor before blaming the decoder.
 
+## Ganging dongles for a wider span
+
+When a system's channels spread wider than one dongle's window, put several
+`role: wideband` dongles in an **[SDR group](/sdr-groups.html)**. You give the
+group the span and the channel list; GopherTrunk tunes each dongle so their
+windows tile the span with overlap, decodes every channel on the dongle that
+covers it, follows voice grants anywhere in the span, and shows the whole
+group as one stitched waterfall. Three 2.4 MS/s RTL-SDRs cover about 6.3 MHz.
+The dongles' IQ is never merged into one stream, so ordinary sticks with
+independent clocks are fine.
+
 ## Bottom line
 
 GopherTrunk scales from one dongle to a coordinated **pool** — by serial and role, over

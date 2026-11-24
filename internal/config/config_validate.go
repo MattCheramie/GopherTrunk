@@ -133,7 +133,9 @@ func (c Config) validateSDR() []error {
 			errs = append(errs, err)
 			continue
 		}
-		if d.Role == "wideband" {
+		if d.Role == "wideband" && strings.TrimSpace(d.Group) == "" {
+			// Group members are validated by validateSDRGroups, on their
+			// expanded (planned) form.
 			if err := validateWidebandDevice(i, d, c.SDR.SampleRate, c.Trunking.Systems); err != nil {
 				errs = append(errs, err)
 				continue
@@ -168,6 +170,7 @@ func (c Config) validateSDR() []error {
 		}
 		seenSerials[d.Serial] = i
 	}
+	errs = append(errs, c.validateSDRGroups()...)
 	// Validate rtl_tcp endpoints. Addr is required; role must match
 	// the standard set; serial collisions with local devices are
 	// rejected for the same reason serial dedup runs above.
@@ -511,7 +514,7 @@ func (c Config) validateTrunking() []error {
 			errs = append(errs, err)
 			continue
 		}
-		if err := validateSystemControlChannels(i, s, c.SDR.Devices); err != nil {
+		if err := validateSystemControlChannels(i, s, c.WidebandDevices()); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -848,7 +851,7 @@ func (c Config) validateScanner() []error {
 	// Wideband conventional channels share the engine's (system, GroupID)
 	// keying with the scan list (issue #1288).
 	k := 0
-	for di, d := range c.SDR.Devices {
+	for di, d := range c.WidebandDevices() {
 		if d.Role != "wideband" {
 			continue
 		}
@@ -1036,6 +1039,9 @@ func (c Config) validateBaseband() []error {
 		default:
 			errs = append(errs, fmt.Errorf("baseband.record[%d]: tap must be wideband|ddc", i))
 		}
+		if c.sdrGroupNamed(r.Serial) && r.TapDDC() {
+			errs = append(errs, fmt.Errorf("baseband.record[%d]: serial %q is an sdr.groups entry; a group records its members' wideband IQ (tap: wideband), it has no single DDC stream", i, r.Serial))
+		}
 		switch strings.ToLower(strings.TrimSpace(r.Format)) {
 		case "", "wav", "flac":
 		default:
@@ -1169,12 +1175,16 @@ func validateWidebandDevice(idx int, d DeviceConfig, sampleRateHz uint32, system
 	if d.CenterFreqHz == 0 {
 		return fmt.Errorf("sdr.devices[%d]: role: wideband requires center_freq_hz", idx)
 	}
+	// A group member may carry no channel: the planner tiles the group's
+	// span, and a member there only for voice-grant coverage (its virtual
+	// voice taps) or the stitched spectrum view has nothing to decode.
+	member := strings.TrimSpace(d.Group) != ""
 	switch d.TunerStrategy {
 	case "", "auto", "ddc", "polyphase":
 	default:
 		return fmt.Errorf("sdr.devices[%d]: tuner_strategy must be auto|ddc|polyphase, got %q", idx, d.TunerStrategy)
 	}
-	if len(d.Channels) == 0 && len(d.Conventional) == 0 {
+	if len(d.Channels) == 0 && len(d.Conventional) == 0 && !member {
 		return fmt.Errorf("sdr.devices[%d]: role: wideband requires at least one channel (channels: or conventional:)", idx)
 	}
 	rate := sampleRateHz

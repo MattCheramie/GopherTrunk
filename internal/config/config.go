@@ -345,7 +345,10 @@ func (a BasebandAutoRecordConfig) CooldownDuration() (time.Duration, error) {
 
 // BasebandRecordConfig taps one tuner's IQ to WAV recordings.
 type BasebandRecordConfig struct {
-	// Serial is the SDR serial whose IQ stream is recorded.
+	// Serial is the SDR serial whose IQ stream is recorded. It may name an
+	// sdr.groups entry instead: every member then records its own file (the
+	// serial is in each file name) and the group's plan is written beside
+	// them so the files can be lined up by frequency.
 	Serial string `yaml:"serial"`
 	// Dir is the directory recordings are written into.
 	Dir string `yaml:"dir"`
@@ -843,6 +846,11 @@ type SDRConfig struct {
 	// warning. Advisory only — it never changes tuning or decode.
 	CarrierOffsetWarnHz uint32         `yaml:"carrier_offset_warn_hz"`
 	Devices             []DeviceConfig `yaml:"devices"`
+	// Groups gang several role: wideband SDRs into one logical wideband
+	// receiver covering more spectrum than one of them can (see
+	// SDRGroupConfig and docs/sdr-groups.md). Members name their group
+	// with sdr.devices[].group.
+	Groups []SDRGroupConfig `yaml:"groups"`
 	// RTLTCP lists remote rtl_tcp endpoints (host:port + optional
 	// per-endpoint metadata) to mount as virtual tuners. Each entry
 	// becomes a pool device alongside any locally-attached USB
@@ -1338,6 +1346,13 @@ type DeviceConfig struct {
 	// config value wins over auto-detection (it is applied after open).
 	BlogV4     bool `yaml:"blog_v4"`
 	BlogV4Lite bool `yaml:"blog_v4_lite"`
+
+	// Group makes this role: wideband SDR a member of the named
+	// sdr.groups entry. A member takes its channel plan, voice/signalling
+	// taps and tuner strategy from the group and its centre frequency from
+	// the group planner (unless center_freq_hz pins it); it keeps its own
+	// gain, ppm and bias_tee.
+	Group string `yaml:"group"`
 
 	// CenterFreqHz pins a `role: wideband` dongle to the centre of
 	// the IQ band it should cover. Every Channels[].FrequencyHz must

@@ -298,6 +298,9 @@ type SystemHuntStatusDTO struct {
 	// its state is "locked" while a control channel decodes, otherwise
 	// "listening" (or "camped" for a conventional / direct-mode protocol).
 	WidebandSerial string `json:"wideband_serial,omitempty"`
+	// WidebandGroup is the sdr.groups entry WidebandSerial belongs to, when
+	// the dongle is a member of one.
+	WidebandGroup string `json:"wideband_group,omitempty"`
 }
 
 // ConvScannerStatusDTO is the conventional FM scanner's read shape.
