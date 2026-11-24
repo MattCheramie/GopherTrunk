@@ -46,18 +46,24 @@ func runWMBus(args []string) {
 	logPath := fs.String("log", "", "also append every telegram, progress line, warning and the reason a live run stopped to this file, written as it happens (survives Ctrl-C, a closed terminal or a killed `| tee`)")
 	noGate := fs.Bool("no-gate", false, "run the demodulator on all of the IQ, not only around the bursts that rise out of the channel's noise (as the decoder ran up to v1.4.0, at about 15 times the CPU; for comparing the two)")
 	reconnect := fs.Bool("reconnect", true, "live: when the SDR disappears mid-run (a USB disconnect, the rtl_tcp server hanging up), wait for it to come back and keep listening; false = stop with the reason")
+	s1 := fs.Bool("s1", false, "also decode mode S1 meters (868.3 MHz, 650 kHz below T1/C1): live, the tuner moves to 868.625 MHz so one stream carries both (needs at least ~1.2 MS/s; -freq overrides); from a file, S1 is looked for 650 kHz below where 868.95 MHz sits")
+	var keyFlags wmbusKeyFlags
+	fs.Var(&keyFlags, "key", "decrypt one meter's telegrams: ID:KEY, the 8-digit meter ID as printed and its 32-hex-digit AES-128 key (repeatable)")
+	keysFile := fs.String("keys", "", "file of meter keys, one ID:KEY per line (# comments); for OMS security modes 5 and 7 and the encrypted extended link layer")
 	verboseFlag := fs.Bool("verbose-errors", false, "print full error chain + stack on failures")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), `gophertrunk wmbus — Wireless M-Bus (EN 13757-4) meter telegram decoder, modes T1 and C1 at 868.95 MHz.
+		fmt.Fprintln(fs.Output(), `gophertrunk wmbus — Wireless M-Bus (EN 13757-4) meter telegram decoder, modes T1 and C1 at 868.95 MHz,
+and with -s1 mode S1 at 868.3 MHz.
 
 USAGE:
   gophertrunk wmbus -in capture [-format u8|cs16|f32] [-rate S/s] [-offset Hz]
-  gophertrunk wmbus [-serial S | -rtltcp host:port] [-gain G] [-ppm N] [-seconds N]
+  gophertrunk wmbus [-serial S | -rtltcp host:port] [-gain G] [-ppm N] [-seconds N] [-s1]
 
 Prints the sender of every telegram (manufacturer, ID, device type), and the
 readings of unencrypted meters. Most OMS meters encrypt their readings (AES-128,
 security mode 5 or 7, key held by the metering company): those show as
-"encrypted" with their header only.
+"encrypted" with their header only, unless -key / -keys gives the meter's key,
+in which case they decode like an unencrypted meter.
 
 EXAMPLES:
   # Listen live on a local RTL-SDR
@@ -65,6 +71,9 @@ EXAMPLES:
 
   # Through an rtl_tcp server (e.g. a phone running rtl_tcp)
   gophertrunk wmbus -rtltcp 127.0.0.1:1234
+
+  # Decrypt your own meter's readings with its AES key (from the supplier)
+  gophertrunk wmbus -key 12345678:00112233445566778899AABBCCDDEEFF
 
   # Decode a capture recorded with (flac carries at most ~1.05 MS/s):
   #   gophertrunk capture -freq 868950000 -sample-rate 1024000 -seconds 60 -format flac -out m.flac
@@ -114,6 +123,11 @@ FLAGS:`)
 		explicit["rate"] = true
 	}
 
+	keys, nKeys, err := loadWMBusKeys(keyFlags, *keysFile)
+	if err != nil {
+		rep.Fatal(2, err)
+	}
+
 	var logFile *os.File
 	if *logPath != "" {
 		var err error
@@ -137,6 +151,9 @@ FLAGS:`)
 	// With -json the log gets it as a {"status": …} object, so every line
 	// of the log parses as JSON for a script reading it.
 	statusf := func(line string) { fmt.Fprintln(stderr, line) }
+	if nKeys > 0 {
+		statusf(fmt.Sprintf("wmbus: %d meter key(s) loaded; telegrams from those meters are decrypted", nKeys))
+	}
 	var stdout io.Writer = os.Stdout
 	if logFile != nil {
 		// The log first: io.MultiWriter stops at the first failed write,
@@ -176,11 +193,13 @@ FLAGS:`)
 			SampleRateHz: rateHz,
 			OffsetHz:     *offset,
 			NoBurstGate:  *noGate,
+			S1:           *s1,
+			S1OffsetHz:   *offset + wmbus.S1OffsetFromChannelHz,
 			OnFrame: func(f wmbus.Frame, info wmbus.FrameInfo) {
 				if !f.CRCOK && !*all {
 					return
 				}
-				tg, err := wmbus.ParseTelegram(f)
+				tg, err := wmbus.ParseTelegramKeys(f, keys)
 				ts := stamp(info.Sample)
 				gap := gaps.cutByGap(f, info, rateHz)
 				writeWMBusTelegram(out, ts, tg, err, f, info, gap, *asJSON)
@@ -220,6 +239,11 @@ FLAGS:`)
 		return
 	}
 
+	if *s1 && !explicit["freq"] && !explicit["offset"] {
+		// Between the two channels: T1/C1 at +325 kHz, S1 at -325 kHz.
+		*freq = (wmbus.ChannelHz + wmbus.S1ChannelHz) / 2
+		*offset = float64(wmbus.ChannelHz) - float64(*freq)
+	}
 	gainTenthDB, ok := parseGain(*gain)
 	if !ok {
 		rep.Fatalf(2, `-gain: want "auto" or tenths of a dB, got %q`, *gain)
@@ -838,6 +862,8 @@ type wmbusJSON struct {
 	Status          *int          `json:"status,omitempty"`
 	SecurityMode    *int          `json:"security_mode,omitempty"`
 	Encrypted       bool          `json:"encrypted"`
+	Decrypted       bool          `json:"decrypted,omitempty"`
+	DecryptError    string        `json:"decrypt_error,omitempty"`
 	Records         []wmbusRecord `json:"records,omitempty"`
 	Error           string        `json:"error,omitempty"`
 	Frame           string        `json:"frame"`
@@ -901,7 +927,8 @@ func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f
 			Time: ts, Mode: tg.Mode.String(), Format: tg.Format.String(), CRCOK: tg.CRCOK,
 			LevelDBFS: info.LevelDBFS, CarrierOffsetHz: math.Round(info.CarrierOffsetHz), Manufacturer: tg.Manufacturer, ID: tg.ID,
 			Version: int(tg.Version), DeviceType: int(tg.DeviceType), Device: tg.DeviceTypeName(),
-			CI: int(tg.AppCI), Encrypted: tg.Encrypted, Frame: hex.EncodeToString(f.Data),
+			CI: int(tg.AppCI), Encrypted: tg.Encrypted, Decrypted: tg.Decrypted, DecryptError: tg.DecryptErr,
+			Frame:     hex.EncodeToString(f.Data),
 			CRCBlocks: f.Blocks, CRCFailedBlocks: f.FailedBlocks, HeaderCRCOK: f.HeaderCRCOK(),
 			CorrectedBits: f.CorrectedBits, IQGap: gap,
 		}
@@ -947,14 +974,21 @@ func writeWMBusTelegram(w io.Writer, ts string, tg wmbus.Telegram, perr error, f
 		if gap {
 			b.WriteString(" — cut by dropped IQ (the SDR dropped chunks during it), not a weak meter")
 		}
+	case tg.Encrypted && tg.DecryptErr != "":
+		fmt.Fprintf(&b, "  encrypted, key did not decrypt it (%s)", tg.DecryptErr)
 	case tg.Encrypted && tg.HasTPL:
 		fmt.Fprintf(&b, "  encrypted: %s, access %d", wmbus.SecurityModeName(tg.SecurityMode), tg.Access)
 	case tg.Encrypted:
 		b.WriteString("  encrypted (extended link layer)")
+	case tg.Decrypted && len(tg.Records) == 0:
+		fmt.Fprintf(&b, "  decrypted, CI %02X, no data records", tg.AppCI)
 	case tg.AppCI >= 0xA0 && tg.AppCI <= 0xB7:
 		fmt.Fprintf(&b, "  manufacturer-specific data (CI %02X)", tg.AppCI)
 	case len(tg.Records) == 0:
 		fmt.Fprintf(&b, "  CI %02X, no data records", tg.AppCI)
+	}
+	if tg.Decrypted && len(tg.Records) > 0 {
+		b.WriteString("  (decrypted)")
 	}
 	if tg.HasTPL && !tg.Encrypted && tg.Status != 0 {
 		fmt.Fprintf(&b, "  status %02X", tg.Status)

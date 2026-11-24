@@ -2,6 +2,7 @@ package wmbus
 
 import (
 	"errors"
+	"fmt"
 	"math"
 
 	"github.com/MattCheramie/GopherTrunk/internal/dsp"
@@ -90,6 +91,12 @@ type ReceiverOptions struct {
 	// NoBurstGate runs the demodulator on every sample, as the receiver
 	// did before the burst gate (gate.go). For tests and A/B measurements.
 	NoBurstGate bool
+	// S1 also runs a mode S1 receiver (s1.go) on the same IQ, for the
+	// 868.3 MHz channel at S1OffsetHz from the input's centre. With the
+	// input centred on 868.625 MHz both fit a 1.6 MS/s stream: OffsetHz
+	// +325 kHz, S1OffsetHz -325 kHz.
+	S1         bool
+	S1OffsetHz float64
 }
 
 // FrameInfo is receiver-side metadata for a frame.
@@ -127,6 +134,9 @@ type ReceiverStats struct {
 	Demodulated int64
 	// Gated reports that the burst gate is on.
 	Gated bool
+	// S1Framer counts the S1 receiver's framing alone (it is included in
+	// Framer too); zero without ReceiverOptions.S1.
+	S1Framer FramerStats
 }
 
 // Receiver turns IQ into wM-Bus frames.
@@ -189,6 +199,9 @@ type Receiver struct {
 	// over when skipped input is counted into n.
 	gate     *burstGate
 	skipFrac float64
+
+	// s1 is the mode S1 receiver, when ReceiverOptions.S1 is set.
+	s1 *s1Receiver
 }
 
 // NewReceiver builds a Receiver.
@@ -196,7 +209,17 @@ func NewReceiver(o ReceiverOptions) (*Receiver, error) {
 	if o.SampleRateHz < 400_000 {
 		return nil, errors.New("wmbus: sample rate must be at least 400 kS/s")
 	}
+	if o.S1 && math.Abs(o.S1OffsetHz)+s1CutoffHz > o.SampleRateHz/2 {
+		return nil, fmt.Errorf("wmbus: the S1 channel at %+.0f Hz does not fit %.0f S/s (centre the input on 868.625 MHz, or tune 868.3 MHz)", o.S1OffsetHz, o.SampleRateHz)
+	}
 	r := &Receiver{opts: o, spc: nominalSPC}
+	if o.S1 {
+		r.s1 = newS1Receiver(o, func(f Frame, info FrameInfo) {
+			if o.OnFrame != nil {
+				o.OnFrame(f, info)
+			}
+		})
+	}
 	if o.OffsetHz != 0 {
 		r.nco = dsp.NewNCO(o.OffsetHz, o.SampleRateHz)
 	}
@@ -307,6 +330,9 @@ func (r *Receiver) Stats() ReceiverStats {
 	for _, b := range r.framers {
 		b.stats(&s.Framer)
 	}
+	if r.s1 != nil {
+		r.s1.addStats(&s)
+	}
 	return s
 }
 
@@ -318,6 +344,9 @@ const processBlock = 8192
 // Process feeds IQ samples at the configured rate.
 func (r *Receiver) Process(iq []complex64) {
 	r.samples += int64(len(iq))
+	if r.s1 != nil {
+		r.s1.process(iq)
+	}
 	if r.nco != nil {
 		// The burst gate measures the channel, so the channel is moved to
 		// DC first.
@@ -366,6 +395,9 @@ func (r *Receiver) demod(iq []complex64) {
 // decides the chips after them, so a frame that ends the input is
 // delivered. Call it once, at the end of the input.
 func (r *Receiver) Flush() {
+	if r.s1 != nil {
+		r.s1.flush()
+	}
 	if r.gate != nil {
 		r.gate.flush(r)
 	}

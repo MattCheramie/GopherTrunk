@@ -1526,6 +1526,25 @@ confirmation before any close-as-completed.
   snippets). Snippets end ~5 ms after the logged frame, so they UNDER-count this class: a live run
   completes the stronger telegram. EIE smoke-detector payloads are AES-CBC, so diffing a failed EIE
   telegram against a valid one of the same meter shows the ciphertext, not bit errors; diff QDS only.
+- **wM-Bus (#1256, 24 Nov): decryption, Qundis walk-by and mode S1 landed; the 23 Nov walk's
+  remaining failures are NOISE, measured.** Adding white noise to CRC-valid real telegrams puts the
+  decode cliff at ~9-10 dB measured SNR; the failed weak telegrams sit below it, and 8 samples per chip
+  did not move the cliff (rejected). Don't chase the receiver for them. `ParseTelegramKeys` + `-key` /
+  `-keys` decrypt TPL mode 5 (IV = M + A + 8 x ACC, the LONG header's M/A when present), mode 7 (Kenc =
+  AES-CMAC(K, 00 | AFL MCR | ID | 07x7), IV 0; the config word is followed by ONE extension byte, KDF =
+  bits 4-5, which the parser used to leave in the payload), ELL CI 8D AES-CTR (counter = M A CC&^0x12 SN
+  00 00 00; payload CRC first), and Qundis's encrypted walk-by block; each has its own wrong-key check.
+  Vectors: real wmbusmeters telegrams with published keys (elf2, aventieswm long header, ebeco500,
+  kamwater ELL) and a mode 7 telegram from Python `cryptography` (no keyed real one is public). The
+  Qundis 0D FF 5F block (layout from wmbusmeters' qcaloric grammar) is re-expressed as standard records
+  and parsed by `ParseRecords`; meter 67837559 on the walk sent the block AND a CI 0x72 telegram minutes
+  apart with identical readings (`TestQundisWalkByMatchesSameMetersStandardTelegram`). A wrong walk-by
+  IV address corrupts the CURRENT reading only (first CBC block), so test values, not just the header.
+  S1 (`s1.go`, `-s1`): own chain beside T/C on the same IQ (live tuner at 868.625 MHz), sync 0x547696,
+  Manchester 01 = 1 decided soft from the chip pair; the burst gate now runs behind a `gatedDemod`
+  interface. S1 is synthetic-only (rtl-wmbus's 868.625 sample holds a T1 telegram, not S1).
+  Integer-constant trap that cost a round: `s1CutoffHz/procRateHz` is untyped-int division = 0, a filter
+  of zeros; write `float64(x)/y`.
 - **The single-channel decoders (APRS/AIS/DSC/POCSAG/FLEX/M17/MDC1200/FleetSync) ran their FM
   discriminator on the SDR's FULL-RATE IQ with no channel filter (#1316) — every APRS frame on
   the reporter's 144.39 MHz dongle was garbage with `fcs_ok=false`.** An FM discriminator's

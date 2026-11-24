@@ -90,6 +90,15 @@ type burstGate struct {
 	skipped  int64
 }
 
+// gatedDemod is the demodulator a burst gate runs: the T/C Receiver, or the
+// S1 receiver.
+type gatedDemod interface {
+	demod(iq []complex64)
+	busy() bool
+	skip(inputSamples int64)
+	countBurst()
+}
+
 func newBurstGate(sampleRateHz float64) *burstGate {
 	d := max(1, int(math.Round(sampleRateHz/procRateHz)))
 	g := &burstGate{decim: d, block: d * gateBlockLen, warm: gateWarmBlocks}
@@ -99,7 +108,7 @@ func newBurstGate(sampleRateHz float64) *burstGate {
 }
 
 // feed cuts the input into blocks and runs each through the gate.
-func (g *burstGate) feed(r *Receiver, iq []complex64) {
+func (g *burstGate) feed(r gatedDemod, iq []complex64) {
 	if len(g.carry) > 0 {
 		need := g.block - len(g.carry)
 		if len(iq) < need {
@@ -118,7 +127,7 @@ func (g *burstGate) feed(r *Receiver, iq []complex64) {
 	g.carry = append(g.carry, iq...)
 }
 
-func (g *burstGate) blockIn(r *Receiver, b []complex64) {
+func (g *burstGate) blockIn(r gatedDemod, b []complex64) {
 	if g.measure(b) {
 		g.hotRun++
 	} else {
@@ -127,7 +136,7 @@ func (g *burstGate) blockIn(r *Receiver, b []complex64) {
 	burst := g.hotRun >= gateOpenBlocks
 	if burst {
 		if g.hold == 0 && g.warm == 0 {
-			r.stats.Bursts++
+			r.countBurst()
 		}
 		g.hold = gateHold
 	}
@@ -199,7 +208,7 @@ func (g *burstGate) keep(b []complex64) {
 
 // runPending demodulates the kept blocks, after telling the receiver how
 // much input was skipped before them.
-func (g *burstGate) runPending(r *Receiver) {
+func (g *burstGate) runPending(r gatedDemod) {
 	if g.skipped > 0 {
 		r.skip(g.skipped)
 		g.skipped = 0
@@ -212,7 +221,7 @@ func (g *burstGate) runPending(r *Receiver) {
 
 // flush demodulates a partial last block if the gate is open, so a frame
 // that ends the input is delivered.
-func (g *burstGate) flush(r *Receiver) {
+func (g *burstGate) flush(r gatedDemod) {
 	if len(g.carry) > 0 && (g.hold > 0 || g.warm > 0 || r.busy()) {
 		g.runPending(r)
 		r.demod(g.carry)
@@ -221,6 +230,8 @@ func (g *burstGate) flush(r *Receiver) {
 }
 
 // busy reports that a framer is inside a frame.
+func (r *Receiver) countBurst() { r.stats.Bursts++ }
+
 func (r *Receiver) busy() bool {
 	return r.framers[0].busy() || r.framers[1].busy()
 }

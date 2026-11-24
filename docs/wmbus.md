@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Wireless M-Bus meter decoder (gophertrunk wmbus)
-description: Decode Wireless M-Bus / OMS utility meter telegrams (heat cost allocators, water, gas, heat and electricity meters) at 868.95 MHz, live or from a capture
+description: Decode Wireless M-Bus / OMS utility meter telegrams (heat cost allocators, water, gas, heat and electricity meters) in modes T1, C1 and S1, live or from a capture, and decrypt your own meters with their AES keys
 nav_group: Reference
 ---
 
@@ -18,7 +18,13 @@ capture file.
 
 - **Modes T1 and C1**, the two meter-to-reader modes nearly all installed
   meters use, both on **868.95 MHz** at 100 kchip/s. T1 is 3-of-6 coded;
-  C1 uses frame format A or B. Mode S1 (868.3 MHz) is not decoded.
+  C1 uses frame format A or B.
+- **Mode S1** with `-s1`: 868.3 MHz, 32.768 kchip/s Manchester coded,
+  frame format A. Live, `-s1` tunes the SDR to 868.625 MHz, between the two
+  channels, so one 1.6 MS/s stream carries T1, C1 and S1 at once (S1 at
+  -325 kHz, T1/C1 at +325 kHz). With `-freq 868300000 -offset 650000` the
+  tuner sits on S1 itself. S1 is synthetic-verified only (no S1 capture has
+  been decoded yet); a capture of an S1 meter is welcome on issue #1256.
 - **The sender** of every telegram: manufacturer code (e.g. `TCH` Techem,
   `QDS` Qundis, `KAM` Kamstrup), the 8-digit meter ID printed on the
   device, version and device type.
@@ -26,6 +32,15 @@ capture file.
   (volume, energy, heat cost allocation units, temperatures, dates, …),
   including historic values such as the reading at the last set day
   (`[storage 1]`).
+- **Qundis walk-by data sets.** Qundis heat cost allocators and water/heat
+  meters (`QDS`, Siemens/Qundis `LSE`) often send their readings in one
+  manufacturer-specific record (DIF 0D, VIF FF, VIFE 5F) instead of standard
+  records. `wmbus` decodes it into the readings it carries: the current value,
+  the value at the last set day (`[storage 1]`) and at the month-end set day
+  (`[storage 17]`), with their dates and the error date, exactly as a
+  standard meter's records print. The layout follows wmbusmeters' qcaloric
+  driver. A Qundis meter that encrypts this block decodes with its key, see
+  below.
 
 ### Encrypted meters
 
@@ -38,7 +53,53 @@ when, and the device type, and prints the security mode, for example:
 T1-A  -11.7 dBFS  BMT 19131290  water (v13)  encrypted: AES-128-CBC with IV (mode 5), access 121
 ```
 
-No decryption is attempted, and there is no key option yet.
+### Decrypting your own meters
+
+If you have a meter's AES-128 key (the metering company or the meter's
+supplier gives it to the meter's owner; it is usually printed on the delivery
+note or sent as a key file), `wmbus` decrypts that meter's telegrams and
+prints its readings like an unencrypted meter's:
+
+```
+gophertrunk wmbus -key 12345678:00112233445566778899AABBCCDDEEFF
+gophertrunk wmbus -keys meters.keys
+```
+
+`-key` takes the 8-digit meter ID exactly as `wmbus` prints it, a colon, and
+the 32 hex digits of the key; it can be given more than once. A `-keys` file
+holds one `ID:KEY` per line (a space, comma or `=` works too); blank lines and
+lines starting with `#` are ignored. Telegrams of meters without a key are
+shown as before.
+
+Supported:
+
+- **Security mode 5** (AES-128-CBC, the IV built from the meter's
+  manufacturer, address and access number). Behind a radio converter the
+  meter's own address from the long transport header is used.
+- **Security mode 7** (AES-128-CBC under a key derived from the meter key with
+  AES-CMAC and the authentication layer's message counter, key derivation
+  function 1), as Techem and other OMS 4 meters send it.
+- **Encrypted extended link layer** (CI 8D, AES-128-CTR).
+- **Encrypted Qundis walk-by data sets** (see above).
+
+Each scheme checks its own result (modes 5 and 7: the decrypted data opens
+with `2F 2F`; the link layer: a CRC over the payload; Qundis: the block's
+fixed header bytes), so a wrong key is reported rather than printed as
+readings:
+
+```
+T1-A  -11.7 dBFS  BMT 19131290  water (v13)  encrypted, key did not decrypt it (AES-128-CBC with IV (mode 5): plaintext does not open with 2F 2F: wrong key)
+```
+
+A decrypted telegram's line ends in `(decrypted)`, and in `-json` it carries
+`"decrypted": true` (or `decrypt_error`). Mode 10 (AES-CCM) and the
+deprecated DES modes are recognised but not decrypted.
+
+The decryption follows wmbusmeters' implementation of EN 13757-7 / OMS and is
+tested against real encrypted telegrams from its test set with their published
+keys, decoding to the readings wmbusmeters publishes for them. Mode 7 is
+tested against a telegram built with an independent AES/CMAC implementation,
+since no keyed real mode 7 telegram is public.
 
 ## Listening live
 
@@ -265,7 +326,8 @@ gophertrunk wmbus -json | perl meters.pl
 ```
 
 Each object carries `time`, `mode`, `crc_ok`, `level_dbfs`,
-`carrier_offset_hz`, `manufacturer`, `id`, `device`, `encrypted`, `frame`
+`carrier_offset_hz`, `manufacturer`, `id`, `device`, `encrypted`,
+`decrypted` / `decrypt_error` (with `-key`), `frame`
 (the telegram in hex), `corrected_bits` (only when the CRC repair flipped
 bits; see **Weak telegrams**) and `records`, one per reading, with `quantity`,
 `storage`, `value` (a number) or `text` (a date, or hex for data GopherTrunk

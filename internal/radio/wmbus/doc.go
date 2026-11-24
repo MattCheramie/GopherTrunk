@@ -12,19 +12,24 @@
 //	    two-tone correlator detector, mid-chip clock recovery (receiver.go)
 //	  → Framer: access code 0x543D, then mode T1 (3-of-6 coded) or C1
 //	    (NRZ, frame format A or B), CRC check and strip (framer.go, link.go)
-//	  → ParseTelegram: data link header (manufacturer, ID, version, device
-//	    type), extended link layer, transport layer header and security
-//	    mode, and the unencrypted application data records (telegram.go,
-//	    records.go)
+//	  → ParseTelegram / ParseTelegramKeys: data link header (manufacturer,
+//	    ID, version, device type), extended link layer, authentication
+//	    layer, transport layer header and security mode, decryption with a
+//	    configured key (crypto.go), and the application data records
+//	    (telegram.go, records.go), Qundis walk-by data sets included (qds.go)
 //
 // Modes: T1 and C1, the two meter-to-other modes used by almost all
-// installed meters, both at 868.95 MHz and 100 kchip/s. S1 (868.3 MHz,
-// Manchester) and the other-to-meter modes are not decoded.
+// installed meters, both at 868.95 MHz and 100 kchip/s; and with
+// ReceiverOptions.S1, mode S1 (868.3 MHz, 32.768 kchip/s Manchester) on a
+// chain of its own beside them (s1.go). The other-to-meter modes are not
+// decoded.
 //
 // Encryption: most OMS meters encrypt their application data (security
 // mode 5 or 7, AES-128 with a per-meter key from the metering company).
-// Such a telegram's header (who sent it, when, device type) still decodes;
-// its readings do not, and no decryption is attempted.
+// Without the key a telegram's header (who sent it, when, device type)
+// still decodes and its readings do not; with it (ParseTelegramKeys) modes
+// 5 and 7, the encrypted extended link layer and Qundis's encrypted walk-by
+// block decrypt.
 //
 // References, cross-checked rather than copied: EN 13757-3/-4, and two
 // independent decoders, rtl-wmbus (BSD-2-Clause; its four sample captures

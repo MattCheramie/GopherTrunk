@@ -10,6 +10,26 @@ for tagged releases.
 ## [v1.4.4] — 2026-11-24
 
 ### Added
+- **wM-Bus: decrypt your own meters** (#1256): `gophertrunk wmbus -key
+  ID:KEY` (repeatable) or `-keys FILE` decrypts the telegrams of meters whose
+  AES-128 key you have, and prints their readings like an unencrypted meter's.
+  Covers OMS security mode 5 (AES-CBC with IV), mode 7 (AES-CBC under an
+  AES-CMAC-derived key and the authentication layer's message counter), the
+  encrypted extended link layer (AES-CTR) and Qundis's encrypted walk-by block.
+  A wrong key is detected by each scheme's own check and reported, never
+  printed as readings; `-json` gains `decrypted` / `decrypt_error`. Tested on
+  real encrypted telegrams from wmbusmeters' test set with their published keys.
+- **wM-Bus: Qundis walk-by data sets** (#1256): Qundis heat cost allocators and
+  water/heat meters that send their readings in the manufacturer-specific
+  0D FF 5F record (101 of the 126 QDS telegrams on the reporter's 23 Nov walk)
+  now print the current reading, the readings at the last and the month-end set
+  day, and their dates. Checked against wmbusmeters' qcaloric values and against
+  a meter on the walk that sent both this block and a standard telegram: the
+  readings agree.
+- **wM-Bus mode S1** (#1256): `gophertrunk wmbus -s1` also decodes S mode
+  meters (868.3 MHz, 32.768 kchip/s Manchester). Live it tunes to 868.625 MHz,
+  so one stream carries T1, C1 and S1. Synthetic-verified only; no S1 capture
+  has been decoded yet.
 - **dPMR Mode 3 trunking** (#1374): a `protocol: dpmr` system now decodes
   a real Mode 3 beacon channel and follows its calls. It locks on the beacon's
   System Identity Code (from the Aloha or SYScast1) and turns each Goto Channel
