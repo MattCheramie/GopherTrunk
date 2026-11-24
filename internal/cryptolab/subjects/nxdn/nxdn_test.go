@@ -202,3 +202,29 @@ func TestDescrambleVerifiesCRC(t *testing.T) {
 		t.Fatalf("wrong key should fail CAC CRC: %s", bad.Summary)
 	}
 }
+
+// TestBruteRejectsVoiceRawFrames confirms the pre-flight guard: feeding the
+// 56-bit AMBE+2 voice frames from a recording's .raw sidecar to the SACCH CRC
+// oracle (which needs 32-bit frames) returns a pointed diagnostic naming the
+// bit-length mismatch and the voice sidecar, not a silent "no key" after a full
+// sweep. This is the exact mistake an operator makes who read "get the .raw hex
+// and feed it to nxdn brute".
+func TestBruteRejectsVoiceRawFrames(t *testing.T) {
+	t.Parallel()
+	// Two 56-bit lines (7 bytes each), the shape of packed 49-bit AMBE frames.
+	voice := [][]byte{lcgBits(1, 56), lcgBits(2, 56)}
+	in := writeHexFrames(t, voice)
+	r := runMode(t, "brute", []string{"-in", in, "-frame-type", "sacch"})
+	if got := field(t, r, "frame_bits"); got != 56 {
+		t.Fatalf("frame_bits = %v, want 56", got)
+	}
+	if got := field(t, r, "want_bits"); got != radionxdn.SACCHInfoBits {
+		t.Fatalf("want_bits = %v, want %d", got, radionxdn.SACCHInfoBits)
+	}
+	if len(r.Findings) != 0 {
+		t.Fatalf("expected no candidate findings, got %d", len(r.Findings))
+	}
+	if len(r.Notes) == 0 || !strings.Contains(r.Notes[0], "AMBE+2 voice frames") {
+		t.Fatalf("expected a voice-sidecar note, got %+v", r.Notes)
+	}
+}
