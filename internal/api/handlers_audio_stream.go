@@ -11,9 +11,7 @@ import (
 
 // WAV streaming envelope sizes. The header bakes in a near-2 GiB data
 // chunk so streaming consumers keep reading until the connection
-// closes; the Range responses below advertise a matching total so
-// Safari (which only plays media from a byte-serving server) accepts
-// the stream.
+// closes; the bounded Range responses below advertise a matching total.
 const (
 	wavHeaderSize  = 44
 	wavMaxDataSize = uint32(0x7FFFFFFF) // declared data chunk size
@@ -39,13 +37,27 @@ const (
 // http.ResponseController so the long-lived connection doesn't get
 // torn down mid-call.
 //
-// Range requests are honored so Safari (macOS/iOS) plays the stream:
-// its media element refuses to play unless the server answers a
-// `Range:` request with 206 + Accept-Ranges + Content-Range. Safari
-// first issues a small probe (e.g. `bytes=0-1`) to learn the size,
-// then an open-ended `bytes=0-` for the bulk body. Clients that don't
-// send a Range header (Chrome, Firefox, curl) keep the plain 200
-// streaming path.
+// Range handling (#1405). The body is live and has no length, so a byte
+// range means nothing on it:
+//
+//   - An open-ended range (`bytes=N-`) is IGNORED: 200 + chunked, the
+//     same bytes a request with no Range header gets. Media players open
+//     with `bytes=0-` (VLC, mpv, ffmpeg and Chromium's <audio> all do).
+//     Answering it 206 with `Content-Range: bytes
+//     0-2147483690/2147483691` told them the stream is a 2 GiB file: all
+//     four reported a seekable file 37 hours long, and ffmpeg, having
+//     read 64 kB to identify the format, reconnected with `bytes=44-`
+//     and threw away the four seconds of audio it had.
+//   - A bounded range is still answered 206: the size probe inside the
+//     44-byte header (`bytes=0-1`), and an explicit bounded range
+//     reaching past the header, which is what a client sends once the
+//     probe has told it the 2 GiB total.
+//
+// The bounded paths came in with #598 on the theory that Safari's media
+// element opens with that probe and will not play without them. That
+// report turned out to be a different defect and this endpoint has not
+// been run in Safari's <audio>, so they are kept as they were rather
+// than verified.
 func (s *Server) handleAudioStream(w http.ResponseWriter, r *http.Request) {
 	if s.audioPub == nil {
 		s.writeError(w, http.StatusServiceUnavailable, "audio stream not wired")
@@ -69,9 +81,9 @@ func (s *Server) handleAudioStream(w http.ResponseWriter, r *http.Request) {
 
 	start, end, hasRange := parseRange(r.Header.Get("Range"))
 
-	// Safari's size probe: a bounded range fully inside the
-	// deterministic WAV header. Serve the exact header bytes and
-	// close — no live subscription required.
+	// The size probe: a bounded range fully inside the deterministic
+	// WAV header. Serve the exact header bytes and close — no live
+	// subscription required.
 	if hasRange && end >= 0 && end < wavHeaderSize {
 		header := streamingWAVHeader(rate)
 		body := header[start : end+1]
@@ -97,12 +109,11 @@ func (s *Server) handleAudioStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	if hasRange {
-		// Open-ended `bytes=N-` (or a range extending past the
-		// header). A live stream has no real seek target, so we
-		// advertise a matching Content-Range and stream live; the
-		// only meaningful offset is whether the caller still needs
-		// the leading header bytes.
+	if hasRange && end >= 0 {
+		// A bounded range reaching past the header. A live stream has
+		// no real seek target, so we advertise a matching
+		// Content-Range and stream live; the only meaningful offset is
+		// whether the caller still needs the leading header bytes.
 		w.Header().Set("Accept-Ranges", "bytes")
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, wavTotalSize-1, wavTotalSize))
 		w.WriteHeader(http.StatusPartialContent)
@@ -112,10 +123,11 @@ func (s *Server) handleAudioStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		// No Range: plain open-ended stream. Chrome, Firefox, and
-		// curl play streaming WAV when the data chunk claims a
-		// near-2 GiB length and the response uses chunked transfer
-		// encoding.
+		// No Range, or an open-ended one, which is ignored (see the
+		// doc comment): the plain open-ended stream, with no
+		// Accept-Ranges or Content-Range to suggest a file. Players
+		// read a streaming WAV whose data chunk claims a near-2 GiB
+		// length for as long as the chunked response keeps coming.
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write(streamingWAVHeader(rate)); err != nil {
 			return
@@ -154,8 +166,7 @@ func (s *Server) handleAudioStream(w http.ResponseWriter, r *http.Request) {
 // returns start, end (end == -1 for an open-ended "bytes=N-"), and ok.
 // ok is false for an empty header, a non-"bytes=" unit, suffix ranges
 // ("bytes=-N"), multi-range requests, or any malformed input — callers
-// then fall back to the plain 200 stream, which is safe for non-Safari
-// clients.
+// then fall back to the plain 200 stream.
 func parseRange(h string) (start int64, end int64, ok bool) {
 	h = strings.TrimSpace(h)
 	const prefix = "bytes="

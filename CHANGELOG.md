@@ -7,6 +7,23 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **The live audio stream no longer presents itself as a 2 GiB file**
+  (#1405). `GET /api/v1/audio/stream` answered an open-ended
+  `Range: bytes=0-`, which VLC, mpv, ffmpeg and a browser's `<audio>` all
+  send, with `206` and `Content-Range: bytes 0-2147483690/2147483691`.
+  Players then showed a seekable file 37 hours long, and ffmpeg
+  reconnected with a second range request, discarding the first four
+  seconds of audio it had read. An open-ended range is now ignored: the
+  reply is the `200` chunked stream a request without a Range header
+  gets, so a player sees a live stream. The bounded header probe
+  (`bytes=0-1`) still gets `206`. Checked with VLC 3.0.20, mpv 0.37,
+  ffmpeg 6.1.1 and Chromium's `<audio>`; all four played before and
+  after. One cost: a page using Chromium's `<audio autoplay>` starts
+  about four seconds later than before (18 s against 14 s on a steady
+  tone); with a `play()` call the start is unchanged. Not run in Safari
+  or Firefox.
+
 ## [v1.4.4] — 2026-11-24
 
 ### Added
