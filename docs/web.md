@@ -298,6 +298,19 @@ JavaScript decoding required. Reads are unauthenticated by default;
 authenticate them by binding the daemon to a trusted network or
 requiring TLS + token via your reverse proxy.
 
+Other players can open the same URL, for example
+`vlc http://127.0.0.1:8080/api/v1/audio/stream`, `mpv` or `ffplay` with
+the same address. `?device=<serial>` and `?talkgroup=<id>` restrict the
+stream to one SDR or one talkgroup. What to expect:
+
+- **The stream is live.** It has no length and you cannot seek in it.
+- **It carries nothing between calls**, so a player shows no progress on
+  a quiet system.
+- **A player buffers before it starts**, and then plays that far behind
+  the air. On a steady test tone VLC 3.0 started after about 7 seconds
+  and Chromium's `<audio>` element after about 14. The console's own
+  player reads the PCM directly instead of using a media element.
+
 ### Tabs
 
 Bottom-nav on phones, top-tab strip on desktop:
