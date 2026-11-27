@@ -1156,6 +1156,10 @@ trunking:
   # 30000 (30 s) when omitted or zero. Lower it on clean systems
   # for snappier teardown; raise it on chatty systems with long
   # transmission pauses. Issue #356.
+  # Motorola Type II calls also end 3 s after the control channel
+  # stops repeating their grant, and the moment their voice channel
+  # is granted to another talkgroup, however long the channel keeps
+  # carrying audio (issue #1408).
   call_timeout_ms: 30000
 
   # voice_hangtime_ms: universal "end of transmission" window applied to
