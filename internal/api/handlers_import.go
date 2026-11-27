@@ -84,6 +84,31 @@ type Importer interface {
 	Commit(sources []ImportSource, force bool) (ImportCommitResult, error)
 }
 
+// BatchImporter is an Importer that can look at one upload's files together.
+// The handlers prefer it over per-file Parse: it is what lets a system's
+// RadioReference talkgroup CSV and sites CSV, uploaded together, preview as
+// one system (#1403). The number of previews may therefore be smaller than
+// the number of files.
+type BatchImporter interface {
+	ParseAll(sources []ImportSource) ([]ParsedSystemDTO, error)
+}
+
+// parseUploads previews sources, through ParseAll when the importer has it.
+func (s *Server) parseUploads(sources []ImportSource) ([]ParsedSystemDTO, error) {
+	if b, ok := s.importer.(BatchImporter); ok {
+		return b.ParseAll(sources)
+	}
+	previews := make([]ParsedSystemDTO, 0, len(sources))
+	for _, src := range sources {
+		p, err := s.importer.Parse(src)
+		if err != nil {
+			return nil, fmt.Errorf("%q: %w", src.Filename, err)
+		}
+		previews = append(previews, p)
+	}
+	return previews, nil
+}
+
 // ImportCommitResult is the response shape for a successful commit.
 type ImportCommitResult struct {
 	SystemsAdded    []string `json:"systems_added"`
@@ -204,7 +229,6 @@ func (s *Server) handleImportUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sources := make([]ImportSource, 0, len(files))
-	previews := make([]ParsedSystemDTO, 0, len(files))
 	for _, fh := range files {
 		kind := classifyImportFile(fh.Filename)
 		if kind == "" {
@@ -225,15 +249,12 @@ func (s *Server) handleImportUpload(w http.ResponseWriter, r *http.Request) {
 				fmt.Sprintf("import: %q: %v", fh.Filename, err))
 			return
 		}
-		src := ImportSource{Filename: fh.Filename, Kind: kind, Data: body}
-		preview, err := s.importer.Parse(src)
-		if err != nil {
-			s.writeError(w, http.StatusBadRequest,
-				fmt.Sprintf("import: %q: %v", fh.Filename, err))
-			return
-		}
-		sources = append(sources, src)
-		previews = append(previews, preview)
+		sources = append(sources, ImportSource{Filename: fh.Filename, Kind: kind, Data: body})
+	}
+	previews, err := s.parseUploads(sources)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "import: "+err.Error())
+		return
 	}
 	id := s.imports.put(sources, previews)
 	writeJSON(w, http.StatusOK, ImportPreviewResponse{ID: id, Systems: previews})

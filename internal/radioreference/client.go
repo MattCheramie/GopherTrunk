@@ -8,8 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,6 +38,10 @@ type Client struct {
 	auth     Auth
 	endpoint string
 	http     *http.Client
+
+	mu    sync.Mutex
+	descr map[string]string // getTrsType / getTrsFlavor answers, by "op/id"
+	seq   int               // numbers the files dumpResponse writes
 }
 
 // NewClient builds a client. It returns ErrNoCredentials when auth.AppKey is
@@ -154,6 +162,7 @@ func (c *Client) call(ctx context.Context, methodBody string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("radioreference: read response: %w", err)
 	}
+	c.dumpResponse(methodBody, raw)
 	if resp.StatusCode != http.StatusOK {
 		// RadioReference answers an unknown/mismatched operation with an
 		// HTTP 500 whose body is a SOAP fault; surface the concise
@@ -168,6 +177,37 @@ func (c *Client) call(ctx context.Context, methodBody string) ([]byte, error) {
 		return nil, fmt.Errorf("radioreference: SOAP fault: %s", fault)
 	}
 	return raw, nil
+}
+
+// DumpEnv names the environment variable that turns on response dumps: set it
+// to a directory and every reply the service sends is saved there, one file
+// per call, named by time and operation. It is the instrument for a report
+// that an import came back wrong (#1403): the parsers here are written from
+// the WSDL, and a saved reply is what shows where the service differs from
+// it. Only replies are written, never a request, so no password or
+// application key reaches the files.
+const DumpEnv = "GOPHERTRUNK_RR_DUMP"
+
+var opNameRE = regexp.MustCompile(`^<ns1:([A-Za-z0-9_]+)>`)
+
+func (c *Client) dumpResponse(methodBody string, raw []byte) {
+	dir := strings.TrimSpace(os.Getenv(DumpEnv))
+	if dir == "" {
+		return
+	}
+	op := "call"
+	if m := opNameRE.FindStringSubmatch(methodBody); m != nil {
+		op = m[1]
+	}
+	c.mu.Lock()
+	c.seq++
+	n := c.seq
+	c.mu.Unlock()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	name := fmt.Sprintf("%s-%02d-%s.xml", time.Now().Format("20060102-150405.000"), n, op)
+	_ = os.WriteFile(filepath.Join(dir, name), raw, 0o600)
 }
 
 // firstLeaves walks the XML token stream and records the first text content of

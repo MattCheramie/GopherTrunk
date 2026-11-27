@@ -222,6 +222,10 @@ func (r *rrModal) updateList(msg tea.KeyMsg, m *Model) (modal, tea.Cmd) {
 			}
 			sys, rows := configbuilder.RRToSystemConfig(full)
 			m.addSystem(sys, rows)
+			if len(full.Notes) > 0 {
+				// The system imported, but something needs a look (#1403).
+				m.status += " (" + strings.Join(full.Notes, "; ") + ")"
+			}
 			return nil, nil
 		}
 	}

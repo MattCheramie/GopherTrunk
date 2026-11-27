@@ -2,6 +2,7 @@ package radioreference
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -38,6 +39,10 @@ type FullSystem struct {
 	State      string            `json:"state,omitempty"`
 	Sites      []SiteDetail      `json:"sites"`
 	Talkgroups []TalkgroupDetail `json:"talkgroups"`
+	// Notes are things the operator should know about a system that did
+	// import: a protocol that had to be guessed, or a system RadioReference
+	// lists no sites or no talkgroups for.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // SiteDetail is one RF site of a trunked system. ControlChannels and
@@ -103,6 +108,7 @@ func (c *Client) SearchByCounty(ctx context.Context, ctid int) ([]SearchHit, err
 	for _, s := range systems {
 		hits = append(hits, SearchHit{SID: s.SID, Name: s.Name, Type: s.Type})
 	}
+	c.describeHitTypes(ctx, hits)
 	return hits, nil
 }
 
@@ -137,6 +143,7 @@ func (c *Client) SearchByState(ctx context.Context, stid int) ([]SearchHit, erro
 			hits = append(hits, SearchHit{SID: s.SID, Name: s.Name, Type: s.Type})
 		}
 	}
+	c.describeHitTypes(ctx, hits)
 	return hits, nil
 }
 
@@ -209,111 +216,179 @@ func (c *Client) GetCountyList(ctx context.Context, stid int) ([]GeoRef, error) 
 	return out, nil
 }
 
+// ErrEmptySystem is returned by GetFullSystem when the service answered every
+// call but listed neither a site nor a talkgroup, so there is nothing to
+// import. Before #1403 that was returned as a blank system with no error.
+var ErrEmptySystem = errors.New("radioreference: the service lists no sites and no talkgroups for this system")
+
 // GetFullSystem fetches a system's identity, sites, and talkgroups and
 // returns an import-ready FullSystem with a mapped GopherTrunk protocol.
+//
+// The shapes read here are the WSDL's (v=latest, service version 18), not
+// guesses (#1403):
+//
+//   - getTrsDetails returns a Trs: sName, sCity, numeric sType / sFlavor ids,
+//     and a sysid array of {sysid, ct, wacn, model}. It carries no sites and
+//     no talkgroups.
+//   - getTrsSites returns an array of TrsSite, each with a siteFreqs array of
+//     {lcn, freq, use, colorCode, ch_id}.
+//   - getTrsTalkgroups takes sid, tgCid, tgTag, tgDec (zero = no filter) and
+//     returns an array of Talkgroup.
+//   - getTrsType / getTrsFlavor turn the numeric ids into the descriptions
+//     ("Project 25", "DMR", …) protocolFromType maps.
+//
+// A failed sites or talkgroups call fails the import: both used to be
+// swallowed, which is how a rejected request became a blank system. The two
+// description lookups only choose the protocol, so their failure is reported
+// in Notes and the protocol left at protocolFromType's default.
 func (c *Client) GetFullSystem(ctx context.Context, sid int) (FullSystem, error) {
-	body := fmt.Sprintf(`<ns1:getTrsDetails>`+
-		`<sid xsi:type="xsd:int">%d</sid>`+
-		`%s`+
-		`</ns1:getTrsDetails>`, sid, c.authXML())
-	raw, err := c.call(ctx, body)
+	det, err := c.callOp(ctx, "getTrsDetails", intParam("sid", sid))
 	if err != nil {
 		return FullSystem{}, err
 	}
-
-	leaves := firstLeaves(raw, "sid", "sName", "sType", "sFlavor", "sVoice",
-		"sysid", "wacn", "nac", "city", "cName", "sName2", "stateName")
 	fs := FullSystem{
-		SID:    atoiDefault(leaves["sid"], sid),
-		Name:   leaves["sName"],
-		Type:   leaves["sType"],
-		Flavor: leaves["sFlavor"],
-		Voice:  leaves["sVoice"],
-		City:   leaves["city"],
-		County: leaves["cName"],
-		State:  leaves["stateName"],
+		SID:  sid,
+		Name: det.val("sName"),
+		City: det.val("sCity"),
 	}
-	if v, ok := parseHexOrDec(leaves["sysid"]); ok {
-		fs.SystemID = uint16(v)
+	for _, id := range det.child("sysid").items() {
+		if v, ok := parseHexOrDec(id.val("sysid")); ok && fs.SystemID == 0 {
+			fs.SystemID = uint16(v)
+		}
+		if v, ok := parseHexOrDec(id.val("wacn")); ok && fs.WACN == 0 {
+			fs.WACN = uint32(v)
+		}
 	}
-	if v, ok := parseHexOrDec(leaves["wacn"]); ok {
-		fs.WACN = uint32(v)
+
+	typeID := atoiDefault(det.val("sType"), 0)
+	flavorID := atoiDefault(det.val("sFlavor"), 0)
+	if fs.Type, err = c.describe(ctx, "getTrsType", "sType", "sTypeDescr", typeID); err != nil {
+		fs.Notes = append(fs.Notes, fmt.Sprintf(
+			"could not read the system type (%v); the protocol is a guess, check it", err))
 	}
-	if v, ok := parseHexOrDec(leaves["nac"]); ok {
-		fs.NAC = uint16(v)
+	if fs.Type != "" && flavorID != 0 {
+		// The flavor only refines a known type (DMR Tier II vs Tier III),
+		// so a failure here costs less than the type's.
+		if fs.Flavor, err = c.describe(ctx, "getTrsFlavor", "sFlavor", "sFlavorDescr", flavorID); err != nil {
+			fs.Notes = append(fs.Notes, fmt.Sprintf(
+				"could not read the system flavor (%v); check the protocol", err))
+		}
 	}
 	fs.Protocol = protocolFromType(fs.Type, fs.Flavor)
-	fs.Sites = parseSites(raw)
-	fs.Talkgroups = parseTalkgroups(raw)
 
-	// getTrsDetails responses don't always embed sites/talkgroups; fall
-	// back to the dedicated endpoints when the embedded lists are empty.
-	if len(fs.Sites) == 0 {
-		if sites, err := c.getTrsSites(ctx, sid); err == nil {
-			fs.Sites = sites
-		}
+	if fs.Sites, err = c.getTrsSites(ctx, sid); err != nil {
+		return FullSystem{}, err
 	}
-	if len(fs.Talkgroups) == 0 {
-		if tgs, err := c.getTrsTalkgroups(ctx, sid); err == nil {
-			fs.Talkgroups = tgs
-		}
+	if fs.Talkgroups, err = c.getTrsTalkgroups(ctx, sid); err != nil {
+		return FullSystem{}, err
+	}
+	switch {
+	case len(fs.Sites) == 0 && len(fs.Talkgroups) == 0:
+		return FullSystem{}, fmt.Errorf("%w (sid %d)", ErrEmptySystem, sid)
+	case len(fs.Sites) == 0:
+		fs.Notes = append(fs.Notes, "RadioReference lists no site frequencies for this system; add its control channels by hand")
+	case len(fs.Talkgroups) == 0:
+		fs.Notes = append(fs.Notes, "RadioReference lists no talkgroups for this system")
 	}
 	return fs, nil
 }
 
+// describe resolves a numeric system type or flavor id to its description
+// through getTrsType / getTrsFlavor. Both take the id and return an array of
+// definitions ({sType, sTypeDescr} / {sType, sFlavor, sFlavorDescr}); the
+// entry whose idField equals id is the answer. Results are cached on the
+// client, so a search listing many systems of one type asks once.
+func (c *Client) describe(ctx context.Context, op, idField, descrField string, id int) (string, error) {
+	if id == 0 {
+		return "", fmt.Errorf("radioreference: the system has no %s", idField)
+	}
+	key := fmt.Sprintf("%s/%d", op, id)
+	c.mu.Lock()
+	descr, ok := c.descr[key]
+	c.mu.Unlock()
+	if ok {
+		return descr, nil
+	}
+	ret, err := c.callOp(ctx, op, intParam("id", id))
+	if err != nil {
+		return "", err
+	}
+	for _, def := range ret.items() {
+		if atoiDefault(def.val(idField), 0) == id && def.val(descrField) != "" {
+			descr = def.val(descrField)
+			c.mu.Lock()
+			if c.descr == nil {
+				c.descr = make(map[string]string)
+			}
+			c.descr[key] = descr
+			c.mu.Unlock()
+			return descr, nil
+		}
+	}
+	return "", fmt.Errorf("radioreference: %s has no entry for %s %d", op, idField, id)
+}
+
+// describeHitTypes replaces the numeric sType a county listing carries with
+// its description, so a search result reads "Project 25" and not "8". It is
+// cosmetic: an id that cannot be resolved is left as it was.
+func (c *Client) describeHitTypes(ctx context.Context, hits []SearchHit) {
+	failed := make(map[int]bool) // ask once per id, even when the answer is no
+	for i := range hits {
+		id, err := strconv.Atoi(strings.TrimSpace(hits[i].Type))
+		if err != nil || id == 0 || failed[id] {
+			continue
+		}
+		descr, err := c.describe(ctx, "getTrsType", "sType", "sTypeDescr", id)
+		if err != nil {
+			failed[id] = true
+			continue
+		}
+		hits[i].Type = descr
+	}
+}
+
 func (c *Client) getTrsSites(ctx context.Context, sid int) ([]SiteDetail, error) {
-	body := fmt.Sprintf(`<ns1:getTrsSites>`+
-		`<sid xsi:type="xsd:int">%d</sid>`+
-		`%s`+
-		`</ns1:getTrsSites>`, sid, c.authXML())
-	raw, err := c.call(ctx, body)
+	ret, err := c.callOp(ctx, "getTrsSites", intParam("sid", sid))
 	if err != nil {
 		return nil, err
 	}
-	return parseSites(raw), nil
+	return parseSites(ret), nil
 }
 
 func (c *Client) getTrsTalkgroups(ctx context.Context, sid int) ([]TalkgroupDetail, error) {
-	body := fmt.Sprintf(`<ns1:getTrsTalkgroups>`+
-		`<sid xsi:type="xsd:int">%d</sid>`+
-		`%s`+
-		`</ns1:getTrsTalkgroups>`, sid, c.authXML())
-	raw, err := c.call(ctx, body)
+	// tgCid / tgTag / tgDec are filters; the WSDL documents that with none
+	// specified every talkgroup of the system is returned.
+	ret, err := c.callOp(ctx, "getTrsTalkgroups",
+		intParam("sid", sid), intParam("tgCid", 0), intParam("tgTag", 0), intParam("tgDec", 0))
 	if err != nil {
 		return nil, err
 	}
-	return parseTalkgroups(raw), nil
+	return parseTalkgroups(ret), nil
 }
 
-// parseSites extracts every <siteList> entry and its frequencies. A
-// frequency whose "use" flag marks it a control/data channel lands in
-// ControlChannels; all frequencies (control + voice) land in Frequencies.
-//
-// RadioReference's XML is namespaced SOAP; firstLeaves/blocks are
-// intentionally tolerant first-match scanners (not schema-validated), so a
-// renamed/missing element degrades to a zero value rather than an error.
-// Site entries that yield no usable frequency are dropped so an empty or
-// metadata-only <siteList> doesn't surface as a zero-channel site.
-func parseSites(raw []byte) []SiteDetail {
+// parseSites reads a getTrsSites <return>: an array of TrsSite. A frequency
+// whose "use" flag marks it a control channel lands in ControlChannels; all
+// frequencies (control + voice) land in Frequencies. A site with no usable
+// frequency is dropped, so a metadata-only site doesn't surface as a
+// zero-channel site.
+func parseSites(ret *node) []SiteDetail {
 	var sites []SiteDetail
-	for _, block := range listEntries(raw, "siteList") {
-		leaves := firstLeaves(block, "rfss", "siteNumber", "siteDescr", "siteCounty", "cName", "siteLat", "siteLng")
+	for _, it := range ret.items() {
 		site := SiteDetail{
-			RFSS:        atoiDefault(leaves["rfss"], 0),
-			SiteNumber:  atoiDefault(leaves["siteNumber"], 0),
-			Description: leaves["siteDescr"],
-			County:      firstNonEmpty(leaves["siteCounty"], leaves["cName"]),
-			Latitude:    parseDegrees(leaves["siteLat"]),
-			Longitude:   parseDegrees(leaves["siteLng"]),
+			RFSS:        atoiDefault(it.val("rfss"), 0),
+			SiteNumber:  atoiDefault(it.val("siteNumber"), 0),
+			Description: it.val("siteDescr"),
+			County:      it.val("siteCt"),
+			Latitude:    parseDegrees(it.val("lat")),
+			Longitude:   parseDegrees(it.val("lon")),
 		}
-		for _, fb := range listEntries(block, "siteFreq") {
-			fl := firstLeaves(fb, "freq", "use")
-			hz := mhzToHz(fl["freq"])
+		for _, f := range it.child("siteFreqs").items() {
+			hz := mhzToHz(f.val("freq"))
 			if hz == 0 {
 				continue
 			}
 			site.Frequencies = append(site.Frequencies, hz)
-			if isControlUse(fl["use"]) {
+			if isControlUse(f.val("use")) {
 				site.ControlChannels = append(site.ControlChannels, hz)
 			}
 		}
@@ -325,22 +400,30 @@ func parseSites(raw []byte) []SiteDetail {
 	return sites
 }
 
-// parseTalkgroups extracts every <tgList> entry.
-func parseTalkgroups(raw []byte) []TalkgroupDetail {
+// parseTalkgroups reads a getTrsTalkgroups <return>: an array of Talkgroup.
+func parseTalkgroups(ret *node) []TalkgroupDetail {
 	var tgs []TalkgroupDetail
-	for _, block := range listEntries(raw, "tgList") {
-		leaves := firstLeaves(block, "tgDec", "tgAlpha", "tgDescr", "tgSort", "tgTag", "tag", "enc", "mode")
-		dec := atoiDefault(leaves["tgDec"], 0)
-		if dec == 0 {
+	for _, it := range ret.items() {
+		dec := atoiDefault(it.val("tgDec"), 0)
+		if dec <= 0 {
 			continue
 		}
 		tg := TalkgroupDetail{
 			Dec:         uint32(dec),
-			AlphaTag:    leaves["tgAlpha"],
-			Description: leaves["tgDescr"],
-			Tag:         firstNonEmpty(leaves["tag"], leaves["tgTag"]),
-			Mode:        normalizeMode(leaves["mode"]),
-			Encrypted:   leaves["enc"] == "1" || strings.EqualFold(leaves["enc"], "true"),
+			AlphaTag:    it.val("tgAlpha"),
+			Description: it.val("tgDescr"),
+			Mode:        normalizeMode(it.val("tgMode")),
+			// enc (service version 15): 0 = no encryption, 1 = mixed,
+			// 2 = fully encrypted. Only a talkgroup that is always
+			// encrypted is marked; a mixed one still carries clear calls.
+			Encrypted: atoiDefault(it.val("enc"), 0) == 2,
+		}
+		// tags is an array of {tagId, tagDescr}; the first is the service tag.
+		for _, tag := range it.child("tags").items() {
+			if d := tag.val("tagDescr"); d != "" {
+				tg.Tag = d
+				break
+			}
 		}
 		tgs = append(tgs, tg)
 	}
@@ -362,7 +445,7 @@ func isControlUse(use string) bool {
 // trunking.TalkGroup expects.
 func normalizeMode(mode string) string {
 	switch strings.ToUpper(strings.TrimSpace(mode)) {
-	case "D", "DE", "TDMA":
+	case "D", "DE", "T", "TE", "TDMA":
 		return "D"
 	case "A", "AE":
 		return "A"

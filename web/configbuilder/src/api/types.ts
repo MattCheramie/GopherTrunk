@@ -863,6 +863,9 @@ export interface RRFullSystem {
   state?: string;
   sites: RRSiteDetail[] | null;
   talkgroups: RRTalkgroupDetail[] | null;
+  // Things to tell the operator about a system that did import: a protocol
+  // that had to be guessed, or no sites / no talkgroups listed.
+  notes?: string[];
 }
 
 export interface RRSystemResponse {

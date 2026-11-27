@@ -2954,3 +2954,27 @@ confirmation before any close-as-completed.
   is now OFF like the pipeline's (the prime suspect for the divergent bursts); still
   on-air-gated. `tetra_mcc`/`tetra_mnc` were missing from config.example.yaml (the 4 Sep
   rule) — now in a `tetra-dmo` example.
+- **The RadioReference login import's reply parser was FABRICATED (#1403) and is rebuilt on the
+  service's WSDL; it has still never run against the live service.** `GetFullSystem` looked for
+  `<siteList>` / `<siteFreq>` / `<tgList>`, which the WSDL does not define, and its fixtures used
+  the same names, so the import returned a named, empty system with no error (the two fallback
+  calls dropped theirs). The WSDL is public and needs no account
+  (`http://api.radioreference.com/soap2/?wsdl&v=latest`); read it before touching this package.
+  Shapes: every operation answers one `<return>` part, and an array is that element holding
+  `<item>` children (rpc/encoded PHP, the #1197 lesson). `getTrsDetails` → `Trs`: NO sites or
+  talkgroups, numeric `sType` / `sFlavor` (names through `getTrsType(id)` / `getTrsFlavor(id)`),
+  `sysid` an array of {sysid, ct, wacn, model}. `getTrsSites` → `TrsSite[]`, each with
+  `siteFreqs` → {lcn, freq in MHz, use, colorCode, ch_id}, `lat` / `lon`, `siteCt`.
+  `getTrsTalkgroups(sid, tgCid, tgTag, tgDec, authInfo)` → `Talkgroup[]` with `tgMode`, `enc`
+  (0 / 1 / 2 = none / mixed / full) and `tags` → {tagId, tagDescr}. Read replies through
+  `xmlnode.go`'s direct-children tree, not `firstLeaves`: the same names nest at several depths.
+  Test pattern: `wsdl_contract_test.go` is GENERATED from the WSDL; the fake service refuses a
+  request that does not match its message parts and can only emit elements the WSDL defines;
+  `GT_RR_WSDL=<url|file> go test ./internal/radioreference -run TestWSDLContract` re-checks the
+  tables. The WSDL cannot settle, so these are unverified: the `use` letters (d / a / c are
+  treated as control), the `tgMode` vocabulary, and the real type / flavor descriptions
+  `protocolFromType` matches. Field instrument: `GOPHERTRUNK_RR_DUMP=<dir>` saves every reply,
+  never a request. The service needs a premium account and an app key; the dev environment has
+  neither. Same PR: a system's talkgroup CSV + sites CSV are joined into one system
+  (`pairRRNativeCSVs`: same id in `trs_(tg|sites)_<sid>`, or exactly one of each), and both upload
+  handlers preview a whole upload through `api.BatchImporter`, not file by file.

@@ -26,6 +26,11 @@ type parsedSystem struct {
 	Sites      []parsedSite      `json:"sites"`
 	Talkgroups []parsedTalkgroup `json:"talkgroups"`
 	SourcePath string            `json:"-"`
+
+	// rrCSV / rrSID are set for a RadioReference native CSV export, which
+	// is half a system: see pairRRNativeCSVs.
+	rrCSV rrCSVKind
+	rrSID string
 }
 
 type parsedSite struct {

@@ -7,7 +7,36 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+- **A system's RadioReference talkgroup CSV and sites CSV now import as
+  one system** (#1403). Selected together they used to become two
+  systems, one with talkgroups and no control channels and one the other
+  way round, and the web console's Import page refused the pair because
+  the talkgroup half had no control channel. `trs_tg_<id>.csv` and
+  `trs_sites_<id>.csv` with the same id are joined; so are a lone
+  talkgroup CSV and a lone sites CSV whose names do not name two different
+  systems. This applies to `import-pdf -csv … -csv …`, the web console's
+  Import page and the Config Builder's import dialog. A CSV imported on
+  its own is unchanged.
+
 ### Fixed
+- **Importing a system with a RadioReference login now brings in its
+  control channels and talkgroups** (#1403). The import created a blank
+  system and reported nothing: it looked for `<siteList>`, `<siteFreq>` and
+  `<tgList>` in the service's replies, elements RadioReference's WSDL does
+  not define, and dropped the errors of the two calls that fetch sites and
+  talkgroups. It now reads the replies as the WSDL describes them, sends
+  `getTrsTalkgroups` its full parameter list, and fails with the service's
+  own message when a call is refused.
+  - The system type is a number in the service's replies. It was matched
+    as text, so every system imported as `p25`; it is now looked up, and
+    search results show the type's name.
+  - A system that imports with no sites or no talkgroups, or whose type
+    could not be read, says so. One with neither is an error.
+  - `GOPHERTRUNK_RR_DUMP=<dir>` saves every reply the service sends, for a
+    bug report. The files hold no password and no application key.
+  - Checked against RadioReference's published WSDL only: no account was
+    available to run it against the live service.
 - **The live audio stream no longer presents itself as a 2 GiB file**
   (#1405). `GET /api/v1/audio/stream` answered an open-ended
   `Range: bytes=0-`, which VLC, mpv, ffmpeg and a browser's `<audio>` all

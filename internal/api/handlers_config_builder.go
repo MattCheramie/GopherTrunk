@@ -187,7 +187,7 @@ func (s *Server) handleConfigParse(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "config: at least one `files` part is required")
 		return
 	}
-	parsed := make([]ParsedSystemDTO, 0, len(files))
+	sources := make([]ImportSource, 0, len(files))
 	for _, fh := range files {
 		kind := classifyImportFile(fh.Filename)
 		if kind == "" {
@@ -206,12 +206,12 @@ func (s *Server) handleConfigParse(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, http.StatusBadRequest, fmt.Sprintf("config: %q: %v", fh.Filename, err))
 			return
 		}
-		dto, err := s.importer.Parse(ImportSource{Filename: fh.Filename, Kind: kind, Data: body})
-		if err != nil {
-			s.writeError(w, http.StatusBadRequest, fmt.Sprintf("config: %q: %v", fh.Filename, err))
-			return
-		}
-		parsed = append(parsed, dto)
+		sources = append(sources, ImportSource{Filename: fh.Filename, Kind: kind, Data: body})
+	}
+	parsed, err := s.parseUploads(sources)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "config: "+err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"systems": parsed})
 }
@@ -328,7 +328,14 @@ func (s *Server) handleConfigRRSystem(w http.ResponseWriter, r *http.Request) {
 	}
 	full, err := client.GetFullSystem(r.Context(), sid)
 	if err != nil {
-		s.writeError(w, http.StatusBadGateway, "config: RadioReference: "+err.Error())
+		msg := "config: RadioReference: " + err.Error()
+		if errors.Is(err, radioreference.ErrEmptySystem) {
+			// The blank import of #1403, now an error. If the system does
+			// have sites on the website, the replies are what will show why.
+			msg += ". If radioreference.com does show sites or talkgroups for it, set " +
+				radioreference.DumpEnv + " to a directory, repeat the import and attach the saved replies to a bug report"
+		}
+		s.writeError(w, http.StatusBadGateway, msg)
 		return
 	}
 	writeJSON(w, http.StatusOK, rrToResponse(full))

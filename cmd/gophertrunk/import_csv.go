@@ -71,6 +71,7 @@ func parseCSVFile(path string, opts csvImportOpts) (parsedSystem, error) {
 			fillOpts.Name = filenameStem(path)
 		}
 		sys, err = parseRRNativeCSVStream(bytes.NewReader(data), fillOpts)
+		sys.rrCSV, sys.rrSID = rrCSVTalkgroups, rrExportSID(path, opts.Name)
 	case looksLikeRRSitesCSV(data):
 		// A RadioReference native *sites* CSV (trs_sites_<id>.csv) is
 		// neither a talkgroup CSV nor a multi-section bundle; it used to
@@ -81,6 +82,7 @@ func parseCSVFile(path string, opts csvImportOpts) (parsedSystem, error) {
 			fillOpts.Name = filenameStem(path)
 		}
 		sys, err = parseRRSitesCSVStream(bytes.NewReader(data), fillOpts)
+		sys.rrCSV, sys.rrSID = rrCSVSites, rrExportSID(path, opts.Name)
 	default:
 		sys, err = parseCSVStream(bytes.NewReader(data))
 	}
