@@ -772,6 +772,14 @@ func (e *Engine) HandleGrant(g Grant) {
 		e.observeCall(g, tg)
 	}
 
+	// Motorola Type II (#1408): the control channel, not the voice channel,
+	// says whether a call is still up. End a call whose channel has just been
+	// granted to another talkgroup, and a call of this talkgroup whose grant
+	// went stale, before the dedup/follow logic below can keep it alive.
+	if grantDrivenLiveness(g.Protocol) && g.GroupID != 0 {
+		e.endCallsSupersededBy(g)
+	}
+
 	// Suppress duplicate grants. The Phase 1 CC repeats voice-grant
 	// TSBKs while a call is active (the user's issue #356 log shows
 	// two grants for tg=32181 freq=773431250 arriving 20 ms apart),
@@ -805,8 +813,9 @@ func (e *Engine) HandleGrant(g Grant) {
 			}
 			if g.FrequencyHz == ac.Grant.FrequencyHz {
 				// Same channel: the CC is repeating the grant while the call
-				// runs (issue #356). Refresh LastHeardAt and we're done.
-				e.pool.Touch(ac.Device.Serial, e.now())
+				// runs (issue #356). Refresh LastHeardAt (and LastGrantAt, which
+				// keeps a Motorola call alive, #1408) and we're done.
+				e.pool.TouchGrant(ac.Device.Serial, e.now())
 				// Backfill a source RID that only surfaced on this later grant
 				// (#915): the call may have been bound from a source-less
 				// compressed / update grant, with the initiating
@@ -1512,6 +1521,20 @@ func (e *Engine) runWatchdog() {
 			"device", ac.Device.Serial, "grant", ac.Grant.String())
 		e.endCall(ac, EndReasonEncrypted)
 	}
+	// Motorola Type II (#1408): end a call whose grant the control channel
+	// has stopped repeating, whatever the voice chain says. Its analog voice
+	// channel keeps carrying audio after the call, because the system hands
+	// it to the next talkgroup, and that audio keeps LastHeardAt fresh.
+	for _, ac := range e.pool.Active() {
+		if e.grantStale(ac, now) {
+			e.log.Info("call's grant is no longer repeated on the control channel; ending it",
+				"device", ac.Device.Serial,
+				"grant", ac.Grant.String(),
+				"last_grant_ago", now.Sub(ac.LastGrantAt),
+				"grant_timeout", grantLivenessTimeout)
+			e.endCall(ac, endReasonFor(ac))
+		}
+	}
 	cutoff := now.Add(-e.timeout)
 	for _, ac := range e.pool.Active() {
 		if ac.LastHeardAt.Before(cutoff) {
@@ -1716,4 +1739,94 @@ func (e *Engine) keyConfigured(system string, keyID uint16) bool {
 // in-call handlers where the KeyID is known. Issue #711.
 func (e *Engine) systemHasKeys(system string) bool {
 	return len(e.configuredKeys[system]) > 0
+}
+
+// grantLivenessTimeout is how long a call of a grant-driven protocol (see
+// grantDrivenLiveness) stays up after the control channel last granted it.
+// It is trunk-recorder's default callTimeout ("a call will stop recording and
+// save if it has not received anything on the control channel after this many
+// seconds"), the rule it uses on SmartNet / SmartZone. A SmartNet control
+// channel repeats a single-OSW group voice update for every active channel
+// many times a second, so 3 s is several hundred OSWs; a call it cuts on a
+// control channel that weak re-grants as a new call on its next update.
+const grantLivenessTimeout = 3 * time.Second
+
+// grantDrivenLiveness reports whether a protocol's calls are kept alive by the
+// control channel's repeated grants rather than by decoded voice. Motorola
+// Type II analog voice (#1408) is the case that needs it: an analog voice
+// chain cannot tell this call's audio from the next talkgroup's on a
+// reassigned channel, so its Touch would hold the call (and the voice SDR)
+// for as long as the channel is busy.
+//
+// Not P25: its grants legitimately reuse a channel under several talkgroups
+// (#915), and its digital chains end a call on its own terminator / talkgroup.
+func grantDrivenLiveness(protocol string) bool {
+	return protocol == "motorola"
+}
+
+// grantStale reports whether ac is a grant-driven call whose last grant is
+// older than grantLivenessTimeout.
+func (e *Engine) grantStale(ac *ActiveCall, now time.Time) bool {
+	return grantDrivenLiveness(ac.Grant.Protocol) && !ac.LastGrantAt.IsZero() &&
+		now.Sub(ac.LastGrantAt) > grantLivenessTimeout
+}
+
+// endReasonFor classifies a call ended for inactivity like the watchdog does:
+// normal if it ever heard voice, timeout if it never did.
+func endReasonFor(ac *ActiveCall) EndReason {
+	if ac.LastHeardAt.After(ac.StartedAt) {
+		return EndReasonNormal
+	}
+	return EndReasonTimeout
+}
+
+// endCallsSupersededBy ends the active calls a grant-driven grant g proves
+// over (#1408):
+//
+//   - a call of ANOTHER talkgroup on g's frequency: the system has handed its
+//     voice channel to g's talkgroup, so the call it carried is over (what
+//     trunk-recorder does when a grant names a frequency already in use);
+//   - a call of g's OWN talkgroup whose grant went stale: g starts a new call
+//     rather than extending one the control channel stopped granting.
+//
+// A patch relation between the two grants keeps the old call (a patched call
+// is one call under several talkgroups).
+func (e *Engine) endCallsSupersededBy(g Grant) {
+	now := e.now()
+	for _, ac := range e.pool.Active() {
+		if ac.Grant.System != g.System || !grantDrivenLiveness(ac.Grant.Protocol) {
+			continue
+		}
+		if ac.Grant.GroupID == g.GroupID {
+			if e.grantStale(ac, now) {
+				e.log.Info("grant after its call's grants had stopped; starting a new call",
+					"device", ac.Device.Serial, "old", ac.Grant.String(), "grant", g.String(),
+					"last_grant_ago", now.Sub(ac.LastGrantAt))
+				e.endCall(ac, endReasonFor(ac))
+			}
+			continue
+		}
+		if ac.Grant.FrequencyHz != g.FrequencyHz || patchRelated(ac.Grant, g) {
+			continue
+		}
+		e.log.Info("voice channel granted to another talkgroup; ending the call it carried",
+			"device", ac.Device.Serial, "old", ac.Grant.String(), "grant", g.String())
+		e.endCall(ac, EndReasonNormal)
+	}
+}
+
+// patchRelated reports whether two grants belong to one patched call: either
+// names the other's talkgroup as a patch member.
+func patchRelated(a, b Grant) bool {
+	for _, m := range a.PatchedGroups {
+		if m == b.GroupID {
+			return true
+		}
+	}
+	for _, m := range b.PatchedGroups {
+		if m == a.GroupID {
+			return true
+		}
+	}
+	return false
 }

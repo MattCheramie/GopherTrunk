@@ -7,6 +7,22 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Fixed
+- **A Motorola Type II analog call now ends when the control channel says
+  it has** (#1408). On a busy SmartNet / SmartZone system a call stayed
+  open, and held its voice SDR, for minutes: the analog voice chain keeps
+  the call alive on any audio that passes squelch, and the system hands a
+  finished call's channel straight to the next talkgroup, so audio never
+  stopped. Every other grant meanwhile logged `no voice device available
+  for grant`, and a later grant for the same talkgroup was taken as the old
+  call moving channel. Now a Motorola call ends when its voice channel is
+  granted to another talkgroup (`voice channel granted to another
+  talkgroup; ending the call it carried`), and 3 s after the control
+  channel last repeated its grant (`call's grant is no longer repeated on
+  the control channel`), trunk-recorder's rule for SmartNet. A grant that
+  arrives after that starts a new call. P25 and the other protocols are
+  unchanged. Not yet confirmed on air.
+
 ## [v1.4.5] — 2026-11-27
 
 ### Changed

@@ -52,6 +52,15 @@ type ActiveCall struct {
 	Talkgroup   *TalkGroup
 	StartedAt   time.Time
 	LastHeardAt time.Time
+	// LastGrantAt is when the control channel last granted (or repeated the
+	// grant for) this call: set at Bind and Retune, refreshed by TouchGrant
+	// on every repeat grant. Unlike LastHeardAt, the voice chain's Touch never
+	// moves it, so it says whether the CONTROL CHANNEL still thinks the call
+	// is up. The engine ends a call of a protocol whose control channel
+	// repeats its grants for the call's whole length (Motorola Type II) when
+	// this goes stale, because on an analog channel the voice chain keeps
+	// touching the call on whatever traffic the channel carries next (#1408).
+	LastGrantAt time.Time
 	// EncReleaseAt is the deadline at which the encrypted-call-handling
 	// policy (trunking.encrypted_calls mode: metadata) releases this
 	// voice SDR. Zero means unarmed — either the call is clear, the mode
@@ -259,6 +268,7 @@ func (p *VoicePool) Bind(d *VoiceDevice, g Grant, tg *TalkGroup, now time.Time) 
 		Talkgroup:   tg,
 		StartedAt:   now,
 		LastHeardAt: now,
+		LastGrantAt: now,
 	}
 	p.mu.Lock()
 	p.active[d.Serial] = ac
@@ -310,6 +320,7 @@ func (p *VoicePool) Retune(serial string, g Grant, now time.Time) error {
 	g.CallID = ac.Grant.CallID
 	ac.Grant = g
 	ac.LastHeardAt = now
+	ac.LastGrantAt = now
 	p.mu.Unlock()
 	return nil
 }
@@ -356,6 +367,19 @@ func (p *VoicePool) Touch(serial string, now time.Time) {
 	defer p.mu.Unlock()
 	if ac, ok := p.active[serial]; ok {
 		ac.LastHeardAt = now
+	}
+}
+
+// TouchGrant records that the control channel repeated the grant for the call
+// bound to serial: it refreshes both LastHeardAt and LastGrantAt. The engine
+// calls it on a repeat grant; the voice chain uses Touch, which leaves
+// LastGrantAt alone.
+func (p *VoicePool) TouchGrant(serial string, now time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if ac, ok := p.active[serial]; ok {
+		ac.LastHeardAt = now
+		ac.LastGrantAt = now
 	}
 }
 
