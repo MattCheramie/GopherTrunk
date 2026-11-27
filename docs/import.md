@@ -17,8 +17,8 @@ Recorder-style talkgroup CSVs as it goes:
 - **RadioReference.com native CSV exports** — the **CSV** option from
   the same Download menu. A flat talkgroup list with no metadata or
   sites — combine with `-name` / `-sysid` (see [native-CSV quick
-  start](#quick-start--radioreference-native-csv)) and a separate
-  `-pdf` (or bundle CSV) when you need control-channel frequencies.
+  start](#quick-start--radioreference-native-csv)), and import the
+  system's sites CSV with it to get its control-channel frequencies.
 - **RadioReference.com native sites CSV** — the site table export
   (`trs_sites_<id>.csv`: RFSS, site, NAC, description, county, and the
   site's frequencies, control channels suffixed `c`). Auto-detected like
@@ -128,10 +128,34 @@ gophertrunk import-pdf \
   -config /etc/gophertrunk/config.yaml
 ```
 
-A sites CSV and a talkgroup CSV import as two separate systems. To get
-one system with both, import the system's PDF instead, or copy the rows
-into a [CSV bundle](#csv-format). Use the TUI to drop sites you don't
-want before writing (a statewide system can list dozens).
+**Import a system's two CSVs together and they become one system**, with
+the sites CSV's control channels and the talkgroup CSV's talkgroups:
+
+```
+gophertrunk import-pdf \
+  -csv trs_tg_2951.csv -csv trs_sites_2951.csv \
+  -name "My System" -sysid 2951 \
+  -config /etc/gophertrunk/config.yaml
+```
+
+The same happens when you select both files in the web console's Import
+page or in the Config Builder's **Import PDF / CSV** dialog. How the pair
+is recognised:
+
+- **By file name.** RadioReference names the exports `trs_tg_<id>.csv`
+  and `trs_sites_<id>.csv`; two files with the same id are joined.
+- **Renamed files.** If the import holds exactly one talkgroup CSV and
+  one sites CSV, they are joined too, unless their names carry two
+  different ids.
+
+The joined system takes the talkgroup CSV's name unless you pass
+`-name`. Imported one at a time, each CSV is still its own system: a
+talkgroup CSV alone has no control channels, and a sites CSV alone has no
+talkgroups. `gophertrunk config`'s import dialog takes one file at a
+time, so use one of the three ways above for a pair.
+
+Use the TUI to drop sites you don't want before writing (a statewide
+system can list dozens).
 
 ## Quick start — CSV bundle
 

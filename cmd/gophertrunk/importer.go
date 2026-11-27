@@ -41,9 +41,45 @@ func (i *daemonImporter) Parse(s api.ImportSource) (api.ParsedSystemDTO, error) 
 	return parsedToDTO(parsed, s.Filename), nil
 }
 
-// Commit writes every source out to disk (so mergeIntoConfig can
-// re-parse them via the existing file-path code path) and merges
-// them into the daemon's config.yaml.
+// ParseAll parses every source of one upload and returns its previews. It
+// differs from calling Parse per file in one way: a system's RadioReference
+// talkgroup CSV and sites CSV, uploaded together, come back as ONE system
+// with both control channels and talkgroups (#1403). An error names the
+// file it came from.
+func (i *daemonImporter) ParseAll(sources []api.ImportSource) ([]api.ParsedSystemDTO, error) {
+	parsed, err := parseImportSources(sources)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]api.ParsedSystemDTO, 0, len(parsed))
+	for _, p := range parsed {
+		out = append(out, parsedToDTO(p, p.SourcePath))
+	}
+	return out, nil
+}
+
+// parseImportSources parses each upload from a tempfile, labels it with the
+// name it was uploaded under, and joins RadioReference CSV pairs.
+func parseImportSources(sources []api.ImportSource) ([]parsedSystem, error) {
+	parsed := make([]parsedSystem, 0, len(sources))
+	for _, s := range sources {
+		tp, err := writeTempUpload(s)
+		if err != nil {
+			return nil, err
+		}
+		ps, err := parseImportFile(tp, s.Kind, s.Filename)
+		_ = os.Remove(tp)
+		if err != nil {
+			return nil, fmt.Errorf("%q: %w", s.Filename, err)
+		}
+		ps.SourcePath = s.Filename
+		parsed = append(parsed, ps)
+	}
+	return pairRRNativeCSVs(parsed), nil
+}
+
+// Commit parses every source and merges the result into the daemon's
+// config.yaml.
 func (i *daemonImporter) Commit(sources []api.ImportSource, force bool) (api.ImportCommitResult, error) {
 	if i.d.cfgPath == "" {
 		return api.ImportCommitResult{}, fmt.Errorf("import: daemon started without -config; nothing to merge into")
@@ -52,25 +88,11 @@ func (i *daemonImporter) Commit(sources []api.ImportSource, force bool) (api.Imp
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
-	var tmpPaths []string
-	defer func() {
-		for _, p := range tmpPaths {
-			_ = os.Remove(p)
-		}
-	}()
-
-	parsed := make([]parsedSystem, 0, len(sources))
-	for _, s := range sources {
-		tp, err := writeTempUpload(s)
-		if err != nil {
-			return api.ImportCommitResult{}, err
-		}
-		tmpPaths = append(tmpPaths, tp)
-		ps, err := parseImportFile(tp, s.Kind, s.Filename)
-		if err != nil {
-			return api.ImportCommitResult{}, err
-		}
-		parsed = append(parsed, ps)
+	// Parsed the same way the preview was, so what is merged is what the
+	// operator was shown (RadioReference CSV pairs joined).
+	parsed, err := parseImportSources(sources)
+	if err != nil {
+		return api.ImportCommitResult{}, err
 	}
 
 	res, err := mergeIntoConfig(parsed, mergeOptions{

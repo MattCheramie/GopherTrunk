@@ -8,6 +8,8 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"sort"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -282,5 +284,64 @@ func TestImportCommit_ErrorPreservesStaging(t *testing.T) {
 	}
 	if fi.commits.Load() != 2 {
 		t.Errorf("commit calls=%d want 2 (retry)", fi.commits.Load())
+	}
+}
+
+// fakeBatchImporter also implements BatchImporter: it previews a whole
+// upload as ONE system, the way the daemon joins a RadioReference talkgroup
+// CSV with its sites CSV (#1403).
+type fakeBatchImporter struct {
+	fakeImporter
+	batches atomic.Int32
+}
+
+func (f *fakeBatchImporter) ParseAll(sources []ImportSource) ([]ParsedSystemDTO, error) {
+	f.batches.Add(1)
+	names := make([]string, 0, len(sources))
+	for _, s := range sources {
+		names = append(names, s.Filename)
+	}
+	sort.Strings(names)
+	return []ParsedSystemDTO{{Name: "Joined", Protocol: "p25", SiteCount: 2, TalkgroupCt: 3,
+		SourcePath: strings.Join(names, " + ")}}, nil
+}
+
+// Both upload endpoints must hand the whole upload to a BatchImporter, so a
+// pair of files can preview as one system. Parsing file by file is what
+// split a RadioReference talkgroup CSV and its sites CSV into two systems.
+func TestUploadsPreviewThroughBatchImporter(t *testing.T) {
+	for _, path := range []string{"/api/v1/import", "/api/v1/config/parse"} {
+		bus := events.NewBus(8)
+		fi := &fakeBatchImporter{}
+		base, teardown := mkServer(t, ServerOptions{Bus: bus, AllowMutations: true, Importer: fi,
+			ConfigBuilder: ConfigBuilderOptions{Enabled: true, ConfigDir: t.TempDir()}})
+
+		body, ct := uploadMultipart(t, map[string][]byte{
+			"trs_tg_7715.csv":    []byte("a"),
+			"trs_sites_7715.csv": []byte("b"),
+		})
+		resp, err := http.Post(base+path, ct, body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out struct {
+			Systems []ParsedSystemDTO `json:"systems"`
+		}
+		if resp.StatusCode != http.StatusOK {
+			raw, _ := io.ReadAll(resp.Body)
+			t.Fatalf("%s: status=%d: %s", path, resp.StatusCode, raw)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if len(out.Systems) != 1 || out.Systems[0].SourcePath != "trs_sites_7715.csv + trs_tg_7715.csv" {
+			t.Errorf("%s: systems = %+v, want the one joined preview", path, out.Systems)
+		}
+		if fi.batches.Load() != 1 || fi.parses.Load() != 0 {
+			t.Errorf("%s: %d batch parses and %d per-file parses, want 1 and 0", path, fi.batches.Load(), fi.parses.Load())
+		}
+		teardown()
+		bus.Close()
 	}
 }

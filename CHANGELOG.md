@@ -7,6 +7,18 @@ for tagged releases.
 
 ## [Unreleased]
 
+### Changed
+- **A system's RadioReference talkgroup CSV and sites CSV now import as
+  one system** (#1403). Selected together they used to become two
+  systems, one with talkgroups and no control channels and one the other
+  way round, and the web console's Import page refused the pair because
+  the talkgroup half had no control channel. `trs_tg_<id>.csv` and
+  `trs_sites_<id>.csv` with the same id are joined; so are a lone
+  talkgroup CSV and a lone sites CSV whose names do not name two different
+  systems. This applies to `import-pdf -csv … -csv …`, the web console's
+  Import page and the Config Builder's import dialog. A CSV imported on
+  its own is unchanged.
+
 ### Fixed
 - **Importing a system with a RadioReference login now brings in its
   control channels and talkgroups** (#1403). The import created a blank

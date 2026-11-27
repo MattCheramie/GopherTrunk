@@ -167,7 +167,8 @@ function StageView({
         Drop one or more <code>.pdf</code> (RadioReference) or{" "}
         <code>.csv</code> (multi-section bundle) files. The daemon parses them
         in memory and shows you a preview before merging into{" "}
-        <code>config.yaml</code>.
+        <code>config.yaml</code>. Drop a system's RadioReference talkgroup CSV
+        and sites CSV together and they come in as one system.
       </p>
       <input
         type="file"

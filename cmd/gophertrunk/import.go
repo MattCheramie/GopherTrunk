@@ -157,6 +157,18 @@ Flags:
 			p, sys.Name, len(sys.Sites), len(sys.Talkgroups))
 	}
 
+	// A system's talkgroup CSV and sites CSV, passed together, are one
+	// system (#1403).
+	if paired := pairRRNativeCSVs(parsed); len(paired) != len(parsed) {
+		for _, sys := range paired {
+			if len(sys.Sites) > 0 && len(sys.Talkgroups) > 0 && sys.rrSID != "" {
+				fmt.Fprintf(os.Stderr, "import-pdf: joined the talkgroup and sites CSVs of RadioReference system %s into %q (%d sites, %d talkgroups)\n",
+					sys.rrSID, sys.Name, len(sys.Sites), len(sys.Talkgroups))
+			}
+		}
+		parsed = paired
+	}
+
 	opts := mergeOptions{
 		ConfigPath: *cfgPath,
 		CSVDir:     *csvDir,

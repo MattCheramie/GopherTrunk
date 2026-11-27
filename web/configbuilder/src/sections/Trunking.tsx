@@ -870,7 +870,8 @@ function ImportModal(props: {
       <p className="help">
         Upload one or more RadioReference PDF exports or CSV bundles. They are
         parsed on the server and added to your draft (nothing is written to disk
-        until you save).
+        until you save). Select a system's RadioReference talkgroup CSV and
+        sites CSV together and they come in as one system.
       </p>
       <input
         type="file"
