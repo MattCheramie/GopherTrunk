@@ -7,6 +7,8 @@ for tagged releases.
 
 ## [Unreleased]
 
+## [v1.4.5] — 2026-11-27
+
 ### Changed
 - **A system's RadioReference talkgroup CSV and sites CSV now import as
   one system** (#1403). Selected together they used to become two
