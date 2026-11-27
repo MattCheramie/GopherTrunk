@@ -39,6 +39,35 @@ regardless of input format.
 > any combination of `-pdf` and `-csv` flags — they may be mixed in a
 > single invocation.
 
+## Importing with a RadioReference login
+
+The config builders can also fetch a system straight from
+RadioReference's web service, with no file to download: **Add from
+RadioReference** in the web Config Builder's Trunking section, and the
+RadioReference import in `gophertrunk config`. Sign in with your
+RadioReference username and password. RadioReference only serves this
+data to accounts with an active premium subscription.
+
+Pick a state and county (or search by ZIP), then a system. The import
+brings in:
+
+- the system's name and protocol;
+- every site's control channels, primary and alternate, as the system's
+  `control_channels`;
+- the sites' names and positions;
+- the talkgroups, with their alpha tags, descriptions and service tags.
+
+Check the protocol after an import. If RadioReference lists no sites or
+no talkgroups for the system, or its type could not be read, the builder
+says so when it adds the system. A system with neither sites nor
+talkgroups is refused with an error.
+
+**If an import comes back wrong**, set `GOPHERTRUNK_RR_DUMP` to a
+directory before starting GopherTrunk and repeat the import. Every reply
+the service sends is saved there, one XML file per call. The files hold
+RadioReference's replies only: no password and no application key. Attach
+them to a bug report.
+
 ## Quick start — PDF (RadioReference)
 
 1. Sign in to RadioReference and open the trunking-system page (e.g.

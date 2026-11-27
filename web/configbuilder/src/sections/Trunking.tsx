@@ -680,6 +680,8 @@ function RRBrowseModal(props: {
     try {
       const r = await api.rrSystem(sid, creds);
       props.onAdd(r.config, r.talkgroups ?? []);
+      // The system imported, but something about it needs a look (#1403).
+      for (const note of r.system.notes ?? []) setError(`RadioReference: ${r.config.Name}: ${note}`);
       props.onClose();
     } catch (e) {
       handleRRError(e);
