@@ -328,7 +328,14 @@ func (s *Server) handleConfigRRSystem(w http.ResponseWriter, r *http.Request) {
 	}
 	full, err := client.GetFullSystem(r.Context(), sid)
 	if err != nil {
-		s.writeError(w, http.StatusBadGateway, "config: RadioReference: "+err.Error())
+		msg := "config: RadioReference: " + err.Error()
+		if errors.Is(err, radioreference.ErrEmptySystem) {
+			// The blank import of #1403, now an error. If the system does
+			// have sites on the website, the replies are what will show why.
+			msg += ". If radioreference.com does show sites or talkgroups for it, set " +
+				radioreference.DumpEnv + " to a directory, repeat the import and attach the saved replies to a bug report"
+		}
+		s.writeError(w, http.StatusBadGateway, msg)
 		return
 	}
 	writeJSON(w, http.StatusOK, rrToResponse(full))

@@ -332,14 +332,18 @@ func (c *Client) describe(ctx context.Context, op, idField, descrField string, i
 // its description, so a search result reads "Project 25" and not "8". It is
 // cosmetic: an id that cannot be resolved is left as it was.
 func (c *Client) describeHitTypes(ctx context.Context, hits []SearchHit) {
+	failed := make(map[int]bool) // ask once per id, even when the answer is no
 	for i := range hits {
 		id, err := strconv.Atoi(strings.TrimSpace(hits[i].Type))
-		if err != nil || id == 0 {
+		if err != nil || id == 0 || failed[id] {
 			continue
 		}
-		if descr, err := c.describe(ctx, "getTrsType", "sType", "sTypeDescr", id); err == nil {
-			hits[i].Type = descr
+		descr, err := c.describe(ctx, "getTrsType", "sType", "sTypeDescr", id)
+		if err != nil {
+			failed[id] = true
+			continue
 		}
+		hits[i].Type = descr
 	}
 }
 

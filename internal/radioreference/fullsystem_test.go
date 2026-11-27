@@ -465,13 +465,14 @@ func TestSearchHitsNameTheSystemType(t *testing.T) {
 		{SID: 3, Name: "C", Type: "12"},
 		{SID: 4, Name: "D", Type: "99"},
 		{SID: 5, Name: "E", Type: ""},
+		{SID: 6, Name: "F", Type: "99"},
 	}
 	c.describeHitTypes(context.Background(), hits)
-	got := []string{hits[0].Type, hits[1].Type, hits[2].Type, hits[3].Type, hits[4].Type}
-	if want := []string{"Project 25", "Project 25", "DMR", "99", ""}; !reflect.DeepEqual(got, want) {
+	got := []string{hits[0].Type, hits[1].Type, hits[2].Type, hits[3].Type, hits[4].Type, hits[5].Type}
+	if want := []string{"Project 25", "Project 25", "DMR", "99", "", "99"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("types = %q, want %q", got, want)
 	}
-	// 8 twice, 12 and 99 once each: three lookups, the repeat from the cache.
+	// 8, 12 and 99 are each asked for once, however many systems share them.
 	if calls := f.called(); len(calls) != 3 {
 		t.Errorf("made %d getTrsType calls (%v), want 3", len(calls), calls)
 	}
